@@ -117,10 +117,10 @@
     <!-- Vercel Web Analytics Tracker Script -->
     <script defer src="/_vercel/insights/script.js"></script>
 
-    <!-- NEW: Global Supabase Client Library Bundle -->
-  <!-- Supabase JS Client via jsDelivr -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Supabase JS Client via jsDelivr CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <script src="script.js"></script>
+    <!-- Application Logic (type="module" ensures proper scoping and deferral) -->
+    <script type="module" src="script.js"></script>
 </body>
 </html>
