@@ -12,13 +12,13 @@ const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
-let pageLoadTime = null; // Set to null initially because typing hasn't started
+let pageLoadTime = null; 
 let textWasPasted = false;
 let keystrokeGaps = [];
 let lastKeyTime = Date.now();
 let mouseMovementsRecorded = 0;
 let timerInterval = null; 
-let isTimerRunning = false; // New flag to track if the timer has started
+let isTimerRunning = false; 
 
 function startCompositionTimer() {
     if (timerInterval) {
@@ -38,7 +38,6 @@ window.addEventListener('mousemove', () => {
     mouseMovementsRecorded++;
 });
 
-// If they paste right away, we should still start the timer
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
@@ -50,7 +49,6 @@ textBox.addEventListener('paste', () => {
 });
 
 textBox.addEventListener('keydown', () => {
-    // NEW: Start the timer on the very first keystroke if it isn't running yet
     if (!isTimerRunning) {
         startCompositionTimer();
     }
@@ -115,13 +113,12 @@ function escapeHTML(str) {
 }
 
 function resetTelemetryConsole() {
-    // Stop the running clock completely
     if (timerInterval) {
         clearInterval(timerInterval);
     }
     timerInterval = null;
     pageLoadTime = null;
-    isTimerRunning = false; // Reset flag so the next post waits for a new keystroke
+    isTimerRunning = false; 
     
     textWasPasted = false;
     keystrokeGaps = [];
@@ -132,74 +129,10 @@ function resetTelemetryConsole() {
     nicknameInput.value = '';
     statPaste.textContent = "FALSE";
     statPaste.className = "badge badge-green";
-    statTimer.textContent = "0.0s"; // Reset visual display back to zero
+    statTimer.textContent = "0.0s"; 
     statKeys.textContent = "0 keys";
     statUniformity.textContent = "0%";
 }
 
-// Load posts on startup, but do NOT run startCompositionTimer() here anymore
+// Initial engine activation layout map triggers cleanly now!
 loadForumPosts();
-
-forumForm.addEventListener('submit', (event) => {
-    event.preventDefault(); 
-    
-    if (honeypotField.value !== "") {
-        alert("Submission Blocked: Honeypot triggered.");
-        return;
-    }
-
-    // If they never typed anything, elapsed time is zero
-    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
-
-    if (textWasPasted) {
-        alert("Submission Blocked: AI/Bots love copying and pasting.");
-        return;
-    }
-
-    if (totalTimeElapsed < 4) {
-        alert("Submission Blocked: Impossibly fast post time. Humans need time to think and type.");
-        return;
-    }
-
-    if (mouseMovementsRecorded === 0) {
-        alert("Submission Blocked: No mouse cursor track detected.");
-        return;
-    }
-
-    if (keystrokeGaps.length < 5) {
-        alert("Submission Blocked: Please type a longer message.");
-        return;
-    }
-
-    let perfectIntervals = 0;
-    for (let i = 2; i < keystrokeGaps.length; i++) {
-        if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
-    }
-
-    let uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
-
-    if (uniformityRatio > 0.60) {
-        alert("Submission Blocked: Automation detected.");
-        return;
-    }
-
-    let authorName = nicknameInput.value.trim();
-    if (authorName === "") {
-        authorName = "Anonymous";
-    }
-
-    const newPost = {
-        thread: topicSelect.value, 
-        author: authorName,
-        content: textBox.value,
-        timestamp: new Date().toLocaleString()
-    };
-
-    const storedPosts = JSON.parse(localStorage.getItem('forum_posts')) || [];
-    storedPosts.push(newPost);
-    localStorage.setItem('forum_posts', JSON.stringify(storedPosts));
-
-    loadForumPosts();
-    resetTelemetryConsole();
-   
-});
