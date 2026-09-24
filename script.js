@@ -134,5 +134,71 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// Initial engine activation layout map triggers cleanly now!
+// Initial engine activation layout map triggers cleanly
 loadForumPosts();
+
+// --- RESTORED FORM SUBMISSION WITH LOCAL STORAGE SAVING ---
+forumForm.addEventListener('submit', (event) => {
+    event.preventDefault(); 
+    
+    if (honeypotField.value !== "") {
+        alert("Submission Blocked: Honeypot triggered.");
+        return;
+    }
+
+    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
+
+    if (textWasPasted) {
+        alert("Submission Blocked: AI/Bots love copying and pasting.");
+        return;
+    }
+
+    if (totalTimeElapsed < 4) {
+        alert("Submission Blocked: Impossibly fast post time. Humans need time to think and type.");
+        return;
+    }
+
+    if (mouseMovementsRecorded === 0) {
+        alert("Submission Blocked: No mouse cursor track detected.");
+        return;
+    }
+
+    if (keystrokeGaps.length < 5) {
+        alert("Submission Blocked: Please type a longer message.");
+        return;
+    }
+
+    let perfectIntervals = 0;
+    for (let i = 2; i < keystrokeGaps.length; i++) {
+        if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
+    }
+
+    let uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
+
+    if (uniformityRatio > 0.60) {
+        alert("Submission Blocked: Automation detected.");
+        return;
+    }
+
+    // Capture author handle text element string properties cleanly
+    let authorName = nicknameInput.value.trim();
+    if (authorName === "") {
+        authorName = "Anonymous";
+    }
+
+    const newPost = {
+        thread: topicSelect.value, 
+        author: authorName,
+        content: textBox.value,
+        timestamp: new Date().toLocaleString()
+    };
+
+    // Grab existing storage array, push the fresh entry, commit it back to memory
+    const storedPosts = JSON.parse(localStorage.getItem('forum_posts')) || [];
+    storedPosts.push(newPost);
+    localStorage.setItem('forum_posts', JSON.stringify(storedPosts));
+
+    // Refresh display feeds and scrub local tracing variables seamlessly
+    loadForumPosts();
+    resetTelemetryConsole();
+});
