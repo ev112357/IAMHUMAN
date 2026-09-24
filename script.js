@@ -93,8 +93,9 @@ async function loadForumPosts() {
         return;
     }
 
+    // Updated from 'posts' to 'Posts' to match table casing
     const { data: posts, error } = await db
-        .from('posts')
+        .from('Posts')
         .select('*')
         .eq('thread', selectedThread)
         .order('id', { ascending: false });
@@ -191,8 +192,9 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
+    // Updated from 'posts' to 'Posts' to match table casing
     const { error } = await db
-        .from('posts')
+        .from('Posts')
         .insert([
             { thread: topicSelect.value, author: authorName, content: textBox.value }
         ]);
