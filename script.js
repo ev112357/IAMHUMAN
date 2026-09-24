@@ -16,12 +16,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
-    // Initialize Supabase Client
-    let supabaseClient = null;
+    // Named 'dbClient' so it never conflicts with the global window.supabase identifier
+    let dbClient = null;
     if (window.supabase && typeof window.supabase.createClient === 'function') {
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     } else {
-        console.error("Critical: Supabase library not found on window. Ensure CDN script tag loaded correctly.");
+        console.error("Critical: Supabase library not found on window object.");
     }
 
     // --- TELEMETRY STATE ---
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
     window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
-    // Detect Pastes
+    // Track paste events
     textBox.addEventListener('paste', () => {
         textWasPasted = true;
         statPaste.textContent = "TRUE";
@@ -55,9 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isTimerRunning) startCompositionTimer();
     });
 
-    // Detect Keystrokes & Calculate Uniformity
+    // Track keystrokes & timing uniformity
     textBox.addEventListener('keydown', (e) => {
-        // Skip purely functional modifier keys from bloating cadence telemetry
         if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
 
         if (!isTimerRunning) startCompositionTimer();
@@ -87,12 +86,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedThread = topicSelect.value;
         currentThreadTitle.textContent = selectedThread;
         
-        if (!supabaseClient) {
+        if (!dbClient) {
             forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Database client failed to connect. Check console.</div>`;
             return;
         }
 
-        const { data: posts, error } = await supabaseClient
+        const { data: posts, error } = await dbClient
             .from('posts')
             .select('*')
             .eq('thread', selectedThread)
@@ -158,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
         statUniformity.textContent = "0%";
     }
 
-    // Load initial thread
+    // Initial thread load
     loadForumPosts();
 
     // Form Submission
@@ -185,12 +184,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const authorName = nicknameInput.value.trim() || "Anonymous";
 
-        if (!supabaseClient) {
-            alert("Database Error: Supabase client is not initialized.");
+        if (!dbClient) {
+            alert("Database Error: Client connection failed.");
             return;
         }
 
-        const { error } = await supabaseClient
+        const { error } = await dbClient
             .from('posts')
             .insert([
                 { thread: topicSelect.value, author: authorName, content: textBox.value }
