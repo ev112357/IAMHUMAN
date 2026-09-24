@@ -12,17 +12,20 @@ const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
 // --- DATABASE CONFIGURATION LINK ---
-// TODO: PASTE YOUR EXACT COPIED SUPABASE VALUES INSIDE THE QUOTATIONS BELOW
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
-// Initialize the global cloud network connection pipeline
-const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Fixed: Safely resolve createClient from window.supabase (CDN export)
+const { createClient } = window.supabase || {};
+if (!createClient) {
+    console.error("Supabase CDN script failed to load before script.js ran.");
+}
+const supabaseClient = createClient ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 let pageLoadTime = null; 
 let textWasPasted = false;
 let keystrokeGaps = [];
-let lastKeyTime = Date.now();
+let lastKeyTime = null;
 let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
@@ -53,6 +56,13 @@ textBox.addEventListener('paste', () => {
 textBox.addEventListener('keydown', () => {
     if (!isTimerRunning) startCompositionTimer();
     const currentTime = Date.now();
+    
+    // Set initial baseline on first typed key
+    if (!lastKeyTime) {
+        lastKeyTime = currentTime;
+        return;
+    }
+
     const gap = currentTime - lastKeyTime;
     if (keystrokeGaps.length < 50) keystrokeGaps.push(gap);
     statKeys.textContent = `${keystrokeGaps.length} keys`;
@@ -68,18 +78,19 @@ textBox.addEventListener('keydown', () => {
     lastKeyTime = currentTime;
 });
 
-// --- UPDATED: LIVE CLOUD SYNC FORUM STORAGE FEED ENGINE ---
+// --- LIVE CLOUD SYNC FORUM STORAGE FEED ENGINE ---
 
 async function loadForumPosts() {
+    if (!supabaseClient) return;
+
     const selectedThread = topicSelect.value;
     currentThreadTitle.textContent = selectedThread;
     
-    // Fetch directly from the online cloud database using filtering rules
-    const { data: posts, error } = await supabase
+    const { data: posts, error } = await supabaseClient
         .from('posts')
         .select('*')
         .eq('thread', selectedThread)
-        .order('id', { ascending: false }); // Show newest posts first
+        .order('id', { ascending: false });
 
     if (error) {
         console.error("Cloud Retrieval Error:", error.message);
@@ -96,15 +107,14 @@ async function loadForumPosts() {
         const item = document.createElement('div');
         item.className = 'post-item';
         
-        // Format the database timestamptz nicely
-        const dateFormatted = new Date(post.created_at).toLocaleString();
+        const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
         
         item.innerHTML = `
             <div class="post-meta">
-                <span>By: <span class="post-author">${escapeHTML(post.author)}</span></span>
+                <span>By: <span class="post-author">${escapeHTML(post.author || 'Anonymous')}</span></span>
                 <span>${dateFormatted}</span>
             </div>
-            <div class="post-content">${escapeHTML(post.content)}</div>
+            <div class="post-content">${escapeHTML(post.content || '')}</div>
         `;
         forumFeed.appendChild(item);
     });
@@ -113,7 +123,14 @@ async function loadForumPosts() {
 topicSelect.addEventListener('change', loadForumPosts);
 
 function escapeHTML(str) {
-    return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+    if (!str) return '';
+    return String(str).replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    }[tag] || tag));
 }
 
 function resetTelemetryConsole() {
@@ -124,7 +141,7 @@ function resetTelemetryConsole() {
     textWasPasted = false;
     keystrokeGaps = [];
     mouseMovementsRecorded = 0;
-    lastKeyTime = Date.now();
+    lastKeyTime = null;
     textBox.value = '';
     nicknameInput.value = '';
     statPaste.textContent = "FALSE";
@@ -134,10 +151,10 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// Kick off the first database load on startup
+// Initial fetch on page load
 loadForumPosts();
 
-// Process form submissions over the network pipe
+// Form submission handler
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
     
@@ -161,8 +178,12 @@ forumForm.addEventListener('submit', async (event) => {
 
     let authorName = nicknameInput.value.trim() || "Anonymous";
 
-    // --- SUCCESS PATH: HUMAN VERIFIED & TRANSMITTED TO CLOUD ---
-    const { error } = await supabase
+    if (!supabaseClient) {
+        alert("Client error: Supabase client is not connected.");
+        return;
+    }
+
+    const { error } = await supabaseClient
         .from('posts')
         .insert([
             { thread: topicSelect.value, author: authorName, content: textBox.value }
@@ -174,7 +195,6 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    // Refresh view states from the internet
     loadForumPosts();
     resetTelemetryConsole();
 });
