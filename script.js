@@ -46,6 +46,7 @@ const statUniformity = document.getElementById('stat-uniformity');
 // DOM Elements - Modal & Messaging
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
+const notifBadge = document.getElementById('notif-badge');
 const dmModal = document.getElementById('dm-modal');
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
@@ -57,7 +58,7 @@ const dmForm = document.getElementById('dm-form');
 const dmText = document.getElementById('dm-text');
 const dmSendBtn = document.getElementById('dm-send-btn');
 
-// DOM Elements - Group Creation Drawer
+// DOM Elements - Group Creator
 const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
 const groupCreatorBox = document.getElementById('group-creator-box');
 const groupNameInput = document.getElementById('group-name-input');
@@ -69,10 +70,10 @@ const cancelGroupBtn = document.getElementById('cancel-group-btn');
 let currentUser = null;
 let currentUsername = null;
 let isSignUpMode = false;
-let myFriendsList = []; // Array of { id, username }
+let myFriendsList = [];
 let activeConversationId = null;
-let activeConversationTitle = "";
 let dmInterval = null;
+let notifPollInterval = null;
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -100,13 +101,20 @@ async function syncUserState(user) {
         authPanel.classList.add('hidden');
         postPanel.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
+
+        // Start polling for notifications every 4 seconds
+        checkNotifications();
+        if (notifPollInterval) clearInterval(notifPollInterval);
+        notifPollInterval = setInterval(checkNotifications, 4000);
     } else {
         currentUser = null;
         currentUsername = null;
         activeConversationId = null;
         if (dmInterval) clearInterval(dmInterval);
+        if (notifPollInterval) clearInterval(notifPollInterval);
         postPanel.classList.add('hidden');
         openDmBtn.classList.add('hidden');
+        notifBadge.classList.add('hidden');
         dmModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
     }
@@ -189,6 +197,46 @@ logoutBtn.addEventListener('click', async () => {
     await db.auth.signOut();
 });
 
+// --- NOTIFICATION ENGINE ---
+
+async function checkNotifications() {
+    if (!currentUser || !db) return;
+
+    // Fetch conversations this user is part of
+    const { data: memberships } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    if (!memberships || memberships.length === 0) {
+        updateBadgeCount(0);
+        return;
+    }
+
+    const convIds = memberships.map(m => m.conversation_id);
+
+    // Count unread messages not authored by the current user
+    const { count, error } = await db
+        .from('chat_messages')
+        .select('*', { count: 'exact', head: true })
+        .in('conversation_id', convIds)
+        .neq('sender_id', currentUser.id)
+        .eq('is_read', false);
+
+    if (!error) {
+        updateBadgeCount(count || 0);
+    }
+}
+
+function updateBadgeCount(count) {
+    if (count > 0) {
+        notifBadge.textContent = count > 99 ? '99+' : count;
+        notifBadge.classList.remove('hidden');
+    } else {
+        notifBadge.classList.add('hidden');
+    }
+}
+
 // --- MODAL CONTROLS ---
 
 openDmBtn.addEventListener('click', () => {
@@ -199,12 +247,14 @@ openDmBtn.addEventListener('click', () => {
 closeDmBtn.addEventListener('click', () => {
     dmModal.classList.add('hidden');
     if (dmInterval) clearInterval(dmInterval);
+    checkNotifications();
 });
 
 dmModal.addEventListener('click', (e) => {
     if (e.target === dmModal) {
         dmModal.classList.add('hidden');
         if (dmInterval) clearInterval(dmInterval);
+        checkNotifications();
     }
 });
 
@@ -243,7 +293,6 @@ async function loadFriends() {
 
     myFriendsList = profiles || [];
 
-    // Render Friends list (for 1-on-1 DMs)
     friendsContainer.innerHTML = '';
     myFriendsList.forEach(friend => {
         const div = document.createElement('div');
@@ -254,7 +303,6 @@ async function loadFriends() {
         friendsContainer.appendChild(div);
     });
 
-    // Populate Group Creator checklist
     groupFriendsChecklist.innerHTML = '';
     myFriendsList.forEach(friend => {
         const item = document.createElement('label');
@@ -312,23 +360,21 @@ addFriendBtn.addEventListener('click', async () => {
     refreshMessagingHub();
 });
 
-// Load existing group chats user is part of
 async function loadConversations() {
     if (!currentUser) return;
 
-    const { data: memberships, error } = await db
+    const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
         .eq('user_id', currentUser.id);
 
-    if (error || !memberships || memberships.length === 0) {
+    if (!memberships || memberships.length === 0) {
         groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
         return;
     }
 
     const convIds = memberships.map(m => m.conversation_id);
 
-    // Fetch conversation details
     const { data: convs } = await db
         .from('conversations')
         .select('*')
@@ -350,9 +396,7 @@ async function loadConversations() {
     });
 }
 
-// 1-on-1 Chat Initiation
 async function startOrOpenDirectChat(friend) {
-    // Check if 1-on-1 conversation already exists between both users
     const { data: myConvs } = await db
         .from('conversation_members')
         .select('conversation_id')
@@ -381,7 +425,6 @@ async function startOrOpenDirectChat(friend) {
     if (existing1on1Id) {
         selectConversation(existing1on1Id, `@${friend.username}`);
     } else {
-        // Create new 1-on-1 conversation
         const { data: newConv, error: convErr } = await db
             .from('conversations')
             .insert([{ is_group: false, created_by: currentUser.id }])
@@ -393,7 +436,6 @@ async function startOrOpenDirectChat(friend) {
             return;
         }
 
-        // Add both members
         await db.from('conversation_members').insert([
             { conversation_id: newConv.id, user_id: currentUser.id },
             { conversation_id: newConv.id, user_id: friend.id }
@@ -427,7 +469,6 @@ createGroupConfirmBtn.addEventListener('click', async () => {
         return;
     }
 
-    // 1. Create conversation record
     const { data: newGroup, error: groupErr } = await db
         .from('conversations')
         .insert([{
@@ -443,7 +484,6 @@ createGroupConfirmBtn.addEventListener('click', async () => {
         return;
     }
 
-    // 2. Add creator and all selected friends as members
     const membersToInsert = [
         { conversation_id: newGroup.id, user_id: currentUser.id },
         ...selectedFriendIds.map(fId => ({ conversation_id: newGroup.id, user_id: fId }))
@@ -466,12 +506,10 @@ createGroupConfirmBtn.addEventListener('click', async () => {
 
 function selectConversation(conversationId, title) {
     activeConversationId = conversationId;
-    activeConversationTitle = title;
     chatHeader.textContent = title;
     dmText.disabled = false;
     dmSendBtn.disabled = false;
 
-    // Highlight selected item in UI
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
     loadMessages();
@@ -505,13 +543,22 @@ async function loadMessages() {
         const bubble = document.createElement('div');
         bubble.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}`;
         
-        // Show sender's username above messages from others in group chats
         const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
         bubble.innerHTML = `${authorHtml}<div>${escapeHTML(msg.content)}</div>`;
         chatMessages.appendChild(bubble);
     });
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Mark messages in this active chat as read
+    await db
+        .from('chat_messages')
+        .update({ is_read: true })
+        .eq('conversation_id', activeConversationId)
+        .neq('sender_id', currentUser.id)
+        .eq('is_read', false);
+
+    checkNotifications();
 }
 
 dmForm.addEventListener('submit', async (e) => {
