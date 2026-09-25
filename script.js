@@ -2,7 +2,6 @@
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
-// Explicitly persist authentication in browser localStorage
 const db = (window.supabase && typeof window.supabase.createClient === 'function')
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -44,24 +43,35 @@ const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
-// DOM Elements - Modal & DMs
+// DOM Elements - Modal & Messaging
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
 const dmModal = document.getElementById('dm-modal');
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
 const friendsContainer = document.getElementById('friends-container');
+const groupsContainer = document.getElementById('groups-container');
 const chatHeader = document.getElementById('chat-header');
 const chatMessages = document.getElementById('chat-messages');
 const dmForm = document.getElementById('dm-form');
 const dmText = document.getElementById('dm-text');
 const dmSendBtn = document.getElementById('dm-send-btn');
 
+// DOM Elements - Group Creation Drawer
+const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
+const groupCreatorBox = document.getElementById('group-creator-box');
+const groupNameInput = document.getElementById('group-name-input');
+const groupFriendsChecklist = document.getElementById('group-friends-checklist');
+const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
+const cancelGroupBtn = document.getElementById('cancel-group-btn');
+
 // App State
 let currentUser = null;
 let currentUsername = null;
 let isSignUpMode = false;
-let activeFriend = null;
+let myFriendsList = []; // Array of { id, username }
+let activeConversationId = null;
+let activeConversationTitle = "";
 let dmInterval = null;
 
 // Telemetry State
@@ -93,7 +103,7 @@ async function syncUserState(user) {
     } else {
         currentUser = null;
         currentUsername = null;
-        activeFriend = null;
+        activeConversationId = null;
         if (dmInterval) clearInterval(dmInterval);
         postPanel.classList.add('hidden');
         openDmBtn.classList.add('hidden');
@@ -102,7 +112,6 @@ async function syncUserState(user) {
     }
 }
 
-// Check existing persistent session on boot
 if (db) {
     db.auth.getSession().then(({ data: { session } }) => {
         syncUserState(session?.user || null);
@@ -180,11 +189,11 @@ logoutBtn.addEventListener('click', async () => {
     await db.auth.signOut();
 });
 
-// --- DM MODAL VISIBILITY ---
+// --- MODAL CONTROLS ---
 
 openDmBtn.addEventListener('click', () => {
     dmModal.classList.remove('hidden');
-    loadFriends();
+    refreshMessagingHub();
 });
 
 closeDmBtn.addEventListener('click', () => {
@@ -192,7 +201,6 @@ closeDmBtn.addEventListener('click', () => {
     if (dmInterval) clearInterval(dmInterval);
 });
 
-// Close modal when clicking on the blurred background
 dmModal.addEventListener('click', (e) => {
     if (e.target === dmModal) {
         dmModal.classList.add('hidden');
@@ -200,7 +208,12 @@ dmModal.addEventListener('click', (e) => {
     }
 });
 
-// --- FRIENDS & DIRECT MESSAGING ---
+// --- MESSAGING & CONVERSATION HUB ---
+
+async function refreshMessagingHub() {
+    await loadFriends();
+    await loadConversations();
+}
 
 async function loadFriends() {
     if (!currentUser) return;
@@ -218,7 +231,8 @@ async function loadFriends() {
     const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
 
     if (friendIds.length === 0) {
-        friendsContainer.innerHTML = '<div class="no-posts">No friends yet. Add one above!</div>';
+        friendsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No friends yet. Add one above!</div>';
+        myFriendsList = [];
         return;
     }
 
@@ -227,13 +241,29 @@ async function loadFriends() {
         .select('id, username')
         .in('id', friendIds);
 
+    myFriendsList = profiles || [];
+
+    // Render Friends list (for 1-on-1 DMs)
     friendsContainer.innerHTML = '';
-    (profiles || []).forEach(friend => {
+    myFriendsList.forEach(friend => {
         const div = document.createElement('div');
-        div.className = `friend-item ${activeFriend && activeFriend.id === friend.id ? 'active' : ''}`;
+        div.className = 'conv-item';
+        div.id = `friend-item-${friend.id}`;
         div.textContent = `@${friend.username}`;
-        div.addEventListener('click', () => selectFriend(friend));
+        div.addEventListener('click', () => startOrOpenDirectChat(friend));
         friendsContainer.appendChild(div);
+    });
+
+    // Populate Group Creator checklist
+    groupFriendsChecklist.innerHTML = '';
+    myFriendsList.forEach(friend => {
+        const item = document.createElement('label');
+        item.className = 'checkbox-item';
+        item.innerHTML = `
+            <input type="checkbox" value="${friend.id}" class="group-friend-chk">
+            <span>@${escapeHTML(friend.username)}</span>
+        `;
+        groupFriendsChecklist.appendChild(item);
     });
 }
 
@@ -279,42 +309,194 @@ addFriendBtn.addEventListener('click', async () => {
 
     addFriendInput.value = '';
     alert(`Added @${targetProfile.username} as a friend!`);
-    loadFriends();
+    refreshMessagingHub();
 });
 
-function selectFriend(friend) {
-    activeFriend = friend;
-    chatHeader.textContent = `Chatting with @${friend.username}`;
+// Load existing group chats user is part of
+async function loadConversations() {
+    if (!currentUser) return;
+
+    const { data: memberships, error } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    if (error || !memberships || memberships.length === 0) {
+        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+        return;
+    }
+
+    const convIds = memberships.map(m => m.conversation_id);
+
+    // Fetch conversation details
+    const { data: convs } = await db
+        .from('conversations')
+        .select('*')
+        .in('id', convIds)
+        .eq('is_group', true);
+
+    groupsContainer.innerHTML = '';
+    if (!convs || convs.length === 0) {
+        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+        return;
+    }
+
+    convs.forEach(conv => {
+        const div = document.createElement('div');
+        div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
+        div.textContent = `💬 ${conv.name}`;
+        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`));
+        groupsContainer.appendChild(div);
+    });
+}
+
+// 1-on-1 Chat Initiation
+async function startOrOpenDirectChat(friend) {
+    // Check if 1-on-1 conversation already exists between both users
+    const { data: myConvs } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    const { data: theirConvs } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', friend.id);
+
+    const myIds = new Set((myConvs || []).map(c => c.conversation_id));
+    const common = (theirConvs || []).filter(c => myIds.has(c.conversation_id));
+
+    let existing1on1Id = null;
+    if (common.length > 0) {
+        const { data: convMatches } = await db
+            .from('conversations')
+            .select('id')
+            .in('id', common.map(c => c.conversation_id))
+            .eq('is_group', false)
+            .maybeSingle();
+
+        if (convMatches) existing1on1Id = convMatches.id;
+    }
+
+    if (existing1on1Id) {
+        selectConversation(existing1on1Id, `@${friend.username}`);
+    } else {
+        // Create new 1-on-1 conversation
+        const { data: newConv, error: convErr } = await db
+            .from('conversations')
+            .insert([{ is_group: false, created_by: currentUser.id }])
+            .select()
+            .single();
+
+        if (convErr) {
+            alert(`Error creating chat: ${convErr.message}`);
+            return;
+        }
+
+        // Add both members
+        await db.from('conversation_members').insert([
+            { conversation_id: newConv.id, user_id: currentUser.id },
+            { conversation_id: newConv.id, user_id: friend.id }
+        ]);
+
+        selectConversation(newConv.id, `@${friend.username}`);
+    }
+}
+
+// Group Chat Creation
+toggleGroupCreateBtn.addEventListener('click', () => {
+    groupCreatorBox.classList.toggle('hidden');
+});
+
+cancelGroupBtn.addEventListener('click', () => {
+    groupCreatorBox.classList.add('hidden');
+});
+
+createGroupConfirmBtn.addEventListener('click', async () => {
+    const groupName = groupNameInput.value.trim();
+    if (!groupName) {
+        alert("Please provide a group name.");
+        return;
+    }
+
+    const checkedBoxes = document.querySelectorAll('.group-friend-chk:checked');
+    const selectedFriendIds = Array.from(checkedBoxes).map(b => b.value);
+
+    if (selectedFriendIds.length === 0) {
+        alert("Please select at least one friend to add to the group.");
+        return;
+    }
+
+    // 1. Create conversation record
+    const { data: newGroup, error: groupErr } = await db
+        .from('conversations')
+        .insert([{
+            name: groupName,
+            is_group: true,
+            created_by: currentUser.id
+        }])
+        .select()
+        .single();
+
+    if (groupErr) {
+        alert(`Error creating group: ${groupErr.message}`);
+        return;
+    }
+
+    // 2. Add creator and all selected friends as members
+    const membersToInsert = [
+        { conversation_id: newGroup.id, user_id: currentUser.id },
+        ...selectedFriendIds.map(fId => ({ conversation_id: newGroup.id, user_id: fId }))
+    ];
+
+    const { error: membersErr } = await db
+        .from('conversation_members')
+        .insert(membersToInsert);
+
+    if (membersErr) {
+        alert(`Error adding group members: ${membersErr.message}`);
+        return;
+    }
+
+    groupNameInput.value = '';
+    groupCreatorBox.classList.add('hidden');
+    await loadConversations();
+    selectConversation(newGroup.id, `Group: ${groupName}`);
+});
+
+function selectConversation(conversationId, title) {
+    activeConversationId = conversationId;
+    activeConversationTitle = title;
+    chatHeader.textContent = title;
     dmText.disabled = false;
     dmSendBtn.disabled = false;
 
-    document.querySelectorAll('.friend-item').forEach(el => {
-        el.classList.toggle('active', el.textContent === `@${friend.username}`);
-    });
+    // Highlight selected item in UI
+    document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
-    loadDirectMessages();
+    loadMessages();
 
     if (dmInterval) clearInterval(dmInterval);
-    dmInterval = setInterval(loadDirectMessages, 3000);
+    dmInterval = setInterval(loadMessages, 3000);
 }
 
-async function loadDirectMessages() {
-    if (!currentUser || !activeFriend) return;
+async function loadMessages() {
+    if (!currentUser || !activeConversationId) return;
 
     const { data: messages, error } = await db
-        .from('direct_messages')
+        .from('chat_messages')
         .select('*')
-        .or(`and(sender_id.eq.${currentUser.id},recipient_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},recipient_id.eq.${currentUser.id})`)
+        .eq('conversation_id', activeConversationId)
         .order('id', { ascending: true });
 
     if (error) {
-        console.error("Error loading DMs:", error);
+        console.error("Error loading chat messages:", error);
         return;
     }
 
     chatMessages.innerHTML = '';
     if (!messages || messages.length === 0) {
-        chatMessages.innerHTML = '<div class="no-posts">No messages yet. Say hello!</div>';
+        chatMessages.innerHTML = '<div class="no-posts">No messages in this chat yet. Start the conversation!</div>';
         return;
     }
 
@@ -322,7 +504,10 @@ async function loadDirectMessages() {
         const isMine = msg.sender_id === currentUser.id;
         const bubble = document.createElement('div');
         bubble.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}`;
-        bubble.textContent = msg.content;
+        
+        // Show sender's username above messages from others in group chats
+        const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
+        bubble.innerHTML = `${authorHtml}<div>${escapeHTML(msg.content)}</div>`;
         chatMessages.appendChild(bubble);
     });
 
@@ -332,24 +517,24 @@ async function loadDirectMessages() {
 dmForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const content = dmText.value.trim();
-    if (!content || !activeFriend) return;
+    if (!content || !activeConversationId) return;
 
     const { error } = await db
-        .from('direct_messages')
+        .from('chat_messages')
         .insert([{
+            conversation_id: activeConversationId,
             sender_id: currentUser.id,
-            recipient_id: activeFriend.id,
             sender_username: currentUsername,
             content: content
         }]);
 
     if (error) {
-        alert(`Error sending DM: ${error.message}`);
+        alert(`Error sending message: ${error.message}`);
         return;
     }
 
     dmText.value = '';
-    loadDirectMessages();
+    loadMessages();
 });
 
 // --- TELEMETRY ---
