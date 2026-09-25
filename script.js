@@ -8,7 +8,7 @@ const db = (window.supabase && typeof window.supabase.createClient === 'function
 
 if (!db) console.error("Critical: window.supabase is not initialized.");
 
-// DOM Elements - Auth & Navigation
+// DOM Elements - Auth & Nav
 const authPanel = document.getElementById('auth-panel');
 const postPanel = document.getElementById('post-panel');
 const authForm = document.getElementById('authForm');
@@ -22,7 +22,7 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
-// DOM Elements - Forum & Feed
+// DOM Elements - Forum
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
@@ -36,10 +36,23 @@ const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
-// App & User State
+// DOM Elements - Friends & DMs
+const dmSection = document.getElementById('dm-section');
+const addFriendInput = document.getElementById('add-friend-input');
+const addFriendBtn = document.getElementById('add-friend-btn');
+const friendsContainer = document.getElementById('friends-container');
+const chatHeader = document.getElementById('chat-header');
+const chatMessages = document.getElementById('chat-messages');
+const dmForm = document.getElementById('dm-form');
+const dmText = document.getElementById('dm-text');
+const dmSendBtn = document.getElementById('dm-send-btn');
+
+// App State
 let currentUser = null;
 let currentUsername = null;
 let isSignUpMode = false;
+let activeFriend = null; // { id, username }
+let dmInterval = null;
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -50,9 +63,8 @@ let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
 
-// --- AUTHENTICATION HANDLING ---
+// --- AUTHENTICATION ---
 
-// Toggle between Login and Signup modes
 authToggleBtn.addEventListener('click', () => {
     isSignUpMode = !isSignUpMode;
     if (isSignUpMode) {
@@ -70,7 +82,6 @@ authToggleBtn.addEventListener('click', () => {
     }
 });
 
-// Submit Login or Signup
 authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = authEmailInput.value.trim();
@@ -79,11 +90,10 @@ authForm.addEventListener('submit', async (e) => {
     if (isSignUpMode) {
         const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
         if (username.length < 3) {
-            alert("Username must be at least 3 alphanumeric characters.");
+            alert("Username must be at least 3 characters (letters, numbers, underscores).");
             return;
         }
 
-        // Check if username already exists in profiles
         const { data: existingUser } = await db
             .from('profiles')
             .select('username')
@@ -91,11 +101,11 @@ authForm.addEventListener('submit', async (e) => {
             .maybeSingle();
 
         if (existingUser) {
-            alert("That username is already taken. Please choose another.");
+            alert("Username already taken. Please choose another.");
             return;
         }
 
-        const { data, error } = await db.auth.signUp({
+        const { error } = await db.auth.signUp({
             email,
             password,
             options: { data: { username: username } }
@@ -118,18 +128,16 @@ authForm.addEventListener('submit', async (e) => {
     }
 });
 
-// Logout
 logoutBtn.addEventListener('click', async () => {
+    if (dmInterval) clearInterval(dmInterval);
     await db.auth.signOut();
 });
 
-// Listen for Supabase Auth changes (Login, Logout, Session restore)
 if (db) {
     db.auth.onAuthStateChange(async (event, session) => {
         if (session && session.user) {
             currentUser = session.user;
-            
-            // Fetch username from profiles
+
             const { data: profile } = await db
                 .from('profiles')
                 .select('username')
@@ -141,16 +149,179 @@ if (db) {
 
             authPanel.classList.add('hidden');
             postPanel.classList.remove('hidden');
+            dmSection.classList.remove('hidden');
+
+            loadFriends();
         } else {
             currentUser = null;
             currentUsername = null;
+            activeFriend = null;
+            if (dmInterval) clearInterval(dmInterval);
             postPanel.classList.add('hidden');
+            dmSection.classList.add('hidden');
             authPanel.classList.remove('hidden');
         }
     });
 }
 
-// --- TELEMETRY ENGINE ---
+// --- FRIENDS & DIRECT MESSAGING ---
+
+async function loadFriends() {
+    if (!currentUser) return;
+
+    // Get friendships where current user is either party
+    const { data: friendships, error } = await db
+        .from('friendships')
+        .select('user_id, friend_id')
+        .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
+
+    if (error) {
+        console.error("Error loading friends:", error);
+        return;
+    }
+
+    const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
+
+    if (friendIds.length === 0) {
+        friendsContainer.innerHTML = '<div class="no-posts">No friends yet. Add one above!</div>';
+        return;
+    }
+
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, username')
+        .in('id', friendIds);
+
+    friendsContainer.innerHTML = '';
+    (profiles || []).forEach(friend => {
+        const div = document.createElement('div');
+        div.className = `friend-item ${activeFriend && activeFriend.id === friend.id ? 'active' : ''}`;
+        div.textContent = `@${friend.username}`;
+        div.addEventListener('click', () => selectFriend(friend));
+        friendsContainer.appendChild(div);
+    });
+}
+
+addFriendBtn.addEventListener('click', async () => {
+    const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
+    if (!targetUsername) return;
+
+    if (targetUsername === currentUsername) {
+        alert("You cannot add yourself as a friend.");
+        return;
+    }
+
+    // Find user by username
+    const { data: targetProfile, error: profileErr } = await db
+        .from('profiles')
+        .select('id, username')
+        .eq('username', targetUsername)
+        .maybeSingle();
+
+    if (profileErr || !targetProfile) {
+        alert("User not found.");
+        return;
+    }
+
+    // Check existing
+    const { data: existing } = await db
+        .from('friendships')
+        .select('id')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+    if (existing) {
+        alert("You are already friends with this user.");
+        return;
+    }
+
+    const { error: insertErr } = await db
+        .from('friendships')
+        .insert([{ user_id: currentUser.id, friend_id: targetProfile.id }]);
+
+    if (insertErr) {
+        alert(`Could not add friend: ${insertErr.message}`);
+        return;
+    }
+
+    addFriendInput.value = '';
+    alert(`Added @${targetProfile.username} as a friend!`);
+    loadFriends();
+});
+
+function selectFriend(friend) {
+    activeFriend = friend;
+    chatHeader.textContent = `Chatting with @${friend.username}`;
+    dmText.disabled = false;
+    dmSendBtn.disabled = false;
+
+    // Highlight selected in sidebar
+    document.querySelectorAll('.friend-item').forEach(el => {
+        el.classList.toggle('active', el.textContent === `@${friend.username}`);
+    });
+
+    loadDirectMessages();
+
+    // Poll for new messages every 3 seconds
+    if (dmInterval) clearInterval(dmInterval);
+    dmInterval = setInterval(loadDirectMessages, 3000);
+}
+
+async function loadDirectMessages() {
+    if (!currentUser || !activeFriend) return;
+
+    const { data: messages, error } = await db
+        .from('direct_messages')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUser.id},recipient_id.eq.${activeFriend.id}),and(sender_id.eq.${activeFriend.id},recipient_id.eq.${currentUser.id})`)
+        .order('id', { ascending: true });
+
+    if (error) {
+        console.error("Error loading DMs:", error);
+        return;
+    }
+
+    chatMessages.innerHTML = '';
+    if (!messages || messages.length === 0) {
+        chatMessages.innerHTML = '<div class="no-posts">No messages yet. Say hello!</div>';
+        return;
+    }
+
+    messages.forEach(msg => {
+        const isMine = msg.sender_id === currentUser.id;
+        const bubble = document.createElement('div');
+        bubble.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}`;
+        bubble.textContent = msg.content;
+        chatMessages.appendChild(bubble);
+    });
+
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+dmForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const content = dmText.value.trim();
+    if (!content || !activeFriend) return;
+
+    const { error } = await db
+        .from('direct_messages')
+        .insert([{
+            sender_id: currentUser.id,
+            recipient_id: activeFriend.id,
+            sender_username: currentUsername,
+            content: content
+        }]);
+
+    if (error) {
+        alert(`Error sending DM: ${error.message}`);
+        return;
+    }
+
+    dmText.value = '';
+    loadDirectMessages();
+});
+
+// --- TELEMETRY ---
 
 function startCompositionTimer() {
     if (timerInterval) clearInterval(timerInterval);
@@ -198,7 +369,7 @@ textBox.addEventListener('keydown', (e) => {
     statKeys.textContent = `${textBox.value.length + 1} keys`;
 });
 
-// --- FORUM FEED LOADER ---
+// --- FORUM FEED ---
 
 async function loadForumPosts() {
     const selectedThread = topicSelect.value;
@@ -271,10 +442,9 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// Initial feed load
 loadForumPosts();
 
-// --- FORUM SUBMISSION (Uses authenticated username) ---
+// --- FORUM SUBMISSION ---
 
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
@@ -304,13 +474,11 @@ forumForm.addEventListener('submit', async (event) => {
 
     const { error } = await db
         .from('Posts')
-        .insert([
-            { 
-                thread: topicSelect.value, 
-                author: currentUsername, // Automatically uses unique username
-                content: textBox.value 
-            }
-        ]);
+        .insert([{ 
+            thread: topicSelect.value, 
+            author: currentUsername, 
+            content: textBox.value 
+        }]);
 
     if (error) {
         alert(`Database Error: ${error.message}`);
