@@ -6,17 +6,28 @@
     <title>Human-Only Forum Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; position: relative; }
+        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: 20px 20px 40px; display: flex; flex-direction: column; align-items: center; position: relative; }
         
-        .top-nav { position: fixed; top: 18px; right: 24px; display: flex; align-items: center; gap: 12px; z-index: 50; }
+        /* Top Navigation Bar with Logo */
+        .top-banner {
+            max-width: 1000px; width: 100%; display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 20px; background-color: #1e293b; border: 1px solid #334155; border-radius: 14px;
+            margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+        }
+        .brand-container { display: flex; align-items: center; gap: 12px; }
+        .brand-logo-wrap { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; position: relative; }
+        .brand-title { font-size: 1.25rem; font-weight: 700; color: #f8fafc; letter-spacing: -0.02em; }
+        .brand-title span { color: #38bdf8; }
+
         .mail-btn-wrap { position: relative; display: inline-block; }
         .mail-btn {
-            background-color: #1e293b; border: 1px solid #334155; color: #38bdf8;
-            width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-size: 1.25rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+            background-color: #0f172a; border: 1px solid #334155; color: #38bdf8;
+            width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .mail-btn:hover { background-color: #0284c7; color: #ffffff; border-color: #38bdf8; transform: translateY(-1px); }
         
+        /* Top-level notification badge on mail icon */
         .notif-badge {
             position: absolute; top: -4px; right: -4px; background-color: #ef4444; color: #ffffff;
             font-size: 0.72rem; font-weight: 800; min-width: 19px; height: 19px; border-radius: 10px;
@@ -24,7 +35,14 @@
             pointer-events: none;
         }
 
-        .container { max-width: 1000px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; margin-top: 10px; }
+        /* Specific conversation badge in sidebar */
+        .conv-badge {
+            background-color: #ef4444; color: #ffffff; font-size: 0.7rem; font-weight: 800;
+            min-width: 18px; height: 18px; border-radius: 9px; display: inline-flex;
+            align-items: center; justify-content: center; padding: 0 5px;
+        }
+
+        .container { max-width: 1000px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; }
         @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
 
         .card { background-color: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
@@ -67,7 +85,7 @@
         .post-content { font-size: 1rem; line-height: 1.5; color: #e2e8f0; word-break: break-word; }
         .no-posts { text-align: center; color: #64748b; padding: 20px; font-style: italic; }
 
-        /* Messaging Modal & Mobile Native-App Flow */
+        /* Messaging Modal & Mobile Flow */
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px);
             display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px;
@@ -89,8 +107,8 @@
         .conv-item { padding: 10px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-size: 0.9rem; }
         .conv-item:hover { background-color: #1e293b; }
         .conv-item.active { background-color: #0369a1; color: #ffffff; font-weight: 600; }
-        
-        /* Mobile Portrait Switcher */
+        .conv-item-label { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
         .back-btn { background: transparent; border: none; color: #38bdf8; font-weight: 600; font-size: 0.95rem; cursor: pointer; padding: 0 6px 0 0; width: auto; display: none; }
 
         @media (max-width: 768px) {
@@ -100,7 +118,6 @@
             .back-btn { display: inline-block !important; }
         }
 
-        /* Friend Request Item */
         .req-item { background-color: #1e293b; padding: 8px 10px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem; }
         .req-actions { display: flex; gap: 6px; }
         .btn-accept { background-color: #16a34a; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 0.8rem; }
@@ -116,7 +133,6 @@
         .msg-author { font-size: 0.75rem; color: #38bdf8; font-weight: 600; margin-bottom: 2px; }
         .chat-img-thumb { max-width: 100%; max-height: 240px; border-radius: 6px; margin-top: 6px; display: block; object-fit: cover; }
 
-        /* Message input form & image upload */
         .dm-form { display: flex; gap: 8px; align-items: center; }
         .dm-form input[type="text"] { margin-bottom: 0; flex: 1; }
         .dm-form button { width: auto; white-space: nowrap; padding: 0 16px; height: 46px; }
@@ -128,7 +144,6 @@
         .upload-photo-label:hover { border-color: #38bdf8; }
         #dm-image-input { display: none; }
 
-        /* Group Drawer */
         .group-creator { background-color: #1e293b; border: 1px solid #475569; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .friend-checkbox-list { max-height: 100px; overflow-y: auto; background-color: #0f172a; padding: 8px; border-radius: 6px; margin-bottom: 10px; }
         .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; padding: 4px 0; }
@@ -140,15 +155,33 @@
 </head>
 <body>
 
-    <div class="top-nav">
+    <!-- TOP BANNER WITH BRAND LOGO & DIRECT MESSAGES BUTTON -->
+    <header class="top-banner">
+        <div class="brand-container">
+            <div class="brand-logo-wrap" title="Human-Only Verified">
+                <!-- Custom SVG: iMessage Send Button with Fingerprint Cutout -->
+                <svg width="38" height="38" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="48" fill="#0284c7"/>
+                    <!-- Upward Send Arrow Stem -->
+                    <path d="M50 72 V36" stroke="#ffffff" stroke-width="7" stroke-linecap="round"/>
+                    <path d="M35 48 L50 32 L65 48" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+                    <!-- Thumbprint Arc Overlays -->
+                    <path d="M30 68 C34 58, 42 52, 50 52 C58 52, 66 58, 70 68" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+                    <path d="M38 76 C41 68, 45 64, 50 64 C55 64, 59 68, 62 76" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.85"/>
+                    <path d="M24 60 C30 46, 40 40, 50 40 C60 40, 70 46, 76 60" stroke="#bae6fd" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+                </svg>
+            </div>
+            <div class="brand-title">Human<span>Only</span> Forum</div>
+        </div>
+
         <div class="mail-btn-wrap">
             <button id="open-dm-btn" class="mail-btn hidden" title="Messages & Group Chats">✉️</button>
             <span id="notif-badge" class="notif-badge hidden">0</span>
         </div>
-    </div>
+    </header>
 
     <div class="container">
-        <!-- LEFT PANEL: Auth or Post -->
+        <!-- LEFT PANEL: Auth or Post Creation -->
         <div class="card">
             <div id="auth-panel">
                 <h2 id="auth-header">🔑 Member Login</h2>
@@ -261,7 +294,7 @@
             </div>
 
             <div class="dm-layout">
-                <!-- Sidebar: Friends, Requests & Groups -->
+                <!-- Sidebar: Requests, Groups, & Friends with Unread Counters -->
                 <div id="sidebar-pane" class="sidebar-pane">
                     <div id="requests-header" class="sidebar-section-title hidden">📬 Friend Requests</div>
                     <div id="requests-container" class="conv-list"></div>
@@ -277,7 +310,7 @@
                     </div>
                 </div>
 
-                <!-- Chat Pane (Toggled on mobile) -->
+                <!-- Active Chat Pane -->
                 <div id="chat-pane" class="chat-pane mobile-hidden">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px;">
                         <button id="back-to-list-btn" class="back-btn">← Back</button>
@@ -290,7 +323,6 @@
                         <div class="no-posts">No active conversation selected.</div>
                     </div>
 
-                    <!-- Photo Upload & Message Input -->
                     <form id="dm-form" class="dm-form">
                         <label for="dm-image-input" class="upload-photo-label" title="Attach Photo">📷</label>
                         <input type="file" id="dm-image-input" accept="image/*" disabled>
