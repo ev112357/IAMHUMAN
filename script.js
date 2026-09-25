@@ -35,14 +35,24 @@ const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
 const postBarAvatar = document.getElementById('post-bar-avatar');
 
-// DOM Elements - Profile Modal
+// DOM Elements - Profile Modal & Password Fields
 const profileModal = document.getElementById('profile-modal');
 const closeProfileBtn = document.getElementById('close-profile-btn');
 const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
 const profileAvatarFile = document.getElementById('profile-avatar-file');
+const currentPasswordInput = document.getElementById('current-password-input');
 const newPasswordInput = document.getElementById('new-password-input');
+const confirmPasswordInput = document.getElementById('confirm-password-input');
 const updatePasswordBtn = document.getElementById('update-password-btn');
-const deleteAccountBtn = document.getElementById('delete-account-btn');
+
+// DOM Elements - Delete Account Confirmation Modal
+const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
+const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
+const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
+const deleteUsernameInput = document.getElementById('delete-username-input');
+const finalDeleteBtn = document.getElementById('final-delete-btn');
+const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
 
 // DOM Elements - Forum
 const forumForm = document.getElementById('forumForm');
@@ -62,6 +72,7 @@ const statUniformity = document.getElementById('stat-uniformity');
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
 const notifBadge = document.getElementById('notif-badge');
+const clearAllNotifsBtn = document.getElementById('clear-all-notifs-btn');
 const dmModal = document.getElementById('dm-modal');
 const topModalBar = document.getElementById('top-modal-bar');
 const sidebarPane = document.getElementById('sidebar-pane');
@@ -91,6 +102,9 @@ const groupFriendsChecklist = document.getElementById('group-friends-checklist')
 const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
 const cancelGroupBtn = document.getElementById('cancel-group-btn');
 
+// Default fallback avatar SVG
+const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='%2394a3b8' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
+
 // App State
 let currentUser = null;
 let currentUsername = null;
@@ -99,6 +113,7 @@ let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
 let unreadCountsByConv = new Map();
+let userAvatarCache = new Map(); // userId -> avatar_url
 let dmInterval = null;
 let notifPollInterval = null;
 
@@ -126,7 +141,12 @@ async function syncUserState(user) {
         currentAvatarUrl = profile?.avatar_url || null;
 
         currentUserTag.textContent = `@${currentUsername}`;
+        deleteConfirmUserTag.textContent = `@${currentUsername}`;
         renderUserAvatar(currentAvatarUrl);
+
+        if (currentAvatarUrl) {
+            userAvatarCache.set(currentUser.id, currentAvatarUrl);
+        }
 
         authPanel.classList.add('hidden');
         postPanel.classList.remove('hidden');
@@ -150,6 +170,7 @@ async function syncUserState(user) {
         notifBadge.classList.add('hidden');
         dmModal.classList.add('hidden');
         profileModal.classList.add('hidden');
+        deleteConfirmModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
     }
 }
@@ -168,7 +189,7 @@ function renderUserAvatar(url) {
         headerAvatarImg.classList.add('hidden');
         headerAvatarFallback.classList.remove('hidden');
         postBarAvatar.classList.add('hidden');
-        profilePreviewAvatar.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
+        profilePreviewAvatar.src = DEFAULT_AVATAR;
     }
 }
 
@@ -283,7 +304,6 @@ profileAvatarFile.addEventListener('change', async () => {
     const { data: publicData } = db.storage.from('avatars').getPublicUrl(filePath);
     const newAvatarUrl = publicData.publicUrl;
 
-    // Update in profiles table
     const { error: updateErr } = await db
         .from('profiles')
         .update({ avatar_url: newAvatarUrl })
@@ -295,51 +315,95 @@ profileAvatarFile.addEventListener('change', async () => {
     }
 
     currentAvatarUrl = newAvatarUrl;
+    userAvatarCache.set(currentUser.id, currentAvatarUrl);
     renderUserAvatar(currentAvatarUrl);
     alert("Avatar updated successfully!");
 });
 
 // Password Change
 updatePasswordBtn.addEventListener('click', async () => {
+    const currentPassword = currentPasswordInput.value;
     const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+
+    if (!currentPassword) {
+        alert("Please enter your current password.");
+        return;
+    }
     if (!newPassword || newPassword.length < 6) {
         alert("New password must be at least 6 characters.");
         return;
     }
+    if (newPassword !== confirmPassword) {
+        alert("The new passwords do not match. Please re-enter them identically.");
+        return;
+    }
 
     updatePasswordBtn.disabled = true;
+    updatePasswordBtn.textContent = 'Verifying...';
+
+    const { error: authErr } = await db.auth.signInWithPassword({
+        email: currentUser.email,
+        password: currentPassword
+    });
+
+    if (authErr) {
+        updatePasswordBtn.disabled = false;
+        updatePasswordBtn.textContent = 'Update Password';
+        alert("Incorrect current password. Please try again.");
+        return;
+    }
+
     updatePasswordBtn.textContent = 'Updating...';
 
-    const { error } = await db.auth.updateUser({ password: newPassword });
+    const { error: updateErr } = await db.auth.updateUser({ password: newPassword });
 
     updatePasswordBtn.disabled = false;
     updatePasswordBtn.textContent = 'Update Password';
 
-    if (error) {
-        alert(`Password change failed: ${error.message}`);
+    if (updateErr) {
+        alert(`Password change failed: ${updateErr.message}`);
     } else {
         alert("Password updated successfully!");
+        currentPasswordInput.value = '';
         newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
     }
 });
 
 // Account Deletion
-deleteAccountBtn.addEventListener('click', async () => {
-    const confirmDelete = confirm("Are you sure you want to delete your account? This action cannot be undone.");
-    if (!confirmDelete) return;
+openDeleteModalBtn.addEventListener('click', () => {
+    deleteConfirmModal.classList.remove('hidden');
+    deleteUsernameInput.value = '';
+});
 
-    const promptUser = prompt(`To verify, type your username "@${currentUsername}":`);
-    if (promptUser !== `@${currentUsername}` && promptUser !== currentUsername) {
-        alert("Username verification did not match. Deletion cancelled.");
+closeDeleteModalBtn.addEventListener('click', () => {
+    deleteConfirmModal.classList.add('hidden');
+});
+
+cancelDeleteBtn.addEventListener('click', () => {
+    deleteConfirmModal.classList.add('hidden');
+});
+
+deleteConfirmModal.addEventListener('click', (e) => {
+    if (e.target === deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
+});
+
+finalDeleteBtn.addEventListener('click', async () => {
+    const entered = deleteUsernameInput.value.trim().toLowerCase().replace('@', '');
+    const expected = currentUsername.toLowerCase().replace('@', '');
+
+    if (entered !== expected) {
+        alert(`Username does not match. Please enter "@${currentUsername}" to confirm deletion.`);
         return;
     }
 
-    // 1. Remove profile and related records
+    finalDeleteBtn.disabled = true;
+    finalDeleteBtn.textContent = 'Deleting...';
+
     await db.from('profiles').delete().eq('id', currentUser.id);
-    
-    // 2. Sign out
     await db.auth.signOut();
-    alert("Account deleted. Thank you for participating.");
+    alert("Your account has been deleted.");
 });
 
 // --- NOTIFICATION ENGINE ---
@@ -408,6 +472,30 @@ function updateSidebarBadges() {
         }
     });
 }
+
+// Clear all notifications across all active conversations
+clearAllNotifsBtn.addEventListener('click', async () => {
+    if (!currentUser) return;
+
+    const { data: memberships } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    if (memberships && memberships.length > 0) {
+        const convIds = memberships.map(m => m.conversation_id);
+        await db
+            .from('chat_messages')
+            .update({ is_read: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', currentUser.id)
+            .eq('is_read', false);
+    }
+
+    unreadCountsByConv.clear();
+    notifBadge.classList.add('hidden');
+    updateSidebarBadges();
+});
 
 // --- MODAL CONTROLS & MOBILE VIEW TOGGLING ---
 
@@ -547,10 +635,13 @@ async function loadFriends() {
 
     const { data: profiles } = await db
         .from('profiles')
-        .select('id, username')
+        .select('id, username, avatar_url')
         .in('id', friendIds);
 
     myFriendsList = profiles || [];
+    myFriendsList.forEach(p => {
+        if (p.avatar_url) userAvatarCache.set(p.id, p.avatar_url);
+    });
 
     const { data: myMemberships } = await db
         .from('conversation_members')
@@ -835,29 +926,37 @@ function selectConversation(conversationId, title) {
         if (badge) badge.classList.add('hidden');
     }
 
-    // Force bottom scroll when opening a conversation
     loadMessages(true);
 
     if (dmInterval) clearInterval(dmInterval);
     dmInterval = setInterval(() => loadMessages(false), 3000);
 }
 
-// Fixed Scroll Position Engine
 function scrollToBottom(force = false) {
     if (!chatMessages) return;
-    
-    // Check if user has intentionally scrolled up (more than 120px from bottom)
     const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 120;
     
     if (force || isNearBottom) {
-        // Immediate scroll
         chatMessages.scrollTop = chatMessages.scrollHeight;
-        
-        // Secondary scroll after microtask finishes DOM recalculation
         requestAnimationFrame(() => {
             chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     }
+}
+
+// Fetch avatars of senders dynamically
+async function ensureAvatarsCached(userIds) {
+    const missing = userIds.filter(id => !userAvatarCache.has(id));
+    if (missing.length === 0) return;
+
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, avatar_url')
+        .in('id', missing);
+
+    (profiles || []).forEach(p => {
+        userAvatarCache.set(p.id, p.avatar_url || null);
+    });
 }
 
 async function loadMessages(forceScroll = false) {
@@ -874,10 +973,9 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
-    // Detect if content changed before rebuilding DOM
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
     if (!forceScroll && messages && messages.length === currentMsgCount) {
-        return; // Nothing changed, don't flicker or touch scroll
+        return;
     }
 
     chatMessages.innerHTML = '';
@@ -886,29 +984,41 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
+    // Cache any senders' avatars
+    const senderIds = Array.from(new Set(messages.map(m => m.sender_id)));
+    await ensureAvatarsCached(senderIds);
+
     messages.forEach(msg => {
         const isMine = msg.sender_id === currentUser.id;
-        const bubble = document.createElement('div');
-        bubble.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}`;
-        
+        const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
+
+        const row = document.createElement('div');
+        row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
+
+        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
         const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
         const textHtml = msg.content ? `<div>${escapeHTML(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
 
-        bubble.innerHTML = `${authorHtml}${textHtml}${imgHtml}`;
+        const bubbleHtml = `
+            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}">
+                ${authorHtml}${textHtml}${imgHtml}
+            </div>
+        `;
 
-        // Ensure newly loaded images adjust scroll to bottom instead of jumping to top
-        const img = bubble.querySelector('img');
-        if (img) {
-            img.onload = () => scrollToBottom(forceScroll);
+        // Position PFP to the left of incoming messages, right of outgoing messages
+        row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
+
+        const attachedImg = row.querySelector('.chat-img-thumb');
+        if (attachedImg) {
+            attachedImg.onload = () => scrollToBottom(forceScroll);
         }
 
-        chatMessages.appendChild(bubble);
+        chatMessages.appendChild(row);
     });
 
     scrollToBottom(forceScroll);
 
-    // Mark unread messages as read
     await db
         .from('chat_messages')
         .update({ is_read: true })
@@ -992,7 +1102,6 @@ dmForm.addEventListener('submit', async (e) => {
     label.style.borderColor = '#475569';
     label.title = 'Attach Photo';
 
-    // Force scroll on new self-sent message
     loadMessages(true);
 });
 
