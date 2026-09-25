@@ -5,25 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Human-Only Forum Dashboard</title>
     <style>
-        /* Base Styling & Dark Mode Theme */
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; }
         
         .container { max-width: 1000px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; }
         @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
 
-        /* Card Panels */
         .card { background-color: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        h2 { font-size: 1.5rem; margin-bottom: 20px; color: #38bdf8; display: flex; align-items: center; gap: 10px; }
+        h2 { font-size: 1.5rem; margin-bottom: 20px; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
 
-        /* Form Elements */
         label { display: block; font-size: 0.875rem; margin-bottom: 8px; color: #94a3b8; font-weight: 500; }
-        select, textarea, input[type="text"] { width: 100%; background-color: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #f8fafc; padding: 12px; font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 15px; }
+        select, textarea, input[type="text"], input[type="email"], input[type="password"] { 
+            width: 100%; background-color: #0f172a; border: 1px solid #475569; border-radius: 8px; 
+            color: #f8fafc; padding: 12px; font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 15px; 
+        }
         textarea { height: 120px; resize: none; }
-        select:focus, textarea:focus, input[type="text"]:focus { border-color: #38bdf8; }
+        select:focus, textarea:focus, input:focus { border-color: #38bdf8; }
         
         button { width: 100%; padding: 12px; background-color: #0284c7; color: #ffffff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
         button:hover { background-color: #0369a1; }
+        button.secondary { background-color: transparent; border: 1px solid #475569; color: #94a3b8; margin-top: 10px; }
+        button.secondary:hover { background-color: #334155; color: #f8fafc; }
+
+        .auth-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 10px 16px; background-color: #0f172a; border-radius: 8px; border: 1px solid #334155; }
+        .auth-status { font-size: 0.9rem; color: #94a3b8; }
+        .auth-status strong { color: #38bdf8; }
+        .btn-small { width: auto; padding: 6px 12px; font-size: 0.85rem; }
 
         /* Security Console Output Styles */
         .console-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #334155; font-size: 0.95rem; }
@@ -31,56 +38,78 @@
         .label-text { color: #94a3b8; }
         .value-text { font-family: monospace; font-weight: 600; color: #e2e8f0; }
         
-        /* Status Badges */
         .badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
         .badge-green { background-color: #16a34a; color: #ffffff; }
         .badge-red { background-color: #dc2626; color: #ffffff; }
 
-        /* Post History Feed Area */
+        /* Post Feed */
         .feed-card { max-width: 1000px; width: 100%; background-color: #1e293b; padding: 30px; border-radius: 12px; border: 1px solid #334155; }
         .post-item { background-color: #0f172a; padding: 20px; border-radius: 8px; border-left: 4px solid #38bdf8; margin-bottom: 15px; }
         .post-item:last-child { margin-bottom: 0; }
         .post-meta { display: flex; justify-content: space-between; font-size: 0.85rem; color: #64748b; margin-bottom: 8px; }
         .post-author { color: #e2e8f0; font-weight: 600; }
-        .post-thread-tag { background-color: #1e293b; color: #38bdf8; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
         .post-content { font-size: 1rem; line-height: 1.5; color: #e2e8f0; word-break: break-word; }
         .no-posts { text-align: center; color: #64748b; padding: 20px; font-style: italic; }
 
-        /* Honeypot Hiding CSS */
+        .hidden { display: none !important; }
         .hidden-honeypot { display: none !important; visibility: hidden !important; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <!-- LEFT PANEL: The Forum Submission Interface -->
+        <!-- LEFT PANEL: Auth Box OR Forum Form -->
         <div class="card">
-            <h2>✍️ Create Forum Post</h2>
-            <form id="forumForm">
-                <label for="topic-select">Select Topic Thread</label>
-                <select id="topic-select">
-                    <option value="Text Thread #1">Text Thread #1</option>
-                    <option value="Text Thread #2">Text Thread #2</option>
-                    <option value="Text Thread #3">Text Thread #3</option>
-                </select>
+            <!-- 1. LOGIN / SIGNUP VIEW -->
+            <div id="auth-panel">
+                <h2 id="auth-header">🔑 Member Login</h2>
+                <form id="authForm">
+                    <div id="username-field-group" class="hidden">
+                        <label for="auth-username">Unique Username</label>
+                        <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
+                    </div>
 
-                <label for="user-nickname">Choose Nickname (Leave blank for Anonymous)</label>
-                <input type="text" id="user-nickname" placeholder="e.g., Peepo Beepo" autocomplete="off">
+                    <label for="auth-email">Email</label>
+                    <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
 
-                <label for="forum-post">Your Message</label>
-                <textarea id="forum-post" placeholder="Type your human thoughts..."></textarea>
-                
-                <!-- Hidden Honeypot Field -->
-                <div class="hidden-honeypot">
-                    <label>Bot Trap:</label>
-                    <input type="text" id="honeypot-field" autocomplete="off">
+                    <label for="auth-password">Password</label>
+                    <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+
+                    <button type="submit" id="auth-submit-btn">Log In</button>
+                    <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
+                </form>
+            </div>
+
+            <!-- 2. FORUM SUBMISSION VIEW (Hidden until user logs in) -->
+            <div id="post-panel" class="hidden">
+                <div class="auth-bar">
+                    <span class="auth-status">Logged in as: <strong id="current-user-tag">@username</strong></span>
+                    <button id="logout-btn" class="btn-small secondary">Log Out</button>
                 </div>
-                
-                <button type="submit">Publish to Forum</button>
-            </form>
+
+                <h2>✍️ Create Forum Post</h2>
+                <form id="forumForm">
+                    <label for="topic-select">Select Topic Thread</label>
+                    <select id="topic-select">
+                        <option value="Text Thread #1">Text Thread #1</option>
+                        <option value="Text Thread #2">Text Thread #2</option>
+                        <option value="Text Thread #3">Text Thread #3</option>
+                    </select>
+
+                    <label for="forum-post">Your Message</label>
+                    <textarea id="forum-post" placeholder="Type your human thoughts..."></textarea>
+                    
+                    <div class="hidden-honeypot">
+                        <label>Bot Trap:</label>
+                        <input type="text" id="honeypot-field" autocomplete="off">
+                    </div>
+                    
+                    <button type="submit">Publish to Forum</button>
+                </form>
+            </div>
         </div>
 
-        <!-- RIGHT PANEL: Live Security Console for Testers -->
+        <!-- RIGHT PANEL: Telemetry Console -->
         <div class="card">
             <h2>🛡️ Telemetry & Bot Analysis</h2>
             
@@ -106,21 +135,17 @@
         </div>
     </div>
 
-    <!-- BOTTOM PANEL: Live Forum Post History Feed -->
+    <!-- BOTTOM PANEL: Feed -->
     <div class="feed-card">
         <h2>📜 Active Forum Feed (<span id="current-thread-title">Text Thread #1</span>)</h2>
         <div id="forum-feed">
-            <div class="no-posts">No human content posted yet...</div>
+            <div class="no-posts">Loading posts...</div>
         </div>
     </div>
 
-    <!-- Vercel Web Analytics Tracker Script -->
+    <!-- Scripts -->
     <script defer src="/_vercel/insights/script.js"></script>
-
-    <!-- Supabase JS Client via jsDelivr CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
-    <!-- Application Logic (type="module" ensures proper scoping and deferral) -->
     <script type="module" src="script.js"></script>
 </body>
 </html>
