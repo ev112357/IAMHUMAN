@@ -50,6 +50,8 @@ const notifBadge = document.getElementById('notif-badge');
 const dmModal = document.getElementById('dm-modal');
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
+const requestsHeader = document.getElementById('requests-header');
+const requestsContainer = document.getElementById('requests-container');
 const friendsContainer = document.getElementById('friends-container');
 const groupsContainer = document.getElementById('groups-container');
 const chatHeader = document.getElementById('chat-header');
@@ -102,7 +104,6 @@ async function syncUserState(user) {
         postPanel.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
 
-        // Start polling for notifications every 4 seconds
         checkNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
         notifPollInterval = setInterval(checkNotifications, 4000);
@@ -202,30 +203,33 @@ logoutBtn.addEventListener('click', async () => {
 async function checkNotifications() {
     if (!currentUser || !db) return;
 
-    // Fetch conversations this user is part of
+    // 1. Pending incoming friend requests
+    const { count: pendingReqs } = await db
+        .from('friendships')
+        .select('*', { count: 'exact', head: true })
+        .eq('friend_id', currentUser.id)
+        .eq('status', 'pending');
+
+    // 2. Unread messages in joined conversations
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
         .eq('user_id', currentUser.id);
 
-    if (!memberships || memberships.length === 0) {
-        updateBadgeCount(0);
-        return;
+    let unreadCount = 0;
+    if (memberships && memberships.length > 0) {
+        const convIds = memberships.map(m => m.conversation_id);
+        const { count: msgCount } = await db
+            .from('chat_messages')
+            .select('*', { count: 'exact', head: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', currentUser.id)
+            .eq('is_read', false);
+        unreadCount = msgCount || 0;
     }
 
-    const convIds = memberships.map(m => m.conversation_id);
-
-    // Count unread messages not authored by the current user
-    const { count, error } = await db
-        .from('chat_messages')
-        .select('*', { count: 'exact', head: true })
-        .in('conversation_id', convIds)
-        .neq('sender_id', currentUser.id)
-        .eq('is_read', false);
-
-    if (!error) {
-        updateBadgeCount(count || 0);
-    }
+    const total = (pendingReqs || 0) + unreadCount;
+    updateBadgeCount(total);
 }
 
 function updateBadgeCount(count) {
@@ -261,16 +265,84 @@ dmModal.addEventListener('click', (e) => {
 // --- MESSAGING & CONVERSATION HUB ---
 
 async function refreshMessagingHub() {
+    await loadFriendRequests();
     await loadFriends();
     await loadConversations();
 }
 
+// Load pending incoming requests
+async function loadFriendRequests() {
+    if (!currentUser) return;
+
+    const { data: requests, error } = await db
+        .from('friendships')
+        .select('id, user_id')
+        .eq('friend_id', currentUser.id)
+        .eq('status', 'pending');
+
+    if (error || !requests || requests.length === 0) {
+        requestsHeader.classList.add('hidden');
+        requestsContainer.innerHTML = '';
+        return;
+    }
+
+    const requesterIds = requests.map(r => r.user_id);
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, username')
+        .in('id', requesterIds);
+
+    const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+
+    requestsHeader.classList.remove('hidden');
+    requestsContainer.innerHTML = '';
+
+    requests.forEach(req => {
+        const username = profileMap.get(req.user_id) || 'unknown';
+        const item = document.createElement('div');
+        item.className = 'req-item';
+        item.innerHTML = `
+            <span>@${escapeHTML(username)}</span>
+            <div class="req-actions">
+                <button class="btn-accept" title="Accept">✓</button>
+                <button class="btn-deny" title="Deny">✕</button>
+            </div>
+        `;
+
+        item.querySelector('.btn-accept').addEventListener('click', () => handleRequest(req.id, true));
+        item.querySelector('.btn-deny').addEventListener('click', () => handleRequest(req.id, false));
+        requestsContainer.appendChild(item);
+    });
+}
+
+async function handleRequest(requestId, accept) {
+    if (accept) {
+        const { error } = await db
+            .from('friendships')
+            .update({ status: 'accepted' })
+            .eq('id', requestId);
+
+        if (error) alert(`Error accepting request: ${error.message}`);
+    } else {
+        const { error } = await db
+            .from('friendships')
+            .delete()
+            .eq('id', requestId);
+
+        if (error) alert(`Error declining request: ${error.message}`);
+    }
+    refreshMessagingHub();
+    checkNotifications();
+}
+
+// Load accepted friends
 async function loadFriends() {
     if (!currentUser) return;
 
     const { data: friendships, error } = await db
         .from('friendships')
         .select('user_id, friend_id')
+        .eq('status', 'accepted')
         .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
 
     if (error) {
@@ -335,28 +407,40 @@ addFriendBtn.addEventListener('click', async () => {
         return;
     }
 
+    // Check if a request or friendship already exists
     const { data: existing } = await db
         .from('friendships')
-        .select('id')
+        .select('id, status, user_id')
         .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${currentUser.id})`)
         .maybeSingle();
 
     if (existing) {
-        alert("You are already friends with this user.");
+        if (existing.status === 'accepted') {
+            alert("You are already friends with this user.");
+        } else if (existing.user_id === currentUser.id) {
+            alert("Friend request already sent. Waiting for their response.");
+        } else {
+            alert("This user has already sent you a friend request! Check your requests above.");
+        }
         return;
     }
 
+    // Insert with status: 'pending'
     const { error: insertErr } = await db
         .from('friendships')
-        .insert([{ user_id: currentUser.id, friend_id: targetProfile.id }]);
+        .insert([{ 
+            user_id: currentUser.id, 
+            friend_id: targetProfile.id,
+            status: 'pending'
+        }]);
 
     if (insertErr) {
-        alert(`Could not add friend: ${insertErr.message}`);
+        alert(`Could not send request: ${insertErr.message}`);
         return;
     }
 
     addFriendInput.value = '';
-    alert(`Added @${targetProfile.username} as a friend!`);
+    alert(`Friend request sent to @${targetProfile.username}!`);
     refreshMessagingHub();
 });
 
@@ -550,7 +634,7 @@ async function loadMessages() {
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // Mark messages in this active chat as read
+    // Mark as read
     await db
         .from('chat_messages')
         .update({ is_read: true })
