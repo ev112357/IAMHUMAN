@@ -8,13 +8,22 @@
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; position: relative; }
         
+        /* Floating Top-Right Action Bar & Badge */
         .top-nav { position: fixed; top: 18px; right: 24px; display: flex; align-items: center; gap: 12px; z-index: 50; }
+        .mail-btn-wrap { position: relative; display: inline-block; }
         .mail-btn {
             background-color: #1e293b; border: 1px solid #334155; color: #38bdf8;
             width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
             font-size: 1.25rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
         }
         .mail-btn:hover { background-color: #0284c7; color: #ffffff; border-color: #38bdf8; transform: translateY(-1px); }
+        
+        .notif-badge {
+            position: absolute; top: -4px; right: -4px; background-color: #ef4444; color: #ffffff;
+            font-size: 0.72rem; font-weight: 800; min-width: 19px; height: 19px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #0f172a;
+            pointer-events: none;
+        }
 
         .container { max-width: 1000px; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px; margin-top: 10px; }
         @media (max-width: 768px) { .container { grid-template-columns: 1fr; } }
@@ -94,7 +103,7 @@
         .dm-form input { margin-bottom: 0; }
         .dm-form button { width: auto; white-space: nowrap; padding: 0 18px; }
 
-        /* Group Creator Popup Drawer */
+        /* Group Drawer */
         .group-creator { background-color: #1e293b; border: 1px solid #475569; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
         .friend-checkbox-list { max-height: 100px; overflow-y: auto; background-color: #0f172a; padding: 8px; border-radius: 6px; margin-bottom: 10px; }
         .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; padding: 4px 0; }
@@ -106,8 +115,12 @@
 </head>
 <body>
 
+    <!-- TOP-RIGHT MAIL TRIGGER WITH NOTIFICATION BADGE -->
     <div class="top-nav">
-        <button id="open-dm-btn" class="mail-btn hidden" title="Messages & Group Chats">✉️</button>
+        <div class="mail-btn-wrap">
+            <button id="open-dm-btn" class="mail-btn hidden" title="Messages & Group Chats">✉️</button>
+            <span id="notif-badge" class="notif-badge hidden">0</span>
+        </div>
     </div>
 
     <div class="container">
@@ -202,14 +215,13 @@
                 <button id="close-dm-btn" class="close-btn">&times;</button>
             </div>
             
-            <!-- Controls Bar: Add Friend & New Group -->
             <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
                 <input type="text" id="add-friend-input" placeholder="Add friend by @username" style="margin-bottom: 0; flex: 1; min-width: 180px;">
                 <button id="add-friend-btn" style="width: auto; white-space: nowrap; padding: 0 16px;">Add Friend</button>
                 <button id="toggle-group-create-btn" class="secondary" style="width: auto; margin-top: 0; padding: 0 14px;">+ New Group</button>
             </div>
 
-            <!-- Group Creator Form Drawer -->
+            <!-- Group Creator -->
             <div id="group-creator-box" class="group-creator hidden">
                 <label>Create Group Chat</label>
                 <input type="text" id="group-name-input" placeholder="Group Name (e.g. Secret Council)" style="margin-bottom: 8px;">
@@ -224,7 +236,6 @@
             </div>
 
             <div class="dm-layout">
-                <!-- Sidebar: Friends (DMs) & Groups -->
                 <div class="sidebar-pane">
                     <div class="sidebar-section-title">👥 Group Chats</div>
                     <div id="groups-container" class="conv-list" style="max-height: 140px; margin-bottom: 10px;">
@@ -237,7 +248,6 @@
                     </div>
                 </div>
 
-                <!-- Chat Pane -->
                 <div class="chat-pane">
                     <div id="chat-header" style="font-weight: 600; color: #38bdf8; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px;">
                         Select a friend or group to message
