@@ -2,8 +2,16 @@
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
+// Explicitly persist authentication in browser localStorage
 const db = (window.supabase && typeof window.supabase.createClient === 'function')
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+            persistSession: true,
+            storage: window.localStorage,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+        }
+    })
     : null;
 
 if (!db) console.error("Critical: window.supabase is not initialized.");
@@ -36,8 +44,10 @@ const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
-// DOM Elements - Friends & DMs
-const dmSection = document.getElementById('dm-section');
+// DOM Elements - Modal & DMs
+const openDmBtn = document.getElementById('open-dm-btn');
+const closeDmBtn = document.getElementById('close-dm-btn');
+const dmModal = document.getElementById('dm-modal');
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
 const friendsContainer = document.getElementById('friends-container');
@@ -51,7 +61,7 @@ const dmSendBtn = document.getElementById('dm-send-btn');
 let currentUser = null;
 let currentUsername = null;
 let isSignUpMode = false;
-let activeFriend = null; // { id, username }
+let activeFriend = null;
 let dmInterval = null;
 
 // Telemetry State
@@ -63,7 +73,45 @@ let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
 
-// --- AUTHENTICATION ---
+// --- SESSION & AUTHENTICATION ---
+
+async function syncUserState(user) {
+    if (user) {
+        currentUser = user;
+        const { data: profile } = await db
+            .from('profiles')
+            .select('username')
+            .eq('id', currentUser.id)
+            .maybeSingle();
+
+        currentUsername = profile?.username || currentUser.user_metadata?.username || "human";
+        currentUserTag.textContent = `@${currentUsername}`;
+
+        authPanel.classList.add('hidden');
+        postPanel.classList.remove('hidden');
+        openDmBtn.classList.remove('hidden');
+    } else {
+        currentUser = null;
+        currentUsername = null;
+        activeFriend = null;
+        if (dmInterval) clearInterval(dmInterval);
+        postPanel.classList.add('hidden');
+        openDmBtn.classList.add('hidden');
+        dmModal.classList.add('hidden');
+        authPanel.classList.remove('hidden');
+    }
+}
+
+// Check existing persistent session on boot
+if (db) {
+    db.auth.getSession().then(({ data: { session } }) => {
+        syncUserState(session?.user || null);
+    });
+
+    db.auth.onAuthStateChange((_event, session) => {
+        syncUserState(session?.user || null);
+    });
+}
 
 authToggleBtn.addEventListener('click', () => {
     isSignUpMode = !isSignUpMode;
@@ -90,7 +138,7 @@ authForm.addEventListener('submit', async (e) => {
     if (isSignUpMode) {
         const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
         if (username.length < 3) {
-            alert("Username must be at least 3 characters (letters, numbers, underscores).");
+            alert("Username must be at least 3 characters.");
             return;
         }
 
@@ -129,47 +177,34 @@ authForm.addEventListener('submit', async (e) => {
 });
 
 logoutBtn.addEventListener('click', async () => {
-    if (dmInterval) clearInterval(dmInterval);
     await db.auth.signOut();
 });
 
-if (db) {
-    db.auth.onAuthStateChange(async (event, session) => {
-        if (session && session.user) {
-            currentUser = session.user;
+// --- DM MODAL VISIBILITY ---
 
-            const { data: profile } = await db
-                .from('profiles')
-                .select('username')
-                .eq('id', currentUser.id)
-                .maybeSingle();
+openDmBtn.addEventListener('click', () => {
+    dmModal.classList.remove('hidden');
+    loadFriends();
+});
 
-            currentUsername = profile?.username || currentUser.user_metadata?.username || "human";
-            currentUserTag.textContent = `@${currentUsername}`;
+closeDmBtn.addEventListener('click', () => {
+    dmModal.classList.add('hidden');
+    if (dmInterval) clearInterval(dmInterval);
+});
 
-            authPanel.classList.add('hidden');
-            postPanel.classList.remove('hidden');
-            dmSection.classList.remove('hidden');
-
-            loadFriends();
-        } else {
-            currentUser = null;
-            currentUsername = null;
-            activeFriend = null;
-            if (dmInterval) clearInterval(dmInterval);
-            postPanel.classList.add('hidden');
-            dmSection.classList.add('hidden');
-            authPanel.classList.remove('hidden');
-        }
-    });
-}
+// Close modal when clicking on the blurred background
+dmModal.addEventListener('click', (e) => {
+    if (e.target === dmModal) {
+        dmModal.classList.add('hidden');
+        if (dmInterval) clearInterval(dmInterval);
+    }
+});
 
 // --- FRIENDS & DIRECT MESSAGING ---
 
 async function loadFriends() {
     if (!currentUser) return;
 
-    // Get friendships where current user is either party
     const { data: friendships, error } = await db
         .from('friendships')
         .select('user_id, friend_id')
@@ -211,7 +246,6 @@ addFriendBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Find user by username
     const { data: targetProfile, error: profileErr } = await db
         .from('profiles')
         .select('id, username')
@@ -223,7 +257,6 @@ addFriendBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Check existing
     const { data: existing } = await db
         .from('friendships')
         .select('id')
@@ -255,14 +288,12 @@ function selectFriend(friend) {
     dmText.disabled = false;
     dmSendBtn.disabled = false;
 
-    // Highlight selected in sidebar
     document.querySelectorAll('.friend-item').forEach(el => {
         el.classList.toggle('active', el.textContent === `@${friend.username}`);
     });
 
     loadDirectMessages();
 
-    // Poll for new messages every 3 seconds
     if (dmInterval) clearInterval(dmInterval);
     dmInterval = setInterval(loadDirectMessages, 3000);
 }
