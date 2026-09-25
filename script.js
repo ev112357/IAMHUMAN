@@ -48,6 +48,11 @@ const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
 const notifBadge = document.getElementById('notif-badge');
 const dmModal = document.getElementById('dm-modal');
+const topModalBar = document.getElementById('top-modal-bar');
+const sidebarPane = document.getElementById('sidebar-pane');
+const chatPane = document.getElementById('chat-pane');
+const backToListBtn = document.getElementById('back-to-list-btn');
+
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
 const requestsHeader = document.getElementById('requests-header');
@@ -56,11 +61,14 @@ const friendsContainer = document.getElementById('friends-container');
 const groupsContainer = document.getElementById('groups-container');
 const chatHeader = document.getElementById('chat-header');
 const chatMessages = document.getElementById('chat-messages');
+
+// Form & Photo Upload Inputs
 const dmForm = document.getElementById('dm-form');
 const dmText = document.getElementById('dm-text');
+const dmImageInput = document.getElementById('dm-image-input');
 const dmSendBtn = document.getElementById('dm-send-btn');
 
-// DOM Elements - Group Creator
+// Group Creator
 const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
 const groupCreatorBox = document.getElementById('group-creator-box');
 const groupNameInput = document.getElementById('group-name-input');
@@ -229,22 +237,19 @@ async function checkNotifications() {
     }
 
     const total = (pendingReqs || 0) + unreadCount;
-    updateBadgeCount(total);
-}
-
-function updateBadgeCount(count) {
-    if (count > 0) {
-        notifBadge.textContent = count > 99 ? '99+' : count;
+    if (total > 0) {
+        notifBadge.textContent = total > 99 ? '99+' : total;
         notifBadge.classList.remove('hidden');
     } else {
         notifBadge.classList.add('hidden');
     }
 }
 
-// --- MODAL CONTROLS ---
+// --- MODAL CONTROLS & MOBILE VIEW TOGGLING ---
 
 openDmBtn.addEventListener('click', () => {
     dmModal.classList.remove('hidden');
+    showSidebarViewOnMobile();
     refreshMessagingHub();
 });
 
@@ -262,6 +267,25 @@ dmModal.addEventListener('click', (e) => {
     }
 });
 
+function showSidebarViewOnMobile() {
+    sidebarPane.classList.remove('mobile-hidden');
+    chatPane.classList.add('mobile-hidden');
+    topModalBar.classList.remove('hidden');
+}
+
+function showChatViewOnMobile() {
+    sidebarPane.classList.add('mobile-hidden');
+    chatPane.classList.remove('mobile-hidden');
+    topModalBar.classList.add('hidden');
+}
+
+backToListBtn.addEventListener('click', () => {
+    if (dmInterval) clearInterval(dmInterval);
+    activeConversationId = null;
+    showSidebarViewOnMobile();
+    refreshMessagingHub();
+});
+
 // --- MESSAGING & CONVERSATION HUB ---
 
 async function refreshMessagingHub() {
@@ -270,7 +294,6 @@ async function refreshMessagingHub() {
     await loadConversations();
 }
 
-// Load pending incoming requests
 async function loadFriendRequests() {
     if (!currentUser) return;
 
@@ -335,7 +358,6 @@ async function handleRequest(requestId, accept) {
     checkNotifications();
 }
 
-// Load accepted friends
 async function loadFriends() {
     if (!currentUser) return;
 
@@ -407,7 +429,6 @@ addFriendBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Check if a request or friendship already exists
     const { data: existing } = await db
         .from('friendships')
         .select('id, status, user_id')
@@ -418,14 +439,13 @@ addFriendBtn.addEventListener('click', async () => {
         if (existing.status === 'accepted') {
             alert("You are already friends with this user.");
         } else if (existing.user_id === currentUser.id) {
-            alert("Friend request already sent. Waiting for their response.");
+            alert("Friend request already sent. Waiting for response.");
         } else {
-            alert("This user has already sent you a friend request! Check your requests above.");
+            alert("This user has already sent you a request! Check incoming requests.");
         }
         return;
     }
 
-    // Insert with status: 'pending'
     const { error: insertErr } = await db
         .from('friendships')
         .insert([{ 
@@ -549,7 +569,7 @@ createGroupConfirmBtn.addEventListener('click', async () => {
     const selectedFriendIds = Array.from(checkedBoxes).map(b => b.value);
 
     if (selectedFriendIds.length === 0) {
-        alert("Please select at least one friend to add to the group.");
+        alert("Please select at least one friend to add.");
         return;
     }
 
@@ -592,7 +612,11 @@ function selectConversation(conversationId, title) {
     activeConversationId = conversationId;
     chatHeader.textContent = title;
     dmText.disabled = false;
+    dmImageInput.disabled = false;
     dmSendBtn.disabled = false;
+
+    // Switch view on mobile to show the chat
+    showChatViewOnMobile();
 
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
@@ -628,7 +652,10 @@ async function loadMessages() {
         bubble.className = `msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}`;
         
         const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
-        bubble.innerHTML = `${authorHtml}<div>${escapeHTML(msg.content)}</div>`;
+        const textHtml = msg.content ? `<div>${escapeHTML(msg.content)}</div>` : '';
+        const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+
+        bubble.innerHTML = `${authorHtml}${textHtml}${imgHtml}`;
         chatMessages.appendChild(bubble);
     });
 
@@ -645,10 +672,56 @@ async function loadMessages() {
     checkNotifications();
 }
 
+// Visual cue when photo selected
+dmImageInput.addEventListener('change', () => {
+    const file = dmImageInput.files[0];
+    const label = document.querySelector('.upload-photo-label');
+    if (file) {
+        label.style.borderColor = '#16a34a';
+        label.title = `Attached: ${file.name}`;
+    } else {
+        label.style.borderColor = '#475569';
+        label.title = 'Attach Photo';
+    }
+});
+
+// Submit DM / Photo
 dmForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const content = dmText.value.trim();
-    if (!content || !activeConversationId) return;
+    const file = dmImageInput.files[0];
+
+    if (!content && !file) return;
+    if (!activeConversationId) return;
+
+    dmSendBtn.disabled = true;
+    dmSendBtn.textContent = '...';
+
+    let uploadedImageUrl = null;
+
+    if (file) {
+        // Generate clean unique filename
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
+        const filePath = `${activeConversationId}/${fileName}`;
+
+        const { error: uploadError } = await db.storage
+            .from('chat-images')
+            .upload(filePath, file);
+
+        if (uploadError) {
+            alert(`Photo upload failed: ${uploadError.message}`);
+            dmSendBtn.disabled = false;
+            dmSendBtn.textContent = 'Send';
+            return;
+        }
+
+        const { data: publicUrlData } = db.storage
+            .from('chat-images')
+            .getPublicUrl(filePath);
+
+        uploadedImageUrl = publicUrlData.publicUrl;
+    }
 
     const { error } = await db
         .from('chat_messages')
@@ -656,15 +729,25 @@ dmForm.addEventListener('submit', async (e) => {
             conversation_id: activeConversationId,
             sender_id: currentUser.id,
             sender_username: currentUsername,
-            content: content
+            content: content || '',
+            image_url: uploadedImageUrl
         }]);
+
+    dmSendBtn.disabled = false;
+    dmSendBtn.textContent = 'Send';
 
     if (error) {
         alert(`Error sending message: ${error.message}`);
         return;
     }
 
+    // Reset input fields & label styling
     dmText.value = '';
+    dmImageInput.value = '';
+    const label = document.querySelector('.upload-photo-label');
+    label.style.borderColor = '#475569';
+    label.title = 'Attach Photo';
+
     loadMessages();
 });
 
