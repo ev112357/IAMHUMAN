@@ -2,28 +2,44 @@
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
-// Safely access the global library from the CDN without naming collision
 const db = (window.supabase && typeof window.supabase.createClient === 'function')
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
     : null;
 
-if (!db) {
-    console.error("Critical: window.supabase is not available. Check your CDN script tag.");
-}
+if (!db) console.error("Critical: window.supabase is not initialized.");
 
-// DOM Elements
+// DOM Elements - Auth & Navigation
+const authPanel = document.getElementById('auth-panel');
+const postPanel = document.getElementById('post-panel');
+const authForm = document.getElementById('authForm');
+const authHeader = document.getElementById('auth-header');
+const authUsernameGroup = document.getElementById('username-field-group');
+const authUsernameInput = document.getElementById('auth-username');
+const authEmailInput = document.getElementById('auth-email');
+const authPasswordInput = document.getElementById('auth-password');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authToggleBtn = document.getElementById('auth-toggle-btn');
+const currentUserTag = document.getElementById('current-user-tag');
+const logoutBtn = document.getElementById('logout-btn');
+
+// DOM Elements - Forum & Feed
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
 const topicSelect = document.getElementById('topic-select');
-const nicknameInput = document.getElementById('user-nickname');
 const forumFeed = document.getElementById('forum-feed');
 const currentThreadTitle = document.getElementById('current-thread-title');
 
+// DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
 const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
+
+// App & User State
+let currentUser = null;
+let currentUsername = null;
+let isSignUpMode = false;
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -33,6 +49,108 @@ let lastKeyTime = null;
 let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
+
+// --- AUTHENTICATION HANDLING ---
+
+// Toggle between Login and Signup modes
+authToggleBtn.addEventListener('click', () => {
+    isSignUpMode = !isSignUpMode;
+    if (isSignUpMode) {
+        authHeader.textContent = "✨ Create Human Account";
+        authUsernameGroup.classList.remove('hidden');
+        authUsernameInput.required = true;
+        authSubmitBtn.textContent = "Sign Up";
+        authToggleBtn.textContent = "Already have an account? Log In";
+    } else {
+        authHeader.textContent = "🔑 Member Login";
+        authUsernameGroup.classList.add('hidden');
+        authUsernameInput.required = false;
+        authSubmitBtn.textContent = "Log In";
+        authToggleBtn.textContent = "Need an account? Sign Up";
+    }
+});
+
+// Submit Login or Signup
+authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = authEmailInput.value.trim();
+    const password = authPasswordInput.value;
+
+    if (isSignUpMode) {
+        const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
+        if (username.length < 3) {
+            alert("Username must be at least 3 alphanumeric characters.");
+            return;
+        }
+
+        // Check if username already exists in profiles
+        const { data: existingUser } = await db
+            .from('profiles')
+            .select('username')
+            .eq('username', username)
+            .maybeSingle();
+
+        if (existingUser) {
+            alert("That username is already taken. Please choose another.");
+            return;
+        }
+
+        const { data, error } = await db.auth.signUp({
+            email,
+            password,
+            options: { data: { username: username } }
+        });
+
+        if (error) {
+            alert(`Sign up error: ${error.message}`);
+            return;
+        }
+
+        alert("Account created successfully!");
+        authForm.reset();
+    } else {
+        const { error } = await db.auth.signInWithPassword({ email, password });
+        if (error) {
+            alert(`Login error: ${error.message}`);
+            return;
+        }
+        authForm.reset();
+    }
+});
+
+// Logout
+logoutBtn.addEventListener('click', async () => {
+    await db.auth.signOut();
+});
+
+// Listen for Supabase Auth changes (Login, Logout, Session restore)
+if (db) {
+    db.auth.onAuthStateChange(async (event, session) => {
+        if (session && session.user) {
+            currentUser = session.user;
+            
+            // Fetch username from profiles
+            const { data: profile } = await db
+                .from('profiles')
+                .select('username')
+                .eq('id', currentUser.id)
+                .maybeSingle();
+
+            currentUsername = profile?.username || currentUser.user_metadata?.username || "human";
+            currentUserTag.textContent = `@${currentUsername}`;
+
+            authPanel.classList.add('hidden');
+            postPanel.classList.remove('hidden');
+        } else {
+            currentUser = null;
+            currentUsername = null;
+            postPanel.classList.add('hidden');
+            authPanel.classList.remove('hidden');
+        }
+    });
+}
+
+// --- TELEMETRY ENGINE ---
 
 function startCompositionTimer() {
     if (timerInterval) clearInterval(timerInterval);
@@ -45,11 +163,9 @@ function startCompositionTimer() {
     }, 100);
 }
 
-// Interaction trackers
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
-// Detect paste
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
@@ -57,7 +173,6 @@ textBox.addEventListener('paste', () => {
     if (!isTimerRunning) startCompositionTimer();
 });
 
-// Detect keystrokes
 textBox.addEventListener('keydown', (e) => {
     if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
 
@@ -83,17 +198,14 @@ textBox.addEventListener('keydown', (e) => {
     statKeys.textContent = `${textBox.value.length + 1} keys`;
 });
 
-// Feed loader
+// --- FORUM FEED LOADER ---
+
 async function loadForumPosts() {
     const selectedThread = topicSelect.value;
     currentThreadTitle.textContent = selectedThread;
     
-    if (!db) {
-        forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Database client failed to connect. Check console.</div>`;
-        return;
-    }
+    if (!db) return;
 
-    // Updated from 'posts' to 'Posts' to match table casing
     const { data: posts, error } = await db
         .from('Posts')
         .select('*')
@@ -120,7 +232,7 @@ async function loadForumPosts() {
         
         item.innerHTML = `
             <div class="post-meta">
-                <span>By: <span class="post-author">${escapeHTML(post.author || 'Anonymous')}</span></span>
+                <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
                 <span>${dateFormatted}</span>
             </div>
             <div class="post-content">${escapeHTML(post.content || '')}</div>
@@ -152,7 +264,6 @@ function resetTelemetryConsole() {
     mouseMovementsRecorded = 0;
     lastKeyTime = null;
     textBox.value = '';
-    nicknameInput.value = '';
     statPaste.textContent = "FALSE";
     statPaste.className = "badge badge-green";
     statTimer.textContent = "0.0s"; 
@@ -160,13 +271,19 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// Initial fetch
+// Initial feed load
 loadForumPosts();
 
-// Form submit
+// --- FORUM SUBMISSION (Uses authenticated username) ---
+
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
     
+    if (!currentUsername) {
+        alert("You must be logged in to post.");
+        return;
+    }
+
     if (honeypotField.value !== "") {
         alert("Submission Blocked: Honeypot triggered.");
         return;
@@ -185,18 +302,14 @@ forumForm.addEventListener('submit', async (event) => {
     const uniformityRatio = keystrokeGaps.length > 2 ? (perfectIntervals / (keystrokeGaps.length - 2)) : 0;
     if (uniformityRatio > 0.60) { alert("Submission Blocked: Automation detected."); return; }
 
-    const authorName = nicknameInput.value.trim() || "Anonymous";
-
-    if (!db) {
-        alert("Database Error: Client connection not ready.");
-        return;
-    }
-
-    // Updated from 'posts' to 'Posts' to match table casing
     const { error } = await db
         .from('Posts')
         .insert([
-            { thread: topicSelect.value, author: authorName, content: textBox.value }
+            { 
+                thread: topicSelect.value, 
+                author: currentUsername, // Automatically uses unique username
+                content: textBox.value 
+            }
         ]);
 
     if (error) {
