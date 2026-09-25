@@ -29,6 +29,21 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
+// DOM Elements - Header Nav & Profile Bar
+const openProfileBtn = document.getElementById('open-profile-btn');
+const headerAvatarImg = document.getElementById('header-avatar-img');
+const headerAvatarFallback = document.getElementById('header-avatar-fallback');
+const postBarAvatar = document.getElementById('post-bar-avatar');
+
+// DOM Elements - Profile Modal
+const profileModal = document.getElementById('profile-modal');
+const closeProfileBtn = document.getElementById('close-profile-btn');
+const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
+const profileAvatarFile = document.getElementById('profile-avatar-file');
+const newPasswordInput = document.getElementById('new-password-input');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+const deleteAccountBtn = document.getElementById('delete-account-btn');
+
 // DOM Elements - Forum
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
@@ -79,10 +94,11 @@ const cancelGroupBtn = document.getElementById('cancel-group-btn');
 // App State
 let currentUser = null;
 let currentUsername = null;
+let currentAvatarUrl = null;
 let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
-let unreadCountsByConv = new Map(); // convId -> count
+let unreadCountsByConv = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
@@ -102,16 +118,20 @@ async function syncUserState(user) {
         currentUser = user;
         const { data: profile } = await db
             .from('profiles')
-            .select('username')
+            .select('username, avatar_url')
             .eq('id', currentUser.id)
             .maybeSingle();
 
         currentUsername = profile?.username || currentUser.user_metadata?.username || "human";
+        currentAvatarUrl = profile?.avatar_url || null;
+
         currentUserTag.textContent = `@${currentUsername}`;
+        renderUserAvatar(currentAvatarUrl);
 
         authPanel.classList.add('hidden');
         postPanel.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
+        openProfileBtn.classList.remove('hidden');
 
         checkNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
@@ -119,14 +139,36 @@ async function syncUserState(user) {
     } else {
         currentUser = null;
         currentUsername = null;
+        currentAvatarUrl = null;
         activeConversationId = null;
         if (dmInterval) clearInterval(dmInterval);
         if (notifPollInterval) clearInterval(notifPollInterval);
+
         postPanel.classList.add('hidden');
         openDmBtn.classList.add('hidden');
+        openProfileBtn.classList.add('hidden');
         notifBadge.classList.add('hidden');
         dmModal.classList.add('hidden');
+        profileModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
+    }
+}
+
+function renderUserAvatar(url) {
+    if (url) {
+        headerAvatarImg.src = url;
+        headerAvatarImg.classList.remove('hidden');
+        headerAvatarFallback.classList.add('hidden');
+
+        postBarAvatar.src = url;
+        postBarAvatar.classList.remove('hidden');
+
+        profilePreviewAvatar.src = url;
+    } else {
+        headerAvatarImg.classList.add('hidden');
+        headerAvatarFallback.classList.remove('hidden');
+        postBarAvatar.classList.add('hidden');
+        profilePreviewAvatar.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
     }
 }
 
@@ -207,19 +249,110 @@ logoutBtn.addEventListener('click', async () => {
     await db.auth.signOut();
 });
 
+// --- PROFILE SETTINGS CUSTOMIZATION ---
+
+openProfileBtn.addEventListener('click', () => {
+    profileModal.classList.remove('hidden');
+});
+
+closeProfileBtn.addEventListener('click', () => {
+    profileModal.classList.add('hidden');
+});
+
+profileModal.addEventListener('click', (e) => {
+    if (e.target === profileModal) profileModal.classList.add('hidden');
+});
+
+// Avatar Upload
+profileAvatarFile.addEventListener('change', async () => {
+    const file = profileAvatarFile.files[0];
+    if (!file || !currentUser) return;
+
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${currentUser.id}/avatar_${Date.now()}.${fileExt}`;
+
+    const { error: uploadErr } = await db.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+    if (uploadErr) {
+        alert(`Avatar upload failed: ${uploadErr.message}`);
+        return;
+    }
+
+    const { data: publicData } = db.storage.from('avatars').getPublicUrl(filePath);
+    const newAvatarUrl = publicData.publicUrl;
+
+    // Update in profiles table
+    const { error: updateErr } = await db
+        .from('profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', currentUser.id);
+
+    if (updateErr) {
+        alert(`Error updating profile: ${updateErr.message}`);
+        return;
+    }
+
+    currentAvatarUrl = newAvatarUrl;
+    renderUserAvatar(currentAvatarUrl);
+    alert("Avatar updated successfully!");
+});
+
+// Password Change
+updatePasswordBtn.addEventListener('click', async () => {
+    const newPassword = newPasswordInput.value;
+    if (!newPassword || newPassword.length < 6) {
+        alert("New password must be at least 6 characters.");
+        return;
+    }
+
+    updatePasswordBtn.disabled = true;
+    updatePasswordBtn.textContent = 'Updating...';
+
+    const { error } = await db.auth.updateUser({ password: newPassword });
+
+    updatePasswordBtn.disabled = false;
+    updatePasswordBtn.textContent = 'Update Password';
+
+    if (error) {
+        alert(`Password change failed: ${error.message}`);
+    } else {
+        alert("Password updated successfully!");
+        newPasswordInput.value = '';
+    }
+});
+
+// Account Deletion
+deleteAccountBtn.addEventListener('click', async () => {
+    const confirmDelete = confirm("Are you sure you want to delete your account? This action cannot be undone.");
+    if (!confirmDelete) return;
+
+    const promptUser = prompt(`To verify, type your username "@${currentUsername}":`);
+    if (promptUser !== `@${currentUsername}` && promptUser !== currentUsername) {
+        alert("Username verification did not match. Deletion cancelled.");
+        return;
+    }
+
+    // 1. Remove profile and related records
+    await db.from('profiles').delete().eq('id', currentUser.id);
+    
+    // 2. Sign out
+    await db.auth.signOut();
+    alert("Account deleted. Thank you for participating.");
+});
+
 // --- NOTIFICATION ENGINE ---
 
 async function checkNotifications() {
     if (!currentUser || !db) return;
 
-    // 1. Pending incoming friend requests
     const { count: pendingReqs } = await db
         .from('friendships')
         .select('*', { count: 'exact', head: true })
         .eq('friend_id', currentUser.id)
         .eq('status', 'pending');
 
-    // 2. Unread messages across all joined conversations
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
@@ -254,7 +387,6 @@ async function checkNotifications() {
         notifBadge.classList.add('hidden');
     }
 
-    // Refresh badges inline in the modal if it's currently open
     if (!dmModal.classList.contains('hidden')) {
         updateSidebarBadges();
     }
@@ -420,7 +552,6 @@ async function loadFriends() {
 
     myFriendsList = profiles || [];
 
-    // Pre-resolve 1-on-1 conversation IDs so friend rows can display unread badges
     const { data: myMemberships } = await db
         .from('conversation_members')
         .select('conversation_id, user_id')
@@ -693,12 +824,10 @@ function selectConversation(conversationId, title) {
     dmImageInput.disabled = false;
     dmSendBtn.disabled = false;
 
-    // Switch view on mobile to show the chat
     showChatViewOnMobile();
 
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
-    // Clear badge visually for this conversation
     const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
     if (activeEl) {
         activeEl.classList.add('active');
@@ -706,13 +835,32 @@ function selectConversation(conversationId, title) {
         if (badge) badge.classList.add('hidden');
     }
 
-    loadMessages();
+    // Force bottom scroll when opening a conversation
+    loadMessages(true);
 
     if (dmInterval) clearInterval(dmInterval);
-    dmInterval = setInterval(loadMessages, 3000);
+    dmInterval = setInterval(() => loadMessages(false), 3000);
 }
 
-async function loadMessages() {
+// Fixed Scroll Position Engine
+function scrollToBottom(force = false) {
+    if (!chatMessages) return;
+    
+    // Check if user has intentionally scrolled up (more than 120px from bottom)
+    const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 120;
+    
+    if (force || isNearBottom) {
+        // Immediate scroll
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        // Secondary scroll after microtask finishes DOM recalculation
+        requestAnimationFrame(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+    }
+}
+
+async function loadMessages(forceScroll = false) {
     if (!currentUser || !activeConversationId) return;
 
     const { data: messages, error } = await db
@@ -724,6 +872,12 @@ async function loadMessages() {
     if (error) {
         console.error("Error loading chat messages:", error);
         return;
+    }
+
+    // Detect if content changed before rebuilding DOM
+    const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
+    if (!forceScroll && messages && messages.length === currentMsgCount) {
+        return; // Nothing changed, don't flicker or touch scroll
     }
 
     chatMessages.innerHTML = '';
@@ -742,12 +896,19 @@ async function loadMessages() {
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
 
         bubble.innerHTML = `${authorHtml}${textHtml}${imgHtml}`;
+
+        // Ensure newly loaded images adjust scroll to bottom instead of jumping to top
+        const img = bubble.querySelector('img');
+        if (img) {
+            img.onload = () => scrollToBottom(forceScroll);
+        }
+
         chatMessages.appendChild(bubble);
     });
 
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+    scrollToBottom(forceScroll);
 
-    // Mark as read in DB and update local map
+    // Mark unread messages as read
     await db
         .from('chat_messages')
         .update({ is_read: true })
@@ -831,7 +992,8 @@ dmForm.addEventListener('submit', async (e) => {
     label.style.borderColor = '#475569';
     label.title = 'Attach Photo';
 
-    loadMessages();
+    // Force scroll on new self-sent message
+    loadMessages(true);
 });
 
 // --- TELEMETRY ---
