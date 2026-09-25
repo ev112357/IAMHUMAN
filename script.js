@@ -82,6 +82,7 @@ let currentUsername = null;
 let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
+let unreadCountsByConv = new Map(); // convId -> count
 let dmInterval = null;
 let notifPollInterval = null;
 
@@ -218,31 +219,62 @@ async function checkNotifications() {
         .eq('friend_id', currentUser.id)
         .eq('status', 'pending');
 
-    // 2. Unread messages in joined conversations
+    // 2. Unread messages across all joined conversations
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
         .eq('user_id', currentUser.id);
 
-    let unreadCount = 0;
+    let unreadTotal = 0;
+    unreadCountsByConv.clear();
+
     if (memberships && memberships.length > 0) {
         const convIds = memberships.map(m => m.conversation_id);
-        const { count: msgCount } = await db
+        const { data: unreadMsgs } = await db
             .from('chat_messages')
-            .select('*', { count: 'exact', head: true })
+            .select('conversation_id')
             .in('conversation_id', convIds)
             .neq('sender_id', currentUser.id)
             .eq('is_read', false);
-        unreadCount = msgCount || 0;
+
+        if (unreadMsgs) {
+            unreadTotal = unreadMsgs.length;
+            unreadMsgs.forEach(m => {
+                const cur = unreadCountsByConv.get(m.conversation_id) || 0;
+                unreadCountsByConv.set(m.conversation_id, cur + 1);
+            });
+        }
     }
 
-    const total = (pendingReqs || 0) + unreadCount;
+    const total = (pendingReqs || 0) + unreadTotal;
     if (total > 0) {
         notifBadge.textContent = total > 99 ? '99+' : total;
         notifBadge.classList.remove('hidden');
     } else {
         notifBadge.classList.add('hidden');
     }
+
+    // Refresh badges inline in the modal if it's currently open
+    if (!dmModal.classList.contains('hidden')) {
+        updateSidebarBadges();
+    }
+}
+
+function updateSidebarBadges() {
+    document.querySelectorAll('[data-conv-id]').forEach(el => {
+        const cId = el.getAttribute('data-conv-id');
+        const badge = el.querySelector('.conv-badge');
+        const count = unreadCountsByConv.get(cId) || 0;
+
+        if (badge) {
+            if (count > 0 && cId !== activeConversationId) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    });
 }
 
 // --- MODAL CONTROLS & MOBILE VIEW TOGGLING ---
@@ -292,6 +324,7 @@ async function refreshMessagingHub() {
     await loadFriendRequests();
     await loadFriends();
     await loadConversations();
+    updateSidebarBadges();
 }
 
 async function loadFriendRequests() {
@@ -387,12 +420,46 @@ async function loadFriends() {
 
     myFriendsList = profiles || [];
 
+    // Pre-resolve 1-on-1 conversation IDs so friend rows can display unread badges
+    const { data: myMemberships } = await db
+        .from('conversation_members')
+        .select('conversation_id, user_id')
+        .in('user_id', [currentUser.id, ...friendIds]);
+
+    const userConvMap = new Map();
+    (myMemberships || []).forEach(m => {
+        if (!userConvMap.has(m.user_id)) userConvMap.set(m.user_id, new Set());
+        userConvMap.get(m.user_id).add(m.conversation_id);
+    });
+
+    const myConvs = userConvMap.get(currentUser.id) || new Set();
+
     friendsContainer.innerHTML = '';
     myFriendsList.forEach(friend => {
+        const theirConvs = userConvMap.get(friend.id) || new Set();
+        let directConvId = null;
+        for (let cId of theirConvs) {
+            if (myConvs.has(cId)) {
+                directConvId = cId;
+                break;
+            }
+        }
+
         const div = document.createElement('div');
         div.className = 'conv-item';
         div.id = `friend-item-${friend.id}`;
-        div.textContent = `@${friend.username}`;
+        if (directConvId) div.setAttribute('data-conv-id', directConvId);
+
+        const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
+        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
+        div.innerHTML = `
+            <div class="conv-item-label">
+                <span>@${escapeHTML(friend.username)}</span>
+            </div>
+            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+        `;
+
         div.addEventListener('click', () => startOrOpenDirectChat(friend));
         friendsContainer.appendChild(div);
     });
@@ -494,7 +561,18 @@ async function loadConversations() {
     convs.forEach(conv => {
         const div = document.createElement('div');
         div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
-        div.textContent = `💬 ${conv.name}`;
+        div.setAttribute('data-conv-id', conv.id);
+
+        const unreadCount = unreadCountsByConv.get(conv.id) || 0;
+        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
+        div.innerHTML = `
+            <div class="conv-item-label">
+                <span>💬 ${escapeHTML(conv.name)}</span>
+            </div>
+            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+        `;
+
         div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`));
         groupsContainer.appendChild(div);
     });
@@ -620,6 +698,14 @@ function selectConversation(conversationId, title) {
 
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
+    // Clear badge visually for this conversation
+    const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
+    if (activeEl) {
+        activeEl.classList.add('active');
+        const badge = activeEl.querySelector('.conv-badge');
+        if (badge) badge.classList.add('hidden');
+    }
+
     loadMessages();
 
     if (dmInterval) clearInterval(dmInterval);
@@ -661,7 +747,7 @@ async function loadMessages() {
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // Mark as read
+    // Mark as read in DB and update local map
     await db
         .from('chat_messages')
         .update({ is_read: true })
@@ -669,10 +755,10 @@ async function loadMessages() {
         .neq('sender_id', currentUser.id)
         .eq('is_read', false);
 
+    unreadCountsByConv.delete(activeConversationId);
     checkNotifications();
 }
 
-// Visual cue when photo selected
 dmImageInput.addEventListener('change', () => {
     const file = dmImageInput.files[0];
     const label = document.querySelector('.upload-photo-label');
@@ -685,7 +771,6 @@ dmImageInput.addEventListener('change', () => {
     }
 });
 
-// Submit DM / Photo
 dmForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const content = dmText.value.trim();
@@ -700,7 +785,6 @@ dmForm.addEventListener('submit', async (e) => {
     let uploadedImageUrl = null;
 
     if (file) {
-        // Generate clean unique filename
         const fileExt = file.name.split('.').pop();
         const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
         const filePath = `${activeConversationId}/${fileName}`;
@@ -741,7 +825,6 @@ dmForm.addEventListener('submit', async (e) => {
         return;
     }
 
-    // Reset input fields & label styling
     dmText.value = '';
     dmImageInput.value = '';
     const label = document.querySelector('.upload-photo-label');
