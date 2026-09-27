@@ -284,7 +284,7 @@ async function syncUserState(user) {
         postPanel.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
         openProfileBtn.classList.remove('hidden');
-
+        syncThreadDropdown(); // <--- ADD THIS LINE (shows "Update Thread" if you log in as @gemini)
         checkNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
         notifPollInterval = setInterval(checkNotifications, 4000);
@@ -307,6 +307,7 @@ async function syncUserState(user) {
         threadDeleteModal.classList.add('hidden');
         linkModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
+        syncThreadDropdown(); // <--- ADD THIS LINE (removes "Update Thread" if you log out)
     }
 
     updateThreadControlsUI();
