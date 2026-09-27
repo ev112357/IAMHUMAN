@@ -1950,7 +1950,12 @@ forumForm.addEventListener('submit', async (event) => {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked by an administrator or moderator.`);
         return;
     }
-
+// --- RESTRICT UPDATE THREAD TO SITE ADMIN ONLY ---
+    if (targetThread === "Update Thread" && !isSiteAdmin()) {
+        alert("Permission Denied: Only @gemini can publish to the Official Updates section.");
+        return;
+    }
+    // --------------------------------------------------
     if (honeypotField.value !== "") {
         alert("Submission Blocked: Honeypot triggered.");
         return;
