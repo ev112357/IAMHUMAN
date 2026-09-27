@@ -15,6 +15,9 @@ const db = (window.supabase && typeof window.supabase.createClient === 'function
 
 if (!db) console.error("Critical: window.supabase is not initialized.");
 
+// SITE SUPER ADMIN USERNAME
+const SITE_ADMIN_USERNAME = "gemini";
+
 // DOM Elements - Auth & Nav
 const authPanel = document.getElementById('auth-panel');
 const postPanel = document.getElementById('post-panel');
@@ -62,6 +65,9 @@ const topicSelect = document.getElementById('topic-select');
 const forumFeed = document.getElementById('forum-feed');
 const updatesFeed = document.getElementById('updates-feed');
 const currentThreadTitle = document.getElementById('current-thread-title');
+const currentUserThreadRole = document.getElementById('current-user-thread-role');
+const managePermsBtn = document.getElementById('manage-perms-btn');
+const deleteThreadBtn = document.getElementById('delete-thread-btn');
 
 // Thread Management & Filter Elements
 const threadSearchInput = document.getElementById('thread-search-input');
@@ -73,6 +79,22 @@ const threadModal = document.getElementById('thread-modal');
 const closeThreadModalBtn = document.getElementById('close-thread-modal-btn');
 const createThreadForm = document.getElementById('createThreadForm');
 const newThreadTitleInput = document.getElementById('new-thread-title');
+
+// Thread Permissions Modal Elements
+const permsModal = document.getElementById('perms-modal');
+const closePermsModalBtn = document.getElementById('close-perms-modal-btn');
+const permsThreadName = document.getElementById('perms-thread-name');
+const permUserLookup = document.getElementById('perm-user-lookup');
+const permUserAddBtn = document.getElementById('perm-user-add-btn');
+const permsUserList = document.getElementById('perms-user-list');
+
+// Thread Delete Confirmation Modal Elements
+const threadDeleteModal = document.getElementById('thread-delete-modal');
+const closeThreadDeleteModalBtn = document.getElementById('close-thread-delete-modal-btn');
+const cancelDeleteThreadBtn = document.getElementById('cancel-delete-thread-btn');
+const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
+const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
+const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
 
 // DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
@@ -129,14 +151,31 @@ let userAvatarCache = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
-// Thread State & Voting Memory Cache
+// Thread & Permissions State
 const DEFAULT_THREADS = ["Update Thread", "Text Thread #2", "Text Thread #3"];
 let availableThreads = [...DEFAULT_THREADS];
 let activeThread = "Text Thread #2";
 
-// Local storage stores vote delta and user vote state: { [postId]: 1 | -1 | 0 }
+/*
+  Thread Metadata Structure:
+  {
+    owner: string (creator's username),
+    moderators: string[],
+    banned: string[] (users with revoked posting rights)
+  }
+*/
+let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
+
+// Ensure defaults have metadata
+if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+if (!threadMetaMap["Text Thread #2"]) threadMetaMap["Text Thread #2"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+
+// Voting and score cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
 let scoreOffsets = JSON.parse(localStorage.getItem('forum_score_offsets') || '{}');
+let cachedPosts = [];
+let postCacheMap = new Map();
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -146,6 +185,68 @@ let lastKeyTime = null;
 let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
+
+// --- PERMISSIONS HELPERS ---
+
+function isSiteAdmin(username = currentUsername) {
+    if (!username) return false;
+    return username.toLowerCase().replace('@', '') === SITE_ADMIN_USERNAME.toLowerCase();
+}
+
+function getThreadRole(threadName = activeThread, username = currentUsername) {
+    if (!username) return "Guest";
+    const cleanUser = username.toLowerCase().replace('@', '');
+    if (cleanUser === SITE_ADMIN_USERNAME.toLowerCase()) return "Site Admin";
+
+    const meta = threadMetaMap[threadName] || { owner: '', moderators: [], banned: [] };
+    if (meta.owner && meta.owner.toLowerCase() === cleanUser) return "Owner";
+    if (meta.moderators && meta.moderators.map(m => m.toLowerCase()).includes(cleanUser)) return "Moderator";
+    if (meta.banned && meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) return "Banned";
+    return "Member";
+}
+
+function canDeletePost(post) {
+    if (!currentUsername) return false;
+    const cleanUser = currentUsername.toLowerCase().replace('@', '');
+    if (isSiteAdmin(cleanUser)) return true;
+
+    // Post author can always delete their own post
+    if (post.author && post.author.toLowerCase().replace('@', '') === cleanUser) return true;
+
+    const role = getThreadRole(post.thread, cleanUser);
+    return role === "Owner" || role === "Moderator";
+}
+
+function canDeleteThread(threadName = activeThread) {
+    if (!currentUsername) return false;
+    if (threadName === "Update Thread") return isSiteAdmin();
+    const role = getThreadRole(threadName);
+    return isSiteAdmin() || role === "Owner";
+}
+
+function canManagePermissions(threadName = activeThread) {
+    if (!currentUsername) return false;
+    const role = getThreadRole(threadName);
+    return isSiteAdmin() || role === "Owner";
+}
+
+function canRevokePosting(threadName = activeThread) {
+    if (!currentUsername) return false;
+    const role = getThreadRole(threadName);
+    return isSiteAdmin() || role === "Owner" || role === "Moderator";
+}
+
+function isUserBannedFromThread(threadName = activeThread, username = currentUsername) {
+    if (!username) return false;
+    if (isSiteAdmin(username)) return false; // Site Admin can never be banned
+    const meta = threadMetaMap[threadName];
+    if (!meta || !meta.banned) return false;
+    return meta.banned.map(u => u.toLowerCase()).includes(username.toLowerCase().replace('@', ''));
+}
+
+function saveThreadMeta() {
+    localStorage.setItem('forum_thread_metadata', JSON.stringify(threadMetaMap));
+}
 
 // --- SESSION & AUTHENTICATION ---
 
@@ -192,8 +293,13 @@ async function syncUserState(user) {
         dmModal.classList.add('hidden');
         profileModal.classList.add('hidden');
         deleteConfirmModal.classList.add('hidden');
+        permsModal.classList.add('hidden');
+        threadDeleteModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
     }
+
+    updateThreadControlsUI();
+    renderCurrentFeed();
 }
 
 function renderUserAvatar(url) {
@@ -293,17 +399,9 @@ logoutBtn.addEventListener('click', async () => {
 
 // --- PROFILE SETTINGS CUSTOMIZATION ---
 
-openProfileBtn.addEventListener('click', () => {
-    profileModal.classList.remove('hidden');
-});
-
-closeProfileBtn.addEventListener('click', () => {
-    profileModal.classList.add('hidden');
-});
-
-profileModal.addEventListener('click', (e) => {
-    if (e.target === profileModal) profileModal.classList.add('hidden');
-});
+openProfileBtn.addEventListener('click', () => profileModal.classList.remove('hidden'));
+closeProfileBtn.addEventListener('click', () => profileModal.classList.add('hidden'));
+profileModal.addEventListener('click', (e) => { if (e.target === profileModal) profileModal.classList.add('hidden'); });
 
 profileAvatarFile.addEventListener('change', async () => {
     const file = profileAvatarFile.files[0];
@@ -389,7 +487,7 @@ updatePasswordBtn.addEventListener('click', async () => {
     }
 });
 
-// Account Deletion
+// User Account Deletion
 openDeleteModalBtn.addEventListener('click', () => {
     deleteConfirmModal.classList.remove('hidden');
     deleteUsernameInput.value = '';
@@ -417,7 +515,7 @@ finalDeleteBtn.addEventListener('click', async () => {
     alert("Your account has been deleted.");
 });
 
-// --- THREAD CREATION & SEARCH ENGINE ---
+// --- THREAD NAVIGATION, CREATION & UI ---
 
 function loadSavedThreads() {
     const stored = localStorage.getItem('custom_forum_threads');
@@ -450,7 +548,7 @@ function renderThreadChips(filterQuery = '') {
     threadChipsContainer.innerHTML = '';
     const query = filterQuery.toLowerCase().trim();
     
-    // We filter out "Update Thread" from general flipping because it has its own dedicated prominent section
+    // Updates thread is displayed prominently at the top
     const nonUpdateThreads = availableThreads.filter(t => t !== "Update Thread");
     const matching = nonUpdateThreads.filter(t => t.toLowerCase().includes(query));
 
@@ -468,10 +566,39 @@ function renderThreadChips(filterQuery = '') {
             activeThread = threadName;
             topicSelect.value = threadName;
             renderThreadChips(threadSearchInput.value);
+            updateThreadControlsUI();
             loadForumPosts();
         });
         threadChipsContainer.appendChild(chip);
     });
+}
+
+function updateThreadControlsUI() {
+    currentThreadTitle.textContent = activeThread;
+    const role = getThreadRole(activeThread);
+    currentUserThreadRole.textContent = role;
+
+    // Set badge style
+    currentUserThreadRole.className = 'thread-role-badge';
+    if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
+    else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
+    else if (role === 'Moderator') currentUserThreadRole.classList.add('badge-green');
+    else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
+    else currentUserThreadRole.classList.add('badge-blue');
+
+    // Manage roles button (Owner or Site Admin)
+    if (canManagePermissions(activeThread)) {
+        managePermsBtn.classList.remove('hidden');
+    } else {
+        managePermsBtn.classList.add('hidden');
+    }
+
+    // Delete thread button (Owner or Site Admin)
+    if (canDeleteThread(activeThread) && activeThread !== "Update Thread") {
+        deleteThreadBtn.classList.remove('hidden');
+    } else {
+        deleteThreadBtn.classList.add('hidden');
+    }
 }
 
 threadSearchInput.addEventListener('input', (e) => {
@@ -479,15 +606,27 @@ threadSearchInput.addEventListener('input', (e) => {
 });
 
 // Thread Modal triggers
-openNewThreadModalBtn.addEventListener('click', () => threadModal.classList.remove('hidden'));
-triggerCreateThreadBtn.addEventListener('click', () => threadModal.classList.remove('hidden'));
+openNewThreadModalBtn.addEventListener('click', () => {
+    if (!currentUser) { alert("Please log in to create a thread."); return; }
+    threadModal.classList.remove('hidden');
+});
+triggerCreateThreadBtn.addEventListener('click', () => {
+    if (!currentUser) { alert("Please log in to create a thread."); return; }
+    threadModal.classList.remove('hidden');
+});
 closeThreadModalBtn.addEventListener('click', () => threadModal.classList.add('hidden'));
 threadModal.addEventListener('click', (e) => {
     if (e.target === threadModal) threadModal.classList.add('hidden');
 });
 
+// Thread creation: Creator becomes OWNER
 createThreadForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!currentUsername) {
+        alert("You must be logged in to create a thread.");
+        return;
+    }
+
     const newName = newThreadTitleInput.value.trim();
     if (!newName) return;
 
@@ -498,7 +637,14 @@ createThreadForm.addEventListener('submit', (e) => {
 
     availableThreads.push(newName);
     
-    // Save custom threads
+    // Creator is assigned thread owner
+    threadMetaMap[newName] = {
+        owner: currentUsername,
+        moderators: [],
+        banned: []
+    };
+    saveThreadMeta();
+
     const customList = availableThreads.filter(t => !DEFAULT_THREADS.includes(t));
     localStorage.setItem('custom_forum_threads', JSON.stringify(customList));
 
@@ -508,17 +654,218 @@ createThreadForm.addEventListener('submit', (e) => {
     newThreadTitleInput.value = '';
     threadModal.classList.add('hidden');
     renderThreadChips(threadSearchInput.value);
+    updateThreadControlsUI();
     loadForumPosts();
 });
 
 topicSelect.addEventListener('change', () => {
     activeThread = topicSelect.value;
     renderThreadChips(threadSearchInput.value);
+    updateThreadControlsUI();
     loadForumPosts();
 });
 
 postSortSelect.addEventListener('change', () => {
     loadForumPosts();
+});
+
+// --- THREAD DELETION WITH SECURITY "ARE YOU SURE" PROMPT ---
+
+deleteThreadBtn.addEventListener('click', () => {
+    if (!canDeleteThread(activeThread)) {
+        alert("You do not have permission to delete this thread.");
+        return;
+    }
+    deleteThreadTargetName.textContent = activeThread;
+    deleteThreadConfirmInput.value = '';
+    threadDeleteModal.classList.remove('hidden');
+});
+
+closeThreadDeleteModalBtn.addEventListener('click', () => threadDeleteModal.classList.add('hidden'));
+cancelDeleteThreadBtn.addEventListener('click', () => threadDeleteModal.classList.add('hidden'));
+threadDeleteModal.addEventListener('click', (e) => {
+    if (e.target === threadDeleteModal) threadDeleteModal.classList.add('hidden');
+});
+
+finalDeleteThreadBtn.addEventListener('click', async () => {
+    const inputVal = deleteThreadConfirmInput.value.trim();
+    if (inputVal !== activeThread) {
+        alert(`Confirmation failed. You must type "${activeThread}" exactly to delete this thread.`);
+        return;
+    }
+
+    finalDeleteThreadBtn.disabled = true;
+    finalDeleteThreadBtn.textContent = 'Deleting...';
+
+    // Delete posts from cloud database
+    if (db) {
+        const { error } = await db.from('Posts').delete().eq('thread', activeThread);
+        if (error) console.error("Error purging thread posts:", error);
+    }
+
+    // Remove from local structures
+    delete threadMetaMap[activeThread];
+    saveThreadMeta();
+
+    availableThreads = availableThreads.filter(t => t !== activeThread);
+    const customList = availableThreads.filter(t => !DEFAULT_THREADS.includes(t));
+    localStorage.setItem('custom_forum_threads', JSON.stringify(customList));
+
+    threadDeleteModal.classList.add('hidden');
+    finalDeleteThreadBtn.disabled = false;
+    finalDeleteThreadBtn.textContent = 'Confirm Delete';
+
+    alert(`Thread "${inputVal}" and all its posts have been permanently removed.`);
+
+    activeThread = "Text Thread #2";
+    syncThreadDropdown();
+    renderThreadChips();
+    updateThreadControlsUI();
+    loadForumPosts();
+});
+
+// --- PERMISSIONS MANAGEMENT UI ---
+
+managePermsBtn.addEventListener('click', () => {
+    openPermissionsManager();
+});
+
+closePermsModalBtn.addEventListener('click', () => permsModal.classList.add('hidden'));
+permsModal.addEventListener('click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
+
+function openPermissionsManager() {
+    permsThreadName.textContent = activeThread;
+    renderPermissionsUserList();
+    permsModal.classList.remove('hidden');
+}
+
+function renderPermissionsUserList() {
+    const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
+    permsUserList.innerHTML = '';
+
+    // Collect all unique users associated with this thread (owner, mods, banned, and recent posters)
+    const trackedUsers = new Set();
+    if (meta.owner) trackedUsers.add(meta.owner);
+    (meta.moderators || []).forEach(u => trackedUsers.add(u));
+    (meta.banned || []).forEach(u => trackedUsers.add(u));
+    cachedPosts.forEach(p => { if (p.author) trackedUsers.add(p.author); });
+
+    if (trackedUsers.size === 0) {
+        permsUserList.innerHTML = '<div class="no-posts" style="padding: 10px;">No members active in this thread yet. Add a user above.</div>';
+        return;
+    }
+
+    trackedUsers.forEach(uname => {
+        const cleanUser = uname.toLowerCase().replace('@', '');
+        const role = getThreadRole(activeThread, cleanUser);
+        const isBanned = (meta.banned || []).map(u => u.toLowerCase()).includes(cleanUser);
+
+        const row = document.createElement('div');
+        row.className = 'perm-user-row';
+
+        let badgeClass = 'badge-blue';
+        if (role === 'Site Admin') badgeClass = 'badge-purple';
+        else if (role === 'Owner') badgeClass = 'badge-yellow';
+        else if (role === 'Moderator') badgeClass = 'badge-green';
+        else if (role === 'Banned') badgeClass = 'badge-red';
+
+        const nameCol = document.createElement('div');
+        nameCol.className = 'perm-user-name';
+        nameCol.innerHTML = `<span>@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
+
+        const btnCol = document.createElement('div');
+        btnCol.className = 'perm-user-buttons';
+
+        // Site Admin super controls
+        if (isSiteAdmin()) {
+            if (role !== 'Owner') {
+                const makeOwnerBtn = document.createElement('button');
+                makeOwnerBtn.className = 'btn-perm secondary';
+                makeOwnerBtn.textContent = 'Make Owner';
+                makeOwnerBtn.onclick = () => {
+                    meta.owner = cleanUser;
+                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
+                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                    updateThreadControlsUI();
+                };
+                btnCol.appendChild(makeOwnerBtn);
+            }
+        }
+
+        // Owner or Site Admin can promote/demote moderators
+        if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
+            if (role === 'Moderator') {
+                const demoteModBtn = document.createElement('button');
+                demoteModBtn.className = 'btn-perm secondary';
+                demoteModBtn.textContent = 'Demote Mod';
+                demoteModBtn.onclick = () => {
+                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(demoteModBtn);
+            } else {
+                const promoteModBtn = document.createElement('button');
+                promoteModBtn.className = 'btn-perm secondary';
+                promoteModBtn.textContent = 'Promote Mod';
+                promoteModBtn.onclick = () => {
+                    if (!meta.moderators) meta.moderators = [];
+                    if (!meta.moderators.map(m => m.toLowerCase()).includes(cleanUser)) {
+                        meta.moderators.push(cleanUser);
+                    }
+                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(promoteModBtn);
+            }
+        }
+
+        // Revoke / Restore Posting Access
+        if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
+            if (isBanned) {
+                const unbanBtn = document.createElement('button');
+                unbanBtn.className = 'btn-perm secondary';
+                unbanBtn.textContent = 'Allow Posting';
+                unbanBtn.onclick = () => {
+                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(unbanBtn);
+            } else {
+                const banBtn = document.createElement('button');
+                banBtn.className = 'btn-perm danger';
+                banBtn.textContent = 'Revoke Access';
+                banBtn.onclick = () => {
+                    if (!meta.banned) meta.banned = [];
+                    if (!meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) {
+                        meta.banned.push(cleanUser);
+                    }
+                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(banBtn);
+            }
+        }
+
+        row.appendChild(nameCol);
+        row.appendChild(btnCol);
+        permsUserList.appendChild(row);
+    });
+}
+
+permUserAddBtn.addEventListener('click', () => {
+    const raw = permUserLookup.value.trim().toLowerCase().replace('@', '');
+    if (!raw) return;
+    const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
+    if (!meta.moderators) meta.moderators = [];
+    threadMetaMap[activeThread] = meta;
+    permUserLookup.value = '';
+    renderPermissionsUserList();
 });
 
 // --- LIKES, DISLIKES & VOTING ENGINE ---
@@ -542,11 +889,9 @@ function handleVote(postId, direction) {
     let deltaChange = 0;
 
     if (currentVote === direction) {
-        // Undo vote
         newVote = 0;
         deltaChange = -direction;
     } else {
-        // Change or apply vote
         newVote = direction;
         deltaChange = direction - currentVote;
     }
@@ -557,21 +902,8 @@ function handleVote(postId, direction) {
     localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
     localStorage.setItem('forum_score_offsets', JSON.stringify(scoreOffsets));
 
-    // Try optional sync to backend if columns exist
-    if (db) {
-        if (newVote === 1) {
-            db.from('Posts').update({ likes: (postCacheMap.get(postId)?.likes || 0) + 1 }).eq('id', postId).then(() => {});
-        } else if (newVote === -1) {
-            db.from('Posts').update({ dislikes: (postCacheMap.get(postId)?.dislikes || 0) + 1 }).eq('id', postId).then(() => {});
-        }
-    }
-
-    // Refresh UI with re-sorting based on new score
     renderCurrentFeed();
 }
-
-let cachedPosts = [];
-let postCacheMap = new Map();
 
 function sortPosts(posts) {
     const sortMode = postSortSelect.value;
@@ -581,7 +913,7 @@ function sortPosts(posts) {
 
         if (sortMode === 'top') {
             if (scoreB !== scoreA) return scoreB - scoreA;
-            return Number(b.id) - Number(a.id); // Tie-breaker: newest
+            return Number(b.id) - Number(a.id);
         } else if (sortMode === 'newest') {
             return Number(b.id) - Number(a.id);
         } else if (sortMode === 'oldest') {
@@ -591,6 +923,8 @@ function sortPosts(posts) {
     });
 }
 
+// --- POST CREATION & MODERATION UI ---
+
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = 'post-item';
@@ -598,6 +932,28 @@ function createPostCardElement(post) {
     const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
     const score = getPostScore(post);
     const myVote = userVotes[post.id] || 0;
+    const postAuthorRole = getThreadRole(post.thread, post.author);
+
+    let roleBadge = '';
+    if (postAuthorRole === 'Site Admin') roleBadge = `<span class="badge badge-purple" style="font-size:0.65rem;">ADMIN</span>`;
+    else if (postAuthorRole === 'Owner') roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">OWNER</span>`;
+    else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
+
+    // Permissions check for post deletion & revoking access
+    const userCanDelete = canDeletePost(post);
+    const userCanRevoke = canRevokePosting(post.thread) && postAuthorRole !== 'Owner' && postAuthorRole !== 'Site Admin';
+
+    let actionButtonsHtml = '';
+    if (userCanDelete || userCanRevoke) {
+        actionButtonsHtml = `<div class="post-admin-actions">`;
+        if (userCanDelete) {
+            actionButtonsHtml += `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete Post</button>`;
+        }
+        if (userCanRevoke && post.author && post.author !== currentUsername) {
+            actionButtonsHtml += `<button type="button" class="btn-post-action danger-text btn-revoke-author" data-author="${post.author}">🚫 Revoke Access</button>`;
+        }
+        actionButtonsHtml += `</div>`;
+    }
 
     item.innerHTML = `
         <div class="vote-box">
@@ -607,13 +963,18 @@ function createPostCardElement(post) {
         </div>
         <div class="post-body">
             <div class="post-meta">
-                <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
+                <div class="post-author-wrap">
+                    <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
+                    ${roleBadge}
+                </div>
                 <span>${dateFormatted}</span>
             </div>
             <div class="post-content">${escapeHTML(post.content || '')}</div>
+            ${actionButtonsHtml}
         </div>
     `;
 
+    // Like / Dislike handlers
     item.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const pId = e.currentTarget.getAttribute('data-post-id');
@@ -622,7 +983,44 @@ function createPostCardElement(post) {
         });
     });
 
+    // Delete post button handler
+    const deleteBtn = item.querySelector('.btn-delete-post');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async () => {
+            if (!confirm("Are you sure you want to delete this post?")) return;
+            await deletePostById(post.id);
+        });
+    }
+
+    // Revoke access button handler
+    const revokeBtn = item.querySelector('.btn-revoke-author');
+    if (revokeBtn) {
+        revokeBtn.addEventListener('click', () => {
+            const target = revokeBtn.getAttribute('data-author');
+            if (!confirm(`Revoke posting privileges from @${target} in "${post.thread}"?`)) return;
+            const meta = threadMetaMap[post.thread] || { owner: '', moderators: [], banned: [] };
+            if (!meta.banned) meta.banned = [];
+            if (!meta.banned.includes(target)) meta.banned.push(target);
+            saveThreadMeta();
+            alert(`@${target} has had their posting access revoked in this thread.`);
+            renderCurrentFeed();
+        });
+    }
+
     return item;
+}
+
+async function deletePostById(postId) {
+    if (db) {
+        const { error } = await db.from('Posts').delete().eq('id', postId);
+        if (error) {
+            alert(`Error deleting post: ${error.message}`);
+            return;
+        }
+    }
+    cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
+    renderCurrentFeed();
+    loadProminentUpdates();
 }
 
 function renderCurrentFeed() {
@@ -641,7 +1039,7 @@ function renderCurrentFeed() {
 // --- FORUM RETRIEVAL ---
 
 async function loadForumPosts() {
-    currentThreadTitle.textContent = activeThread;
+    updateThreadControlsUI();
     if (!db) return;
 
     const { data: posts, error } = await db
@@ -771,7 +1169,7 @@ clearAllNotifsBtn.addEventListener('click', async () => {
     updateSidebarBadges();
 });
 
-// --- MESSAGING MODAL & CHATS ---
+// --- MESSAGING & CHATS HUB ---
 
 openDmBtn.addEventListener('click', () => {
     dmModal.classList.remove('hidden');
@@ -1443,13 +1841,21 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// --- FORUM SUBMISSION ---
+// --- FORUM SUBMISSION WITH PERMISSION CHECKS ---
 
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
     
     if (!currentUsername) {
         alert("You must be logged in to post.");
+        return;
+    }
+
+    const targetThread = topicSelect.value;
+
+    // Check if user has revoked access (banned) in this thread
+    if (isUserBannedFromThread(targetThread, currentUsername)) {
+        alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked by an administrator or moderator.`);
         return;
     }
 
@@ -1470,8 +1876,6 @@ forumForm.addEventListener('submit', async (event) => {
     }
     const uniformityRatio = keystrokeGaps.length > 2 ? (perfectIntervals / (keystrokeGaps.length - 2)) : 0;
     if (uniformityRatio > 0.60) { alert("Submission Blocked: Automation detected."); return; }
-
-    const targetThread = topicSelect.value;
 
     const { error } = await db
         .from('Posts')
