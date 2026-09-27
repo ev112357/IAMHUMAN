@@ -54,13 +54,25 @@ const deleteUsernameInput = document.getElementById('delete-username-input');
 const finalDeleteBtn = document.getElementById('final-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
 
-// DOM Elements - Forum
+// DOM Elements - Forum & Threads
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
 const topicSelect = document.getElementById('topic-select');
 const forumFeed = document.getElementById('forum-feed');
+const updatesFeed = document.getElementById('updates-feed');
 const currentThreadTitle = document.getElementById('current-thread-title');
+
+// Thread Management & Filter Elements
+const threadSearchInput = document.getElementById('thread-search-input');
+const threadChipsContainer = document.getElementById('thread-chips-container');
+const postSortSelect = document.getElementById('post-sort-select');
+const openNewThreadModalBtn = document.getElementById('open-new-thread-modal-btn');
+const triggerCreateThreadBtn = document.getElementById('trigger-create-thread-btn');
+const threadModal = document.getElementById('thread-modal');
+const closeThreadModalBtn = document.getElementById('close-thread-modal-btn');
+const createThreadForm = document.getElementById('createThreadForm');
+const newThreadTitleInput = document.getElementById('new-thread-title');
 
 // DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
@@ -113,9 +125,18 @@ let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
 let unreadCountsByConv = new Map();
-let userAvatarCache = new Map(); // userId -> avatar_url
+let userAvatarCache = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
+
+// Thread State & Voting Memory Cache
+const DEFAULT_THREADS = ["Update Thread", "Text Thread #2", "Text Thread #3"];
+let availableThreads = [...DEFAULT_THREADS];
+let activeThread = "Text Thread #2";
+
+// Local storage stores vote delta and user vote state: { [postId]: 1 | -1 | 0 }
+let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
+let scoreOffsets = JSON.parse(localStorage.getItem('forum_score_offsets') || '{}');
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -284,7 +305,6 @@ profileModal.addEventListener('click', (e) => {
     if (e.target === profileModal) profileModal.classList.add('hidden');
 });
 
-// Avatar Upload
 profileAvatarFile.addEventListener('change', async () => {
     const file = profileAvatarFile.files[0];
     if (!file || !currentUser) return;
@@ -320,7 +340,6 @@ profileAvatarFile.addEventListener('change', async () => {
     alert("Avatar updated successfully!");
 });
 
-// Password Change
 updatePasswordBtn.addEventListener('click', async () => {
     const currentPassword = currentPasswordInput.value;
     const newPassword = newPasswordInput.value;
@@ -335,7 +354,7 @@ updatePasswordBtn.addEventListener('click', async () => {
         return;
     }
     if (newPassword !== confirmPassword) {
-        alert("The new passwords do not match. Please re-enter them identically.");
+        alert("The new passwords do not match.");
         return;
     }
 
@@ -355,7 +374,6 @@ updatePasswordBtn.addEventListener('click', async () => {
     }
 
     updatePasswordBtn.textContent = 'Updating...';
-
     const { error: updateErr } = await db.auth.updateUser({ password: newPassword });
 
     updatePasswordBtn.disabled = false;
@@ -376,15 +394,8 @@ openDeleteModalBtn.addEventListener('click', () => {
     deleteConfirmModal.classList.remove('hidden');
     deleteUsernameInput.value = '';
 });
-
-closeDeleteModalBtn.addEventListener('click', () => {
-    deleteConfirmModal.classList.add('hidden');
-});
-
-cancelDeleteBtn.addEventListener('click', () => {
-    deleteConfirmModal.classList.add('hidden');
-});
-
+closeDeleteModalBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
+cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
 deleteConfirmModal.addEventListener('click', (e) => {
     if (e.target === deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
 });
@@ -405,6 +416,270 @@ finalDeleteBtn.addEventListener('click', async () => {
     await db.auth.signOut();
     alert("Your account has been deleted.");
 });
+
+// --- THREAD CREATION & SEARCH ENGINE ---
+
+function loadSavedThreads() {
+    const stored = localStorage.getItem('custom_forum_threads');
+    if (stored) {
+        try {
+            const parsed = JSON.parse(stored);
+            parsed.forEach(t => {
+                if (!availableThreads.includes(t)) availableThreads.push(t);
+            });
+        } catch (e) {
+            console.error("Error reading stored threads", e);
+        }
+    }
+    syncThreadDropdown();
+    renderThreadChips();
+}
+
+function syncThreadDropdown() {
+    topicSelect.innerHTML = '';
+    availableThreads.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        topicSelect.appendChild(opt);
+    });
+    topicSelect.value = activeThread;
+}
+
+function renderThreadChips(filterQuery = '') {
+    threadChipsContainer.innerHTML = '';
+    const query = filterQuery.toLowerCase().trim();
+    
+    // We filter out "Update Thread" from general flipping because it has its own dedicated prominent section
+    const nonUpdateThreads = availableThreads.filter(t => t !== "Update Thread");
+    const matching = nonUpdateThreads.filter(t => t.toLowerCase().includes(query));
+
+    if (matching.length === 0) {
+        threadChipsContainer.innerHTML = '<span style="font-size: 0.8rem; color: #64748b; padding: 4px 8px;">No matching threads found.</span>';
+        return;
+    }
+
+    matching.forEach(threadName => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `thread-chip ${threadName === activeThread ? 'active' : ''}`;
+        chip.textContent = threadName;
+        chip.addEventListener('click', () => {
+            activeThread = threadName;
+            topicSelect.value = threadName;
+            renderThreadChips(threadSearchInput.value);
+            loadForumPosts();
+        });
+        threadChipsContainer.appendChild(chip);
+    });
+}
+
+threadSearchInput.addEventListener('input', (e) => {
+    renderThreadChips(e.target.value);
+});
+
+// Thread Modal triggers
+openNewThreadModalBtn.addEventListener('click', () => threadModal.classList.remove('hidden'));
+triggerCreateThreadBtn.addEventListener('click', () => threadModal.classList.remove('hidden'));
+closeThreadModalBtn.addEventListener('click', () => threadModal.classList.add('hidden'));
+threadModal.addEventListener('click', (e) => {
+    if (e.target === threadModal) threadModal.classList.add('hidden');
+});
+
+createThreadForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const newName = newThreadTitleInput.value.trim();
+    if (!newName) return;
+
+    if (availableThreads.some(t => t.toLowerCase() === newName.toLowerCase())) {
+        alert("A thread with this name already exists.");
+        return;
+    }
+
+    availableThreads.push(newName);
+    
+    // Save custom threads
+    const customList = availableThreads.filter(t => !DEFAULT_THREADS.includes(t));
+    localStorage.setItem('custom_forum_threads', JSON.stringify(customList));
+
+    syncThreadDropdown();
+    activeThread = newName;
+    topicSelect.value = newName;
+    newThreadTitleInput.value = '';
+    threadModal.classList.add('hidden');
+    renderThreadChips(threadSearchInput.value);
+    loadForumPosts();
+});
+
+topicSelect.addEventListener('change', () => {
+    activeThread = topicSelect.value;
+    renderThreadChips(threadSearchInput.value);
+    loadForumPosts();
+});
+
+postSortSelect.addEventListener('change', () => {
+    loadForumPosts();
+});
+
+// --- LIKES, DISLIKES & VOTING ENGINE ---
+
+function getPostScore(post) {
+    const dbLikes = Number(post.likes || 0);
+    const dbDislikes = Number(post.dislikes || 0);
+    const baseScore = dbLikes - dbDislikes;
+    const localDelta = scoreOffsets[post.id] || 0;
+    return baseScore + localDelta;
+}
+
+function handleVote(postId, direction) {
+    if (!currentUser) {
+        alert("You must be logged in to like or dislike posts.");
+        return;
+    }
+
+    const currentVote = userVotes[postId] || 0;
+    let newVote = 0;
+    let deltaChange = 0;
+
+    if (currentVote === direction) {
+        // Undo vote
+        newVote = 0;
+        deltaChange = -direction;
+    } else {
+        // Change or apply vote
+        newVote = direction;
+        deltaChange = direction - currentVote;
+    }
+
+    userVotes[postId] = newVote;
+    scoreOffsets[postId] = (scoreOffsets[postId] || 0) + deltaChange;
+
+    localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
+    localStorage.setItem('forum_score_offsets', JSON.stringify(scoreOffsets));
+
+    // Try optional sync to backend if columns exist
+    if (db) {
+        if (newVote === 1) {
+            db.from('Posts').update({ likes: (postCacheMap.get(postId)?.likes || 0) + 1 }).eq('id', postId).then(() => {});
+        } else if (newVote === -1) {
+            db.from('Posts').update({ dislikes: (postCacheMap.get(postId)?.dislikes || 0) + 1 }).eq('id', postId).then(() => {});
+        }
+    }
+
+    // Refresh UI with re-sorting based on new score
+    renderCurrentFeed();
+}
+
+let cachedPosts = [];
+let postCacheMap = new Map();
+
+function sortPosts(posts) {
+    const sortMode = postSortSelect.value;
+    return [...posts].sort((a, b) => {
+        const scoreA = getPostScore(a);
+        const scoreB = getPostScore(b);
+
+        if (sortMode === 'top') {
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return Number(b.id) - Number(a.id); // Tie-breaker: newest
+        } else if (sortMode === 'newest') {
+            return Number(b.id) - Number(a.id);
+        } else if (sortMode === 'oldest') {
+            return Number(a.id) - Number(b.id);
+        }
+        return 0;
+    });
+}
+
+function createPostCardElement(post) {
+    const item = document.createElement('div');
+    item.className = 'post-item';
+    
+    const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
+    const score = getPostScore(post);
+    const myVote = userVotes[post.id] || 0;
+
+    item.innerHTML = `
+        <div class="vote-box">
+            <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
+            <span class="vote-score">${score}</span>
+            <button class="vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-post-id="${post.id}" data-dir="-1" title="Dislike">▼</button>
+        </div>
+        <div class="post-body">
+            <div class="post-meta">
+                <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
+                <span>${dateFormatted}</span>
+            </div>
+            <div class="post-content">${escapeHTML(post.content || '')}</div>
+        </div>
+    `;
+
+    item.querySelectorAll('.vote-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pId = e.currentTarget.getAttribute('data-post-id');
+            const dir = parseInt(e.currentTarget.getAttribute('data-dir'), 10);
+            handleVote(pId, dir);
+        });
+    });
+
+    return item;
+}
+
+function renderCurrentFeed() {
+    const sorted = sortPosts(cachedPosts);
+    if (!sorted || sorted.length === 0) {
+        forumFeed.innerHTML = `<div class="no-posts">No human content posted inside "${escapeHTML(activeThread)}" yet...</div>`;
+        return;
+    }
+
+    forumFeed.innerHTML = '';
+    sorted.forEach(post => {
+        forumFeed.appendChild(createPostCardElement(post));
+    });
+}
+
+// --- FORUM RETRIEVAL ---
+
+async function loadForumPosts() {
+    currentThreadTitle.textContent = activeThread;
+    if (!db) return;
+
+    const { data: posts, error } = await db
+        .from('Posts')
+        .select('*')
+        .eq('thread', activeThread);
+
+    if (error) {
+        console.error("Cloud Retrieval Error:", error);
+        forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
+        return;
+    }
+
+    cachedPosts = posts || [];
+    cachedPosts.forEach(p => postCacheMap.set(p.id, p));
+    renderCurrentFeed();
+}
+
+async function loadProminentUpdates() {
+    if (!db) return;
+
+    const { data: updates, error } = await db
+        .from('Posts')
+        .select('*')
+        .eq('thread', 'Update Thread')
+        .order('id', { ascending: false });
+
+    if (error || !updates || updates.length === 0) {
+        updatesFeed.innerHTML = `<div class="no-posts">No official announcements posted yet.</div>`;
+        return;
+    }
+
+    updatesFeed.innerHTML = '';
+    updates.slice(0, 3).forEach(post => {
+        postCacheMap.set(post.id, post);
+        updatesFeed.appendChild(createPostCardElement(post));
+    });
+}
 
 // --- NOTIFICATION ENGINE ---
 
@@ -473,7 +748,6 @@ function updateSidebarBadges() {
     });
 }
 
-// Clear all notifications across all active conversations
 clearAllNotifsBtn.addEventListener('click', async () => {
     if (!currentUser) return;
 
@@ -497,7 +771,7 @@ clearAllNotifsBtn.addEventListener('click', async () => {
     updateSidebarBadges();
 });
 
-// --- MODAL CONTROLS & MOBILE VIEW TOGGLING ---
+// --- MESSAGING MODAL & CHATS ---
 
 openDmBtn.addEventListener('click', () => {
     dmModal.classList.remove('hidden');
@@ -537,8 +811,6 @@ backToListBtn.addEventListener('click', () => {
     showSidebarViewOnMobile();
     refreshMessagingHub();
 });
-
-// --- MESSAGING & CONVERSATION HUB ---
 
 async function refreshMessagingHub() {
     await loadFriendRequests();
@@ -739,8 +1011,8 @@ addFriendBtn.addEventListener('click', async () => {
         .from('friendships')
         .insert([{ 
             user_id: currentUser.id, 
-            friend_id: targetProfile.id,
-            status: 'pending'
+            friend_id: targetProfile.id, 
+            status: 'pending' 
         }]);
 
     if (insertErr) {
@@ -767,7 +1039,6 @@ async function loadConversations() {
     }
 
     const convIds = memberships.map(m => m.conversation_id);
-
     const { data: convs } = await db
         .from('conversations')
         .select('*')
@@ -850,13 +1121,8 @@ async function startOrOpenDirectChat(friend) {
 }
 
 // Group Chat Creation
-toggleGroupCreateBtn.addEventListener('click', () => {
-    groupCreatorBox.classList.toggle('hidden');
-});
-
-cancelGroupBtn.addEventListener('click', () => {
-    groupCreatorBox.classList.add('hidden');
-});
+toggleGroupCreateBtn.addEventListener('click', () => groupCreatorBox.classList.toggle('hidden'));
+cancelGroupBtn.addEventListener('click', () => groupCreatorBox.classList.add('hidden'));
 
 createGroupConfirmBtn.addEventListener('click', async () => {
     const groupName = groupNameInput.value.trim();
@@ -916,7 +1182,6 @@ function selectConversation(conversationId, title) {
     dmSendBtn.disabled = false;
 
     showChatViewOnMobile();
-
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
 
     const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
@@ -944,7 +1209,6 @@ function scrollToBottom(force = false) {
     }
 }
 
-// Fetch avatars of senders dynamically
 async function ensureAvatarsCached(userIds) {
     const missing = userIds.filter(id => !userAvatarCache.has(id));
     if (missing.length === 0) return;
@@ -984,7 +1248,6 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
-    // Cache any senders' avatars
     const senderIds = Array.from(new Set(messages.map(m => m.sender_id)));
     await ensureAvatarsCached(senderIds);
 
@@ -1006,7 +1269,6 @@ async function loadMessages(forceScroll = false) {
             </div>
         `;
 
-        // Position PFP to the left of incoming messages, right of outgoing messages
         row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
 
         const attachedImg = row.querySelector('.chat-img-thumb');
@@ -1153,51 +1415,6 @@ textBox.addEventListener('keydown', (e) => {
     statKeys.textContent = `${textBox.value.length + 1} keys`;
 });
 
-// --- FORUM FEED ---
-
-async function loadForumPosts() {
-    const selectedThread = topicSelect.value;
-    currentThreadTitle.textContent = selectedThread;
-    
-    if (!db) return;
-
-    const { data: posts, error } = await db
-        .from('Posts')
-        .select('*')
-        .eq('thread', selectedThread)
-        .order('id', { ascending: false });
-
-    if (error) {
-        console.error("Cloud Retrieval Error:", error);
-        forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
-        return;
-    }
-    
-    if (!posts || posts.length === 0) {
-        forumFeed.innerHTML = `<div class="no-posts">No human content posted inside "${escapeHTML(selectedThread)}" yet...</div>`;
-        return;
-    }
-    
-    forumFeed.innerHTML = '';
-    posts.forEach(post => {
-        const item = document.createElement('div');
-        item.className = 'post-item';
-        
-        const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
-        
-        item.innerHTML = `
-            <div class="post-meta">
-                <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
-                <span>${dateFormatted}</span>
-            </div>
-            <div class="post-content">${escapeHTML(post.content || '')}</div>
-        `;
-        forumFeed.appendChild(item);
-    });
-}
-
-topicSelect.addEventListener('change', loadForumPosts);
-
 function escapeHTML(str) {
     if (!str) return '';
     return String(str).replace(/[&<>'"]/g, tag => ({
@@ -1225,8 +1442,6 @@ function resetTelemetryConsole() {
     statKeys.textContent = "0 keys";
     statUniformity.textContent = "0%";
 }
-
-loadForumPosts();
 
 // --- FORUM SUBMISSION ---
 
@@ -1256,10 +1471,12 @@ forumForm.addEventListener('submit', async (event) => {
     const uniformityRatio = keystrokeGaps.length > 2 ? (perfectIntervals / (keystrokeGaps.length - 2)) : 0;
     if (uniformityRatio > 0.60) { alert("Submission Blocked: Automation detected."); return; }
 
+    const targetThread = topicSelect.value;
+
     const { error } = await db
         .from('Posts')
         .insert([{ 
-            thread: topicSelect.value, 
+            thread: targetThread, 
             author: currentUsername, 
             content: textBox.value 
         }]);
@@ -1270,6 +1487,18 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    await loadForumPosts();
+    if (targetThread === "Update Thread") {
+        await loadProminentUpdates();
+    } else {
+        activeThread = targetThread;
+        renderThreadChips(threadSearchInput.value);
+        await loadForumPosts();
+    }
+
     resetTelemetryConsole();
 });
+
+// Initial boot
+loadSavedThreads();
+loadProminentUpdates();
+loadForumPosts();
