@@ -545,13 +545,25 @@ function loadSavedThreads() {
 
 function syncThreadDropdown() {
     topicSelect.innerHTML = '';
+    
     availableThreads.forEach(t => {
+        // Only show "Update Thread" in the dropdown if the logged-in user is @gemini
+        if (t === "Update Thread" && !isSiteAdmin()) {
+            return;
+        }
+
         const opt = document.createElement('option');
         opt.value = t;
         opt.textContent = t;
         topicSelect.appendChild(opt);
     });
-    topicSelect.value = activeThread;
+
+    // Make sure we select the activeThread if it's available, otherwise fallback to the first option
+    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
+        topicSelect.value = activeThread;
+    } else if (topicSelect.options.length > 0) {
+        topicSelect.selectedIndex = 0;
+    }
 }
 
 function renderThreadChips(filterQuery = '') {
