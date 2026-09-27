@@ -38,24 +38,12 @@ const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
 const postBarAvatar = document.getElementById('post-bar-avatar');
 
-// DOM Elements - Profile Modal & Password Fields
-const profileModal = document.getElementById('profile-modal');
-const closeProfileBtn = document.getElementById('close-profile-btn');
-const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
-const profileAvatarFile = document.getElementById('profile-avatar-file');
-const currentPasswordInput = document.getElementById('current-password-input');
-const newPasswordInput = document.getElementById('new-password-input');
-const confirmPasswordInput = document.getElementById('confirm-password-input');
-const updatePasswordBtn = document.getElementById('update-password-btn');
-
-// DOM Elements - Delete Account Confirmation Modal
-const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
-const deleteConfirmModal = document.getElementById('delete-confirm-modal');
-const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
-const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
-const deleteUsernameInput = document.getElementById('delete-username-input');
-const finalDeleteBtn = document.getElementById('final-delete-btn');
-const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+// DOM Elements - Pinned Updates Ticker & Modal
+const tickerBadge = document.getElementById('ticker-badge');
+const tickerContent = document.getElementById('ticker-content');
+const updatesModal = document.getElementById('updates-modal');
+const closeUpdatesModalBtn = document.getElementById('close-updates-modal-btn');
+const updatesModalFeed = document.getElementById('updates-modal-feed');
 
 // DOM Elements - Forum & Threads
 const forumForm = document.getElementById('forumForm');
@@ -63,11 +51,25 @@ const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
 const topicSelect = document.getElementById('topic-select');
 const forumFeed = document.getElementById('forum-feed');
-const updatesFeed = document.getElementById('updates-feed');
 const currentThreadTitle = document.getElementById('current-thread-title');
 const currentUserThreadRole = document.getElementById('current-user-thread-role');
 const managePermsBtn = document.getElementById('manage-perms-btn');
 const deleteThreadBtn = document.getElementById('delete-thread-btn');
+
+// Photo Attachment in Posts
+const postImageFile = document.getElementById('post-image-file');
+const postPhotoPreviewBar = document.getElementById('post-photo-preview-bar');
+const postPhotoFilename = document.getElementById('post-photo-filename');
+const removePostPhotoBtn = document.getElementById('remove-post-photo-btn');
+let selectedPostPhotoFile = null;
+
+// Safe Link Insertion Modal (Bypasses Paste Detector)
+const openLinkModalBtn = document.getElementById('open-link-modal-btn');
+const linkModal = document.getElementById('link-modal');
+const closeLinkModalBtn = document.getElementById('close-link-modal-btn');
+const insertLinkForm = document.getElementById('insertLinkForm');
+const linkUrlInput = document.getElementById('link-url-input');
+const linkTextInput = document.getElementById('link-text-input');
 
 // Thread Management & Filter Elements
 const threadSearchInput = document.getElementById('thread-search-input');
@@ -96,13 +98,31 @@ const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
 const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
 const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
 
+// Profile & Account Deletion Elements
+const profileModal = document.getElementById('profile-modal');
+const closeProfileBtn = document.getElementById('close-profile-btn');
+const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
+const profileAvatarFile = document.getElementById('profile-avatar-file');
+const currentPasswordInput = document.getElementById('current-password-input');
+const newPasswordInput = document.getElementById('new-password-input');
+const confirmPasswordInput = document.getElementById('confirm-password-input');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+
+const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
+const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
+const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
+const deleteUsernameInput = document.getElementById('delete-username-input');
+const finalDeleteBtn = document.getElementById('final-delete-btn');
+const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
 // DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
 const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statUniformity = document.getElementById('stat-uniformity');
 
-// DOM Elements - Modal & Messaging
+// DOM Elements - Direct Messages & Groups
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
 const notifBadge = document.getElementById('notif-badge');
@@ -156,17 +176,7 @@ const DEFAULT_THREADS = ["Update Thread", "Text Thread #2", "Text Thread #3"];
 let availableThreads = [...DEFAULT_THREADS];
 let activeThread = "Text Thread #2";
 
-/*
-  Thread Metadata Structure:
-  {
-    owner: string (creator's username),
-    moderators: string[],
-    banned: string[] (users with revoked posting rights)
-  }
-*/
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
-
-// Ensure defaults have metadata
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Text Thread #2"]) threadMetaMap["Text Thread #2"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
@@ -175,6 +185,7 @@ if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner:
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
 let scoreOffsets = JSON.parse(localStorage.getItem('forum_score_offsets') || '{}');
 let cachedPosts = [];
+let cachedUpdates = [];
 let postCacheMap = new Map();
 
 // Telemetry State
@@ -210,7 +221,6 @@ function canDeletePost(post) {
     const cleanUser = currentUsername.toLowerCase().replace('@', '');
     if (isSiteAdmin(cleanUser)) return true;
 
-    // Post author can always delete their own post
     if (post.author && post.author.toLowerCase().replace('@', '') === cleanUser) return true;
 
     const role = getThreadRole(post.thread, cleanUser);
@@ -238,7 +248,7 @@ function canRevokePosting(threadName = activeThread) {
 
 function isUserBannedFromThread(threadName = activeThread, username = currentUsername) {
     if (!username) return false;
-    if (isSiteAdmin(username)) return false; // Site Admin can never be banned
+    if (isSiteAdmin(username)) return false;
     const meta = threadMetaMap[threadName];
     if (!meta || !meta.banned) return false;
     return meta.banned.map(u => u.toLowerCase()).includes(username.toLowerCase().replace('@', ''));
@@ -295,6 +305,7 @@ async function syncUserState(user) {
         deleteConfirmModal.classList.add('hidden');
         permsModal.classList.add('hidden');
         threadDeleteModal.classList.add('hidden');
+        linkModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
     }
 
@@ -487,7 +498,6 @@ updatePasswordBtn.addEventListener('click', async () => {
     }
 });
 
-// User Account Deletion
 openDeleteModalBtn.addEventListener('click', () => {
     deleteConfirmModal.classList.remove('hidden');
     deleteUsernameInput.value = '';
@@ -515,7 +525,7 @@ finalDeleteBtn.addEventListener('click', async () => {
     alert("Your account has been deleted.");
 });
 
-// --- THREAD NAVIGATION, CREATION & UI ---
+// --- THREAD SEARCH, SELECTION & UI SYNC ---
 
 function loadSavedThreads() {
     const stored = localStorage.getItem('custom_forum_threads');
@@ -548,7 +558,7 @@ function renderThreadChips(filterQuery = '') {
     threadChipsContainer.innerHTML = '';
     const query = filterQuery.toLowerCase().trim();
     
-    // Updates thread is displayed prominently at the top
+    // Updates thread runs along the top ticker
     const nonUpdateThreads = availableThreads.filter(t => t !== "Update Thread");
     const matching = nonUpdateThreads.filter(t => t.toLowerCase().includes(query));
 
@@ -578,7 +588,6 @@ function updateThreadControlsUI() {
     const role = getThreadRole(activeThread);
     currentUserThreadRole.textContent = role;
 
-    // Set badge style
     currentUserThreadRole.className = 'thread-role-badge';
     if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
     else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
@@ -586,14 +595,12 @@ function updateThreadControlsUI() {
     else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
     else currentUserThreadRole.classList.add('badge-blue');
 
-    // Manage roles button (Owner or Site Admin)
     if (canManagePermissions(activeThread)) {
         managePermsBtn.classList.remove('hidden');
     } else {
         managePermsBtn.classList.add('hidden');
     }
 
-    // Delete thread button (Owner or Site Admin)
     if (canDeleteThread(activeThread) && activeThread !== "Update Thread") {
         deleteThreadBtn.classList.remove('hidden');
     } else {
@@ -605,7 +612,6 @@ threadSearchInput.addEventListener('input', (e) => {
     renderThreadChips(e.target.value);
 });
 
-// Thread Modal triggers
 openNewThreadModalBtn.addEventListener('click', () => {
     if (!currentUser) { alert("Please log in to create a thread."); return; }
     threadModal.classList.remove('hidden');
@@ -619,7 +625,6 @@ threadModal.addEventListener('click', (e) => {
     if (e.target === threadModal) threadModal.classList.add('hidden');
 });
 
-// Thread creation: Creator becomes OWNER
 createThreadForm.addEventListener('submit', (e) => {
     e.preventDefault();
     if (!currentUsername) {
@@ -637,7 +642,6 @@ createThreadForm.addEventListener('submit', (e) => {
 
     availableThreads.push(newName);
     
-    // Creator is assigned thread owner
     threadMetaMap[newName] = {
         owner: currentUsername,
         moderators: [],
@@ -669,7 +673,7 @@ postSortSelect.addEventListener('change', () => {
     loadForumPosts();
 });
 
-// --- THREAD DELETION WITH SECURITY "ARE YOU SURE" PROMPT ---
+// --- THREAD DELETION MODAL ---
 
 deleteThreadBtn.addEventListener('click', () => {
     if (!canDeleteThread(activeThread)) {
@@ -697,13 +701,11 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     finalDeleteThreadBtn.disabled = true;
     finalDeleteThreadBtn.textContent = 'Deleting...';
 
-    // Delete posts from cloud database
     if (db) {
         const { error } = await db.from('Posts').delete().eq('thread', activeThread);
         if (error) console.error("Error purging thread posts:", error);
     }
 
-    // Remove from local structures
     delete threadMetaMap[activeThread];
     saveThreadMeta();
 
@@ -715,7 +717,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     finalDeleteThreadBtn.disabled = false;
     finalDeleteThreadBtn.textContent = 'Confirm Delete';
 
-    alert(`Thread "${inputVal}" and all its posts have been permanently removed.`);
+    alert(`Thread "${inputVal}" has been permanently removed.`);
 
     activeThread = "Text Thread #2";
     syncThreadDropdown();
@@ -726,10 +728,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
 
 // --- PERMISSIONS MANAGEMENT UI ---
 
-managePermsBtn.addEventListener('click', () => {
-    openPermissionsManager();
-});
-
+managePermsBtn.addEventListener('click', () => openPermissionsManager());
 closePermsModalBtn.addEventListener('click', () => permsModal.classList.add('hidden'));
 permsModal.addEventListener('click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
 
@@ -743,7 +742,6 @@ function renderPermissionsUserList() {
     const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
     permsUserList.innerHTML = '';
 
-    // Collect all unique users associated with this thread (owner, mods, banned, and recent posters)
     const trackedUsers = new Set();
     if (meta.owner) trackedUsers.add(meta.owner);
     (meta.moderators || []).forEach(u => trackedUsers.add(u));
@@ -776,7 +774,6 @@ function renderPermissionsUserList() {
         const btnCol = document.createElement('div');
         btnCol.className = 'perm-user-buttons';
 
-        // Site Admin super controls
         if (isSiteAdmin()) {
             if (role !== 'Owner') {
                 const makeOwnerBtn = document.createElement('button');
@@ -794,7 +791,6 @@ function renderPermissionsUserList() {
             }
         }
 
-        // Owner or Site Admin can promote/demote moderators
         if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (role === 'Moderator') {
                 const demoteModBtn = document.createElement('button');
@@ -823,7 +819,6 @@ function renderPermissionsUserList() {
             }
         }
 
-        // Revoke / Restore Posting Access
         if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (isBanned) {
                 const unbanBtn = document.createElement('button');
@@ -866,6 +861,76 @@ permUserAddBtn.addEventListener('click', () => {
     threadMetaMap[activeThread] = meta;
     permUserLookup.value = '';
     renderPermissionsUserList();
+});
+
+// --- SAFE LINK INSERTION MODAL (Avoids Paste Trap) ---
+
+openLinkModalBtn.addEventListener('click', () => {
+    linkUrlInput.value = '';
+    linkTextInput.value = '';
+    linkModal.classList.remove('hidden');
+});
+
+closeLinkModalBtn.addEventListener('click', () => linkModal.classList.add('hidden'));
+linkModal.addEventListener('click', (e) => { if (e.target === linkModal) linkModal.classList.add('hidden'); });
+
+insertLinkForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    let url = linkUrlInput.value.trim();
+    const text = linkTextInput.value.trim();
+
+    if (!url) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+    }
+
+    // Markdown style link syntax: [Display Text](url) or plain url
+    const formattedLink = text ? `[${text}](${url})` : url;
+
+    // Inject into post textarea safely without setting textWasPasted = true
+    const curVal = textBox.value;
+    const cursorPos = textBox.selectionStart || curVal.length;
+    const prefix = curVal.slice(0, cursorPos);
+    const suffix = curVal.slice(cursorPos);
+    
+    textBox.value = `${prefix}${prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : ''}${formattedLink} ${suffix}`;
+    linkModal.classList.add('hidden');
+    textBox.focus();
+});
+
+// Helper: Parse markdown [text](url) and bare URLs safely into sanitized <a> tags
+function renderFormattedContent(text) {
+    if (!text) return '';
+    const escaped = escapeHTML(text);
+
+    // Replace Markdown links: [Label](https://...)
+    const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, href) => {
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    });
+
+    // Replace bare URLs: https://...
+    const withBareUrls = withMdLinks.replace(/(^|[^">])(https?:\/\/[^\s<]+)/g, (match, prefix, href) => {
+        return `${prefix}<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`;
+    });
+
+    return withBareUrls.replace(/\n/g, '<br>');
+}
+
+// --- PHOTO ATTACHMENT IN FORUM POSTS ---
+
+postImageFile.addEventListener('change', () => {
+    const file = postImageFile.files[0];
+    if (file) {
+        selectedPostPhotoFile = file;
+        postPhotoFilename.textContent = `📷 ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+        postPhotoPreviewBar.classList.remove('hidden');
+    }
+});
+
+removePostPhotoBtn.addEventListener('click', () => {
+    selectedPostPhotoFile = null;
+    postImageFile.value = '';
+    postPhotoPreviewBar.classList.add('hidden');
 });
 
 // --- LIKES, DISLIKES & VOTING ENGINE ---
@@ -939,7 +1004,6 @@ function createPostCardElement(post) {
     else if (postAuthorRole === 'Owner') roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">OWNER</span>`;
     else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
 
-    // Permissions check for post deletion & revoking access
     const userCanDelete = canDeletePost(post);
     const userCanRevoke = canRevokePosting(post.thread) && postAuthorRole !== 'Owner' && postAuthorRole !== 'Site Admin';
 
@@ -955,6 +1019,8 @@ function createPostCardElement(post) {
         actionButtonsHtml += `</div>`;
     }
 
+    const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
+
     item.innerHTML = `
         <div class="vote-box">
             <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
@@ -969,12 +1035,12 @@ function createPostCardElement(post) {
                 </div>
                 <span>${dateFormatted}</span>
             </div>
-            <div class="post-content">${escapeHTML(post.content || '')}</div>
+            <div class="post-content">${renderFormattedContent(post.content || '')}</div>
+            ${photoHtml}
             ${actionButtonsHtml}
         </div>
     `;
 
-    // Like / Dislike handlers
     item.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const pId = e.currentTarget.getAttribute('data-post-id');
@@ -983,7 +1049,6 @@ function createPostCardElement(post) {
         });
     });
 
-    // Delete post button handler
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
@@ -992,7 +1057,6 @@ function createPostCardElement(post) {
         });
     }
 
-    // Revoke access button handler
     const revokeBtn = item.querySelector('.btn-revoke-author');
     if (revokeBtn) {
         revokeBtn.addEventListener('click', () => {
@@ -1058,6 +1122,8 @@ async function loadForumPosts() {
     renderCurrentFeed();
 }
 
+// --- PINNED UPDATES TICKER & MODAL ---
+
 async function loadProminentUpdates() {
     if (!db) return;
 
@@ -1068,16 +1134,39 @@ async function loadProminentUpdates() {
         .order('id', { ascending: false });
 
     if (error || !updates || updates.length === 0) {
-        updatesFeed.innerHTML = `<div class="no-posts">No official announcements posted yet.</div>`;
+        tickerContent.innerHTML = `<span class="ticker-item">No official updates posted yet.</span>`;
         return;
     }
 
-    updatesFeed.innerHTML = '';
-    updates.slice(0, 3).forEach(post => {
-        postCacheMap.set(post.id, post);
-        updatesFeed.appendChild(createPostCardElement(post));
-    });
+    cachedUpdates = updates;
+
+    // Render marquee ticker (duplicated items so seamless linear loop works)
+    const items = updates.map(u => {
+        const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
+        return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
+    }).join('');
+
+    tickerContent.innerHTML = items + items;
+
+    // Click handler to open the full drawer
+    tickerBadge.onclick = () => openUpdatesDrawer();
+    tickerContent.onclick = () => openUpdatesDrawer();
 }
+
+function openUpdatesDrawer() {
+    updatesModalFeed.innerHTML = '';
+    if (cachedUpdates.length === 0) {
+        updatesModalFeed.innerHTML = '<div class="no-posts">No pinned updates yet.</div>';
+    } else {
+        cachedUpdates.forEach(update => {
+            updatesModalFeed.appendChild(createPostCardElement(update));
+        });
+    }
+    updatesModal.classList.remove('hidden');
+}
+
+closeUpdatesModalBtn.addEventListener('click', () => updatesModal.classList.add('hidden'));
+updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) updatesModal.classList.add('hidden'); });
 
 // --- NOTIFICATION ENGINE ---
 
@@ -1658,7 +1747,7 @@ async function loadMessages(forceScroll = false) {
 
         const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
         const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
-        const textHtml = msg.content ? `<div>${escapeHTML(msg.content)}</div>` : '';
+        const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
 
         const bubbleHtml = `
@@ -1781,6 +1870,7 @@ function startCompositionTimer() {
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
+// Telemetry Paste detector ONLY monitors the main typing box
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
@@ -1834,6 +1924,9 @@ function resetTelemetryConsole() {
     mouseMovementsRecorded = 0;
     lastKeyTime = null;
     textBox.value = '';
+    selectedPostPhotoFile = null;
+    postImageFile.value = '';
+    postPhotoPreviewBar.classList.add('hidden');
     statPaste.textContent = "FALSE";
     statPaste.className = "badge badge-green";
     statTimer.textContent = "0.0s"; 
@@ -1841,7 +1934,7 @@ function resetTelemetryConsole() {
     statUniformity.textContent = "0%";
 }
 
-// --- FORUM SUBMISSION WITH PERMISSION CHECKS ---
+// --- FORUM SUBMISSION WITH PHOTO UPLOAD & PERMISSION CHECKS ---
 
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
@@ -1853,7 +1946,6 @@ forumForm.addEventListener('submit', async (event) => {
 
     const targetThread = topicSelect.value;
 
-    // Check if user has revoked access (banned) in this thread
     if (isUserBannedFromThread(targetThread, currentUsername)) {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked by an administrator or moderator.`);
         return;
@@ -1865,10 +1957,10 @@ forumForm.addEventListener('submit', async (event) => {
     }
 
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
-    if (textWasPasted) { alert("Submission Blocked: Paste detected."); return; }
+    if (textWasPasted) { alert("Submission Blocked: Paste detected in message body. Use the '🔗 Link' button to insert external links safely."); return; }
     if (totalTimeElapsed < 3) { alert("Submission Blocked: Impossibly fast post time."); return; }
     if (mouseMovementsRecorded === 0) { alert("Submission Blocked: No interaction track detected."); return; }
-    if (textBox.value.trim().length < 5) { alert("Submission Blocked: Type a longer message."); return; }
+    if (textBox.value.trim().length < 5 && !selectedPostPhotoFile) { alert("Submission Blocked: Type a longer message or attach a photo."); return; }
 
     let perfectIntervals = 0;
     for (let i = 2; i < keystrokeGaps.length; i++) {
@@ -1877,13 +1969,42 @@ forumForm.addEventListener('submit', async (event) => {
     const uniformityRatio = keystrokeGaps.length > 2 ? (perfectIntervals / (keystrokeGaps.length - 2)) : 0;
     if (uniformityRatio > 0.60) { alert("Submission Blocked: Automation detected."); return; }
 
+    const submitBtn = document.getElementById('forum-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Publishing...';
+
+    let postImageUrl = null;
+
+    // Upload post photo if attached
+    if (selectedPostPhotoFile) {
+        const fileExt = selectedPostPhotoFile.name.split('.').pop();
+        const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await db.storage
+            .from('chat-images')
+            .upload(filePath, selectedPostPhotoFile);
+
+        if (uploadError) {
+            console.error("Post image upload failed:", uploadError);
+        } else {
+            const { data: publicUrlData } = db.storage
+                .from('chat-images')
+                .getPublicUrl(filePath);
+            postImageUrl = publicUrlData.publicUrl;
+        }
+    }
+
     const { error } = await db
         .from('Posts')
         .insert([{ 
             thread: targetThread, 
             author: currentUsername, 
-            content: textBox.value 
+            content: textBox.value,
+            image_url: postImageUrl
         }]);
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Publish to Forum';
 
     if (error) {
         alert(`Database Error: ${error.message}`);
@@ -1902,7 +2023,7 @@ forumForm.addEventListener('submit', async (event) => {
     resetTelemetryConsole();
 });
 
-// Initial boot
+// Boot Application
 loadSavedThreads();
 loadProminentUpdates();
 loadForumPosts();
