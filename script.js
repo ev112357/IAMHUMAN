@@ -38,6 +38,14 @@ const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
 const postBarAvatar = document.getElementById('post-bar-avatar');
 
+// Notifications Tab Elements
+const openNotifBtn = document.getElementById('open-notif-btn');
+const activityNotifBadge = document.getElementById('activity-notif-badge');
+const notificationsModal = document.getElementById('notifications-modal');
+const closeNotificationsBtn = document.getElementById('close-notifications-btn');
+const clearActivityNotifsBtn = document.getElementById('clear-activity-notifs-btn');
+const notificationsList = document.getElementById('notifications-list');
+
 // DOM Elements - Pinned Updates Ticker & Modal
 const tickerBadge = document.getElementById('ticker-badge');
 const tickerContent = document.getElementById('ticker-content');
@@ -123,7 +131,13 @@ const userCardPfp = document.getElementById('user-card-pfp');
 const userCardUsername = document.getElementById('user-card-username');
 const userCardScore = document.getElementById('user-card-score');
 const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn');
+const unaddConfirmBox = document.getElementById('unadd-confirm-box');
+const confirmUnaddBtn = document.getElementById('confirm-unadd-btn');
+const cancelUnaddBtn = document.getElementById('cancel-unadd-btn');
+
 let targetProfileUsername = null;
+let targetProfileId = null;
+let targetFriendshipRecord = null; // stores friendship obj if exists
 
 // DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
@@ -193,6 +207,7 @@ if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner:
 // Voting and score cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
 let scoreOffsets = JSON.parse(localStorage.getItem('forum_score_offsets') || '{}');
+let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
 let cachedUpdates = [];
 let postCacheMap = new Map();
@@ -267,6 +282,104 @@ function saveThreadMeta() {
     localStorage.setItem('forum_thread_metadata', JSON.stringify(threadMetaMap));
 }
 
+// --- NOTIFICATIONS DISPATCHER & MANAGER ---
+
+async function sendNotification(targetUserId, type, entityId, message) {
+    if (!db || !currentUser || !targetUserId || targetUserId === currentUser.id) return;
+    try {
+        await db.from('user_notifications').insert([{
+            user_id: targetUserId,
+            actor_username: currentUsername,
+            type: type,
+            entity_id: entityId || null,
+            message: message,
+            is_read: false
+        }]);
+    } catch (e) {
+        console.error("Failed to dispatch notification:", e);
+    }
+}
+
+async function loadUserNotifications() {
+    if (!currentUser || !db) return;
+
+    try {
+        const { data: notifs, error } = await db
+            .from('user_notifications')
+            .select('*')
+            .eq('user_id', currentUser.id)
+            .order('id', { ascending: false })
+            .limit(40);
+
+        if (error || !notifs || notifs.length === 0) {
+            notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
+            activityNotifBadge.classList.add('hidden');
+            return;
+        }
+
+        const unreadCount = notifs.filter(n => !n.is_read).length;
+        if (unreadCount > 0) {
+            activityNotifBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+            activityNotifBadge.classList.remove('hidden');
+        } else {
+            activityNotifBadge.classList.add('hidden');
+        }
+
+        notificationsList.innerHTML = '';
+        notifs.forEach(n => {
+            const div = document.createElement('div');
+            div.className = `notif-item ${!n.is_read ? 'unread' : ''}`;
+            const timeAgo = new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            div.innerHTML = `
+                <div class="notif-text">
+                    <strong class="clickable-username" data-username="${escapeHTML(n.actor_username)}">@${escapeHTML(n.actor_username)}</strong>
+                    ${escapeHTML(n.message)}
+                </div>
+                <div class="notif-time">${timeAgo}</div>
+            `;
+
+            div.querySelector('.clickable-username').addEventListener('click', (e) => {
+                e.stopPropagation();
+                window.openUserProfileCard(n.actor_username);
+            });
+
+            notificationsList.appendChild(div);
+        });
+
+    } catch (e) {
+        console.error("Error loading activity notifications:", e);
+    }
+}
+
+openNotifBtn.addEventListener('click', () => {
+    notificationsModal.classList.remove('hidden');
+    loadUserNotifications();
+    
+    // Mark as read on open
+    if (currentUser && db) {
+        db.from('user_notifications')
+            .update({ is_read: true })
+            .eq('user_id', currentUser.id)
+            .eq('is_read', false)
+            .then(() => {
+                activityNotifBadge.classList.add('hidden');
+            });
+    }
+});
+
+closeNotificationsBtn.addEventListener('click', () => notificationsModal.classList.add('hidden'));
+notificationsModal.addEventListener('click', (e) => {
+    if (e.target === notificationsModal) notificationsModal.classList.add('hidden');
+});
+
+clearActivityNotifsBtn.addEventListener('click', async () => {
+    if (!currentUser || !db) return;
+    await db.from('user_notifications').delete().eq('user_id', currentUser.id);
+    notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
+    activityNotifBadge.classList.add('hidden');
+});
+
 // --- USER SCORE & PUBLIC PROFILE LOGIC ---
 
 async function calculateUserScore(username) {
@@ -300,6 +413,43 @@ async function calculateUserScore(username) {
     }
 }
 
+async function updateProfileFriendButtonUI() {
+    unaddConfirmBox.classList.add('hidden');
+    targetFriendshipRecord = null;
+
+    if (!currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '')) {
+        userCardAddFriendBtn.classList.add('hidden');
+        return;
+    }
+
+    userCardAddFriendBtn.classList.remove('hidden');
+
+    // Query friendship status
+    const { data: friendship } = await db
+        .from('friendships')
+        .select('*')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+    targetFriendshipRecord = friendship;
+
+    if (friendship && friendship.status === 'accepted') {
+        userCardAddFriendBtn.innerHTML = `✓ Friends`;
+        userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
+    } else if (friendship && friendship.status === 'pending') {
+        if (friendship.user_id === currentUser.id) {
+            userCardAddFriendBtn.innerHTML = `⏳ Request Sent`;
+            userCardAddFriendBtn.className = 'btn-friend-state secondary';
+        } else {
+            userCardAddFriendBtn.innerHTML = `📬 Accept Request`;
+            userCardAddFriendBtn.className = 'btn-friend-state';
+        }
+    } else {
+        userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
+        userCardAddFriendBtn.className = 'btn-friend-state';
+    }
+}
+
 window.openUserProfileCard = async function(username) {
     if (!username) return;
     const cleanUser = username.toLowerCase().replace('@', '');
@@ -312,23 +462,21 @@ window.openUserProfileCard = async function(username) {
     try {
         const { data: profile } = await db
             .from('profiles')
-            .select('avatar_url')
+            .select('id, avatar_url')
             .ilike('username', cleanUser)
             .maybeSingle();
 
-        if (profile?.avatar_url) {
-            userCardPfp.src = profile.avatar_url;
+        if (profile) {
+            targetProfileId = profile.id;
+            if (profile.avatar_url) userCardPfp.src = profile.avatar_url;
+        } else {
+            targetProfileId = null;
         }
     } catch (e) {
         console.error("Profile load err:", e);
     }
 
-    if (currentUsername && cleanUser === currentUsername.toLowerCase().replace('@', '')) {
-        userCardAddFriendBtn.classList.add('hidden');
-    } else {
-        userCardAddFriendBtn.classList.remove('hidden');
-    }
-
+    await updateProfileFriendButtonUI();
     userProfileModal.classList.remove('hidden');
 
     const score = await calculateUserScore(cleanUser);
@@ -340,18 +488,83 @@ userProfileModal.addEventListener('click', (e) => {
     if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
 });
 
+// Profile Add/Unadd Friend Button Click
 userCardAddFriendBtn.addEventListener('click', async () => {
     if (!currentUser) {
-        alert("Please log in to add friends.");
+        alert("Please log in to manage friends.");
         return;
     }
-    if (!targetProfileUsername) return;
 
-    addFriendInput.value = targetProfileUsername;
-    userProfileModal.classList.add('hidden');
-    dmModal.classList.remove('hidden');
-    showSidebarViewOnMobile();
-    addFriendBtn.click();
+    if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
+        // Toggle the "unadd friend?" confirmation box
+        unaddConfirmBox.classList.toggle('hidden');
+        return;
+    }
+
+    if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
+        if (targetFriendshipRecord.user_id !== currentUser.id) {
+            // Accept the incoming request
+            await handleRequest(targetFriendshipRecord.id, true);
+            await updateProfileFriendButtonUI();
+        }
+        return;
+    }
+
+    // Otherwise Send Friend Request
+    if (!targetProfileId) return;
+
+    const { error: insertErr } = await db
+        .from('friendships')
+        .insert([{ 
+            user_id: currentUser.id, 
+            friend_id: targetProfileId, 
+            status: 'pending' 
+        }]);
+
+    if (insertErr) {
+        alert(`Could not send request: ${insertErr.message}`);
+        return;
+    }
+
+    // Send in-app notification to receiver
+    await sendNotification(
+        targetProfileId,
+        'friend_request',
+        null,
+        'sent you a friend request.'
+    );
+
+    alert(`Friend request sent to @${targetProfileUsername}!`);
+    await updateProfileFriendButtonUI();
+    refreshMessagingHub();
+});
+
+// Confirm Unadd Friend (✓)
+confirmUnaddBtn.addEventListener('click', async () => {
+    if (!targetFriendshipRecord) return;
+
+    confirmUnaddBtn.disabled = true;
+    const { error } = await db
+        .from('friendships')
+        .delete()
+        .eq('id', targetFriendshipRecord.id);
+
+    confirmUnaddBtn.disabled = false;
+
+    if (error) {
+        alert(`Error removing friend: ${error.message}`);
+        return;
+    }
+
+    alert(`@${targetProfileUsername} has been removed from your friends.`);
+    unaddConfirmBox.classList.add('hidden');
+    await updateProfileFriendButtonUI();
+    refreshMessagingHub();
+});
+
+// Cancel Unadd Friend (✕)
+cancelUnaddBtn.addEventListener('click', () => {
+    unaddConfirmBox.classList.add('hidden');
 });
 
 // --- SESSION & AUTHENTICATION ---
@@ -378,12 +591,17 @@ async function syncUserState(user) {
 
         authPanel.classList.add('hidden');
         postPanel.classList.remove('hidden');
+        openNotifBtn.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
         openProfileBtn.classList.remove('hidden');
         syncThreadDropdown();
         checkNotifications();
+        loadUserNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
-        notifPollInterval = setInterval(checkNotifications, 4000);
+        notifPollInterval = setInterval(() => {
+            checkNotifications();
+            loadUserNotifications();
+        }, 4000);
     } else {
         currentUser = null;
         currentUsername = null;
@@ -393,10 +611,13 @@ async function syncUserState(user) {
         if (notifPollInterval) clearInterval(notifPollInterval);
 
         postPanel.classList.add('hidden');
+        openNotifBtn.classList.add('hidden');
         openDmBtn.classList.add('hidden');
         openProfileBtn.classList.add('hidden');
         notifBadge.classList.add('hidden');
+        activityNotifBadge.classList.add('hidden');
         dmModal.classList.add('hidden');
+        notificationsModal.classList.add('hidden');
         profileModal.classList.add('hidden');
         deleteConfirmModal.classList.add('hidden');
         permsModal.classList.add('hidden');
@@ -1049,12 +1270,13 @@ function getPostScore(post) {
     return baseScore + localDelta;
 }
 
-function handleVote(postId, direction) {
+async function handleVote(postId, direction) {
     if (!currentUser) {
         alert("You must be logged in to like or dislike posts.");
         return;
     }
 
+    const post = postCacheMap.get(Number(postId));
     const currentVote = userVotes[postId] || 0;
     let newVote = 0;
     let deltaChange = 0;
@@ -1074,6 +1296,76 @@ function handleVote(postId, direction) {
     localStorage.setItem('forum_score_offsets', JSON.stringify(scoreOffsets));
 
     renderCurrentFeed();
+
+    // Notify author if upvoted
+    if (post && post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
+        const { data: targetProfile } = await db
+            .from('profiles')
+            .select('id')
+            .ilike('username', post.author)
+            .maybeSingle();
+
+        if (targetProfile) {
+            await sendNotification(
+                targetProfile.id,
+                'upvote_post',
+                postId,
+                `upvoted your post in "${post.thread}".`
+            );
+        }
+    }
+}
+
+// Comment Voting Engine
+async function handleCommentVote(commentId, direction, commentAuthor) {
+    if (!currentUser) {
+        alert("You must be logged in to vote on comments.");
+        return;
+    }
+
+    const currentVote = userCommentVotes[commentId] || 0;
+    let newVote = currentVote === direction ? 0 : direction;
+    let delta = newVote - currentVote;
+
+    userCommentVotes[commentId] = newVote;
+    localStorage.setItem('user_forum_comment_votes', JSON.stringify(userCommentVotes));
+
+    // Update in Supabase
+    if (delta !== 0) {
+        const col = direction === 1 ? 'likes' : 'dislikes';
+        await db.rpc('increment_comment_vote', {
+            comment_id_input: commentId,
+            delta_val: delta
+        }).catch(async () => {
+            // Fallback direct read-modify-write
+            const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
+            if (c) {
+                if (direction === 1) {
+                    await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
+                } else {
+                    await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
+                }
+            }
+        });
+    }
+
+    // Notify comment author on upvote
+    if (newVote === 1 && commentAuthor && commentAuthor.toLowerCase() !== currentUsername.toLowerCase()) {
+        const { data: targetProfile } = await db
+            .from('profiles')
+            .select('id')
+            .ilike('username', commentAuthor)
+            .maybeSingle();
+
+        if (targetProfile) {
+            await sendNotification(
+                targetProfile.id,
+                'upvote_comment',
+                commentId,
+                `upvoted your comment.`
+            );
+        }
+    }
 }
 
 function sortPosts(posts) {
@@ -1183,7 +1475,7 @@ function createPostCardElement(post) {
     toggleBtn.addEventListener('click', () => {
         container.classList.toggle('hidden');
         if (!container.classList.contains('hidden')) {
-            loadPostComments(post.id);
+            loadPostComments(post.id, post);
         }
     });
 
@@ -1214,8 +1506,26 @@ function createPostCardElement(post) {
             return;
         }
 
+        // Notify post author that someone commented
+        if (post.author && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
+            const { data: authorProfile } = await db
+                .from('profiles')
+                .select('id')
+                .ilike('username', post.author)
+                .maybeSingle();
+
+            if (authorProfile) {
+                await sendNotification(
+                    authorProfile.id,
+                    'comment_reply',
+                    post.id,
+                    `replied to your post: "${text.substring(0, 36)}..."`
+                );
+            }
+        }
+
         input.value = '';
-        await loadPostComments(post.id);
+        await loadPostComments(post.id, post);
         fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
     });
 
@@ -1261,7 +1571,7 @@ async function fetchCommentCount(postId, countElement) {
     }
 }
 
-async function loadPostComments(postId) {
+async function loadPostComments(postId, post) {
     const listEl = document.getElementById(`comments-list-${postId}`);
     if (!listEl || !db) return;
 
@@ -1279,18 +1589,36 @@ async function loadPostComments(postId) {
 
         listEl.innerHTML = '';
         comments.forEach(c => {
+            const myVote = userCommentVotes[c.id] || 0;
+            const commentScore = (Number(c.likes || 0) - Number(c.dislikes || 0));
+
             const div = document.createElement('div');
             div.className = 'comment-item';
             div.innerHTML = `
-                <div class="comment-meta">
-                    <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
-                    <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                <div class="comment-vote-box">
+                    <button class="comment-vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-dir="1">▲</button>
+                    <span class="comment-vote-score">${commentScore}</span>
+                    <button class="comment-vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-dir="-1">▼</button>
                 </div>
-                <div class="comment-content">${renderFormattedContent(c.content)}</div>
+                <div class="comment-body">
+                    <div class="comment-meta">
+                        <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
+                        <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div class="comment-content">${renderFormattedContent(c.content)}</div>
+                </div>
             `;
 
             div.querySelector('.clickable-username').addEventListener('click', (e) => {
                 window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+            });
+
+            div.querySelectorAll('.comment-vote-btn').forEach(b => {
+                b.addEventListener('click', async (e) => {
+                    const dir = parseInt(e.currentTarget.getAttribute('data-dir'), 10);
+                    await handleCommentVote(c.id, dir, c.author);
+                    await loadPostComments(postId, post);
+                });
             });
 
             listEl.appendChild(div);
@@ -1743,6 +2071,13 @@ addFriendBtn.addEventListener('click', async () => {
         alert(`Could not send request: ${insertErr.message}`);
         return;
     }
+
+    await sendNotification(
+        targetProfile.id,
+        'friend_request',
+        null,
+        'sent you a friend request.'
+    );
 
     addFriendInput.value = '';
     alert(`Friend request sent to @${targetProfile.username}!`);
