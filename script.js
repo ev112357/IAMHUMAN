@@ -32,6 +32,21 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
+// DOM Elements - Public User Profile Modal
+const userProfileModal = document.getElementById('user-profile-modal');
+const closeUserProfileBtn = document.getElementById('close-user-profile-btn');
+const userCardPfp = document.getElementById('user-card-pfp');
+const userCardUsername = document.getElementById('user-card-username');
+const userCardScore = document.getElementById('user-card-score');
+const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn');
+
+let targetProfileUsername = null;
+let postCommentsCache = new Map(); // postId -> comments[]
+closeUserProfileBtn.addEventListener('click', () => userProfileModal.classList.add('hidden'));
+userProfileModal.addEventListener('click', (e) => {
+    if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
+});
+
 // DOM Elements - Header Nav & Profile Bar
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
@@ -55,7 +70,83 @@ const currentThreadTitle = document.getElementById('current-thread-title');
 const currentUserThreadRole = document.getElementById('current-user-thread-role');
 const managePermsBtn = document.getElementById('manage-perms-btn');
 const deleteThreadBtn = document.getElementById('delete-thread-btn');
+// Compute total score (post upvotes - downvotes + comment upvotes - downvotes)
+async function calculateUserScore(username) {
+    if (!username || !db) return 0;
+    const cleanUser = username.toLowerCase().replace('@', '');
 
+    // Get posts by author
+    const { data: posts } = await db
+        .from('Posts')
+        .select('likes, dislikes')
+        .ilike('author', cleanUser);
+
+    let postScore = 0;
+    (posts || []).forEach(p => {
+        postScore += (Number(p.likes || 0) - Number(p.dislikes || 0));
+    });
+
+    // Get comments by author
+    const { data: comments } = await db
+        .from('post_comments')
+        .select('likes, dislikes')
+        .ilike('author', cleanUser);
+
+    let commentScore = 0;
+    (comments || []).forEach(c => {
+        commentScore += (Number(c.likes || 0) - Number(c.dislikes || 0));
+    });
+
+    return postScore + commentScore;
+}
+
+// Open and populate public profile card
+window.openUserProfileCard = async function(username) {
+    if (!username) return;
+    const cleanUser = username.toLowerCase().replace('@', '');
+    targetProfileUsername = cleanUser;
+
+    userCardUsername.textContent = `@${cleanUser}`;
+    userCardScore.textContent = '...';
+    userCardPfp.src = DEFAULT_AVATAR;
+
+    // Fetch avatar from profiles
+    const { data: profile } = await db
+        .from('profiles')
+        .select('avatar_url')
+        .ilike('username', cleanUser)
+        .maybeSingle();
+
+    if (profile?.avatar_url) {
+        userCardPfp.src = profile.avatar_url;
+    }
+
+    // Toggle Add Friend button if it's oneself
+    if (currentUsername && cleanUser === currentUsername.toLowerCase().replace('@', '')) {
+        userCardAddFriendBtn.classList.add('hidden');
+    } else {
+        userCardAddFriendBtn.classList.remove('hidden');
+    }
+
+    userProfileModal.classList.remove('hidden');
+
+    // Calculate score
+    const score = await calculateUserScore(cleanUser);
+    userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
+};
+
+// Handle Add Friend directly from the profile card
+userCardAddFriendBtn.addEventListener('click', async () => {
+    if (!currentUser) {
+        alert("Please log in to add friends.");
+        return;
+    }
+    if (!targetProfileUsername) return;
+
+    // Reuse existing addFriend logic
+    addFriendInput.value = targetProfileUsername;
+    addFriendBtn.click();
+});
 // Photo Attachment in Posts
 const postImageFile = document.getElementById('post-image-file');
 const postPhotoPreviewBar = document.getElementById('post-photo-preview-bar');
@@ -1002,7 +1093,6 @@ function sortPosts(posts) {
 }
 
 // --- POST CREATION & MODERATION UI ---
-
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = 'post-item';
@@ -1043,7 +1133,7 @@ function createPostCardElement(post) {
         <div class="post-body">
             <div class="post-meta">
                 <div class="post-author-wrap">
-                    <span>By: <span class="post-author">@${escapeHTML(post.author || 'anonymous')}</span></span>
+                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(post.author || 'anonymous')}">@${escapeHTML(post.author || 'anonymous')}</strong></span>
                     ${roleBadge}
                 </div>
                 <span>${dateFormatted}</span>
@@ -1051,9 +1141,32 @@ function createPostCardElement(post) {
             <div class="post-content">${renderFormattedContent(post.content || '')}</div>
             ${photoHtml}
             ${actionButtonsHtml}
+
+            <!-- Comment toggle button -->
+            <button type="button" class="btn-toggle-comments" data-post-id="${post.id}">
+                💬 Comments <span class="comment-count" data-post-id="${post.id}">(0)</span>
+            </button>
+
+            <!-- Comments Drawer -->
+            <div class="post-comments-container hidden" id="comments-container-${post.id}">
+                <div class="comments-list" id="comments-list-${post.id}">
+                    <div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>
+                </div>
+                <form class="comment-form" data-post-id="${post.id}">
+                    <input type="text" placeholder="Write a comment..." required autocomplete="off">
+                    <button type="submit">Reply</button>
+                </form>
+            </div>
         </div>
     `;
 
+    // Click author to open profile
+    item.querySelector('.clickable-username').addEventListener('click', (e) => {
+        const u = e.currentTarget.getAttribute('data-username');
+        window.openUserProfileCard(u);
+    });
+
+    // Voting
     item.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const pId = e.currentTarget.getAttribute('data-post-id');
@@ -1062,6 +1175,49 @@ function createPostCardElement(post) {
         });
     });
 
+    // Post comment toggle
+    const toggleBtn = item.querySelector('.btn-toggle-comments');
+    const container = item.querySelector(`#comments-container-${post.id}`);
+    toggleBtn.addEventListener('click', () => {
+        container.classList.toggle('hidden');
+        if (!container.classList.contains('hidden')) {
+            loadPostComments(post.id);
+        }
+    });
+
+    // Initial comment count lookup
+    fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
+
+    // Handle Comment Submission
+    const commentForm = item.querySelector('.comment-form');
+    commentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!currentUser) {
+            alert("You must be logged in to comment.");
+            return;
+        }
+        const input = commentForm.querySelector('input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        const { error } = await db.from('post_comments').insert([{
+            post_id: post.id,
+            author: currentUsername,
+            user_id: currentUser.id,
+            content: text
+        }]);
+
+        if (error) {
+            alert(`Comment failed: ${error.message}`);
+            return;
+        }
+
+        input.value = '';
+        await loadPostComments(post.id);
+        fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
+    });
+
+    // Post Deletion
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
@@ -1070,23 +1226,54 @@ function createPostCardElement(post) {
         });
     }
 
-    const revokeBtn = item.querySelector('.btn-revoke-author');
-    if (revokeBtn) {
-        revokeBtn.addEventListener('click', () => {
-            const target = revokeBtn.getAttribute('data-author');
-            if (!confirm(`Revoke posting privileges from @${target} in "${post.thread}"?`)) return;
-            const meta = threadMetaMap[post.thread] || { owner: '', moderators: [], banned: [] };
-            if (!meta.banned) meta.banned = [];
-            if (!meta.banned.includes(target)) meta.banned.push(target);
-            saveThreadMeta();
-            alert(`@${target} has had their posting access revoked in this thread.`);
-            renderCurrentFeed();
-        });
-    }
-
     return item;
 }
 
+// Helpers for Comment fetching
+async function fetchCommentCount(postId, countElement) {
+    if (!db || !countElement) return;
+    const { count } = await db
+        .from('post_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId);
+
+    countElement.textContent = `(${count || 0})`;
+}
+
+async function loadPostComments(postId) {
+    const listEl = document.getElementById(`comments-list-${postId}`);
+    if (!listEl || !db) return;
+
+    const { data: comments, error } = await db
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('id', { ascending: true });
+
+    if (error || !comments || comments.length === 0) {
+        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">No comments yet. Start the conversation!</div>';
+        return;
+    }
+
+    listEl.innerHTML = '';
+    comments.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'comment-item';
+        div.innerHTML = `
+            <div class="comment-meta">
+                <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
+                <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <div class="comment-content">${renderFormattedContent(c.content)}</div>
+        `;
+
+        div.querySelector('.clickable-username').addEventListener('click', (e) => {
+            window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+        });
+
+        listEl.appendChild(div);
+    });
+}
 async function deletePostById(postId) {
     if (db) {
         const { error } = await db.from('Posts').delete().eq('id', postId);
@@ -1759,7 +1946,7 @@ async function loadMessages(forceScroll = false) {
         row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
 
         const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
-        const authorHtml = !isMine ? `<div class="msg-author">@${escapeHTML(msg.sender_username)}</div>` : '';
+        const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
         const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
 
@@ -1777,6 +1964,12 @@ async function loadMessages(forceScroll = false) {
         }
 
         chatMessages.appendChild(row);
+        const authorLink = row.querySelector('.clickable-username');
+if (authorLink) {
+    authorLink.addEventListener('click', (e) => {
+        window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+    });
+}
     });
 
     scrollToBottom(forceScroll);
