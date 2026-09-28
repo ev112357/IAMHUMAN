@@ -32,21 +32,6 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
-// DOM Elements - Public User Profile Modal
-const userProfileModal = document.getElementById('user-profile-modal');
-const closeUserProfileBtn = document.getElementById('close-user-profile-btn');
-const userCardPfp = document.getElementById('user-card-pfp');
-const userCardUsername = document.getElementById('user-card-username');
-const userCardScore = document.getElementById('user-card-score');
-const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn');
-
-let targetProfileUsername = null;
-let postCommentsCache = new Map(); // postId -> comments[]
-closeUserProfileBtn.addEventListener('click', () => userProfileModal.classList.add('hidden'));
-userProfileModal.addEventListener('click', (e) => {
-    if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
-});
-
 // DOM Elements - Header Nav & Profile Bar
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
@@ -70,83 +55,7 @@ const currentThreadTitle = document.getElementById('current-thread-title');
 const currentUserThreadRole = document.getElementById('current-user-thread-role');
 const managePermsBtn = document.getElementById('manage-perms-btn');
 const deleteThreadBtn = document.getElementById('delete-thread-btn');
-// Compute total score (post upvotes - downvotes + comment upvotes - downvotes)
-async function calculateUserScore(username) {
-    if (!username || !db) return 0;
-    const cleanUser = username.toLowerCase().replace('@', '');
 
-    // Get posts by author
-    const { data: posts } = await db
-        .from('Posts')
-        .select('likes, dislikes')
-        .ilike('author', cleanUser);
-
-    let postScore = 0;
-    (posts || []).forEach(p => {
-        postScore += (Number(p.likes || 0) - Number(p.dislikes || 0));
-    });
-
-    // Get comments by author
-    const { data: comments } = await db
-        .from('post_comments')
-        .select('likes, dislikes')
-        .ilike('author', cleanUser);
-
-    let commentScore = 0;
-    (comments || []).forEach(c => {
-        commentScore += (Number(c.likes || 0) - Number(c.dislikes || 0));
-    });
-
-    return postScore + commentScore;
-}
-
-// Open and populate public profile card
-window.openUserProfileCard = async function(username) {
-    if (!username) return;
-    const cleanUser = username.toLowerCase().replace('@', '');
-    targetProfileUsername = cleanUser;
-
-    userCardUsername.textContent = `@${cleanUser}`;
-    userCardScore.textContent = '...';
-    userCardPfp.src = DEFAULT_AVATAR;
-
-    // Fetch avatar from profiles
-    const { data: profile } = await db
-        .from('profiles')
-        .select('avatar_url')
-        .ilike('username', cleanUser)
-        .maybeSingle();
-
-    if (profile?.avatar_url) {
-        userCardPfp.src = profile.avatar_url;
-    }
-
-    // Toggle Add Friend button if it's oneself
-    if (currentUsername && cleanUser === currentUsername.toLowerCase().replace('@', '')) {
-        userCardAddFriendBtn.classList.add('hidden');
-    } else {
-        userCardAddFriendBtn.classList.remove('hidden');
-    }
-
-    userProfileModal.classList.remove('hidden');
-
-    // Calculate score
-    const score = await calculateUserScore(cleanUser);
-    userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
-};
-
-// Handle Add Friend directly from the profile card
-userCardAddFriendBtn.addEventListener('click', async () => {
-    if (!currentUser) {
-        alert("Please log in to add friends.");
-        return;
-    }
-    if (!targetProfileUsername) return;
-
-    // Reuse existing addFriend logic
-    addFriendInput.value = targetProfileUsername;
-    addFriendBtn.click();
-});
 // Photo Attachment in Posts
 const postImageFile = document.getElementById('post-image-file');
 const postPhotoPreviewBar = document.getElementById('post-photo-preview-bar');
@@ -154,7 +63,7 @@ const postPhotoFilename = document.getElementById('post-photo-filename');
 const removePostPhotoBtn = document.getElementById('remove-post-photo-btn');
 let selectedPostPhotoFile = null;
 
-// Safe Link Insertion Modal (Bypasses Paste Detector)
+// Safe Link Insertion Modal
 const openLinkModalBtn = document.getElementById('open-link-modal-btn');
 const linkModal = document.getElementById('link-modal');
 const closeLinkModalBtn = document.getElementById('close-link-modal-btn');
@@ -207,6 +116,15 @@ const deleteUsernameInput = document.getElementById('delete-username-input');
 const finalDeleteBtn = document.getElementById('final-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
 
+// Public User Profile Card Elements
+const userProfileModal = document.getElementById('user-profile-modal');
+const closeUserProfileBtn = document.getElementById('close-user-profile-btn');
+const userCardPfp = document.getElementById('user-card-pfp');
+const userCardUsername = document.getElementById('user-card-username');
+const userCardScore = document.getElementById('user-card-score');
+const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn');
+let targetProfileUsername = null;
+
 // DOM Elements - Telemetry Console
 const statPaste = document.getElementById('stat-paste');
 const statTimer = document.getElementById('stat-timer');
@@ -248,7 +166,7 @@ const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn'
 const cancelGroupBtn = document.getElementById('cancel-group-btn');
 
 // Default fallback avatar SVG
-const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='%2394a3b8' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
+const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
 
 // App State
 let currentUser = null;
@@ -349,6 +267,93 @@ function saveThreadMeta() {
     localStorage.setItem('forum_thread_metadata', JSON.stringify(threadMetaMap));
 }
 
+// --- USER SCORE & PUBLIC PROFILE LOGIC ---
+
+async function calculateUserScore(username) {
+    if (!username || !db) return 0;
+    const cleanUser = username.toLowerCase().replace('@', '');
+
+    try {
+        const { data: posts } = await db
+            .from('Posts')
+            .select('likes, dislikes')
+            .ilike('author', cleanUser);
+
+        let total = 0;
+        (posts || []).forEach(p => {
+            total += (Number(p.likes || 0) - Number(p.dislikes || 0));
+        });
+
+        const { data: comments } = await db
+            .from('post_comments')
+            .select('likes, dislikes')
+            .ilike('author', cleanUser);
+
+        (comments || []).forEach(c => {
+            total += (Number(c.likes || 0) - Number(c.dislikes || 0));
+        });
+
+        return total;
+    } catch (e) {
+        console.error("Error computing score:", e);
+        return 0;
+    }
+}
+
+window.openUserProfileCard = async function(username) {
+    if (!username) return;
+    const cleanUser = username.toLowerCase().replace('@', '');
+    targetProfileUsername = cleanUser;
+
+    userCardUsername.textContent = `@${cleanUser}`;
+    userCardScore.textContent = '...';
+    userCardPfp.src = DEFAULT_AVATAR;
+
+    try {
+        const { data: profile } = await db
+            .from('profiles')
+            .select('avatar_url')
+            .ilike('username', cleanUser)
+            .maybeSingle();
+
+        if (profile?.avatar_url) {
+            userCardPfp.src = profile.avatar_url;
+        }
+    } catch (e) {
+        console.error("Profile load err:", e);
+    }
+
+    if (currentUsername && cleanUser === currentUsername.toLowerCase().replace('@', '')) {
+        userCardAddFriendBtn.classList.add('hidden');
+    } else {
+        userCardAddFriendBtn.classList.remove('hidden');
+    }
+
+    userProfileModal.classList.remove('hidden');
+
+    const score = await calculateUserScore(cleanUser);
+    userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
+};
+
+closeUserProfileBtn.addEventListener('click', () => userProfileModal.classList.add('hidden'));
+userProfileModal.addEventListener('click', (e) => {
+    if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
+});
+
+userCardAddFriendBtn.addEventListener('click', async () => {
+    if (!currentUser) {
+        alert("Please log in to add friends.");
+        return;
+    }
+    if (!targetProfileUsername) return;
+
+    addFriendInput.value = targetProfileUsername;
+    userProfileModal.classList.add('hidden');
+    dmModal.classList.remove('hidden');
+    showSidebarViewOnMobile();
+    addFriendBtn.click();
+});
+
 // --- SESSION & AUTHENTICATION ---
 
 async function syncUserState(user) {
@@ -375,7 +380,7 @@ async function syncUserState(user) {
         postPanel.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
         openProfileBtn.classList.remove('hidden');
-        syncThreadDropdown(); // <--- ADD THIS LINE (shows "Update Thread" if you log in as @gemini)
+        syncThreadDropdown();
         checkNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
         notifPollInterval = setInterval(checkNotifications, 4000);
@@ -397,8 +402,9 @@ async function syncUserState(user) {
         permsModal.classList.add('hidden');
         threadDeleteModal.classList.add('hidden');
         linkModal.classList.add('hidden');
+        userProfileModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
-        syncThreadDropdown(); // <--- ADD THIS LINE (removes "Update Thread" if you log out)
+        syncThreadDropdown();
     }
 
     updateThreadControlsUI();
@@ -639,7 +645,6 @@ function syncThreadDropdown() {
     topicSelect.innerHTML = '';
     
     availableThreads.forEach(t => {
-        // Only show "Update Thread" in the dropdown if the logged-in user is @gemini
         if (t === "Update Thread" && !isSiteAdmin()) {
             return;
         }
@@ -650,7 +655,6 @@ function syncThreadDropdown() {
         topicSelect.appendChild(opt);
     });
 
-    // Make sure we select the activeThread if it's available, otherwise fallback to the first option
     if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
         topicSelect.value = activeThread;
     } else if (topicSelect.options.length > 0) {
@@ -662,7 +666,6 @@ function renderThreadChips(filterQuery = '') {
     threadChipsContainer.innerHTML = '';
     const query = filterQuery.toLowerCase().trim();
     
-    // Updates thread runs along the top ticker
     const nonUpdateThreads = availableThreads.filter(t => t !== "Update Thread");
     const matching = nonUpdateThreads.filter(t => t.toLowerCase().includes(query));
 
@@ -873,7 +876,11 @@ function renderPermissionsUserList() {
 
         const nameCol = document.createElement('div');
         nameCol.className = 'perm-user-name';
-        nameCol.innerHTML = `<span>@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
+        nameCol.innerHTML = `<span class="clickable-username" data-username="${escapeHTML(cleanUser)}">@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
+
+        nameCol.querySelector('.clickable-username').addEventListener('click', () => {
+            window.openUserProfileCard(cleanUser);
+        });
 
         const btnCol = document.createElement('div');
         btnCol.className = 'perm-user-buttons';
@@ -967,7 +974,7 @@ permUserAddBtn.addEventListener('click', () => {
     renderPermissionsUserList();
 });
 
-// --- SAFE LINK INSERTION MODAL (Avoids Paste Trap) ---
+// --- SAFE LINK INSERTION MODAL ---
 
 openLinkModalBtn.addEventListener('click', () => {
     linkUrlInput.value = '';
@@ -988,10 +995,8 @@ insertLinkForm.addEventListener('submit', (e) => {
         url = 'https://' + url;
     }
 
-    // Markdown style link syntax: [Display Text](url) or plain url
     const formattedLink = text ? `[${text}](${url})` : url;
 
-    // Inject into post textarea safely without setting textWasPasted = true
     const curVal = textBox.value;
     const cursorPos = textBox.selectionStart || curVal.length;
     const prefix = curVal.slice(0, cursorPos);
@@ -1002,17 +1007,14 @@ insertLinkForm.addEventListener('submit', (e) => {
     textBox.focus();
 });
 
-// Helper: Parse markdown [text](url) and bare URLs safely into sanitized <a> tags
 function renderFormattedContent(text) {
     if (!text) return '';
     const escaped = escapeHTML(text);
 
-    // Replace Markdown links: [Label](https://...)
     const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, href) => {
         return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     });
 
-    // Replace bare URLs: https://...
     const withBareUrls = withMdLinks.replace(/(^|[^">])(https?:\/\/[^\s<]+)/g, (match, prefix, href) => {
         return `${prefix}<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`;
     });
@@ -1093,6 +1095,7 @@ function sortPosts(posts) {
 }
 
 // --- POST CREATION & MODERATION UI ---
+
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = 'post-item';
@@ -1142,7 +1145,7 @@ function createPostCardElement(post) {
             ${photoHtml}
             ${actionButtonsHtml}
 
-            <!-- Comment toggle button -->
+            <!-- Comment Toggle Button -->
             <button type="button" class="btn-toggle-comments" data-post-id="${post.id}">
                 💬 Comments <span class="comment-count" data-post-id="${post.id}">(0)</span>
             </button>
@@ -1160,10 +1163,9 @@ function createPostCardElement(post) {
         </div>
     `;
 
-    // Click author to open profile
+    // Click author to view profile
     item.querySelector('.clickable-username').addEventListener('click', (e) => {
-        const u = e.currentTarget.getAttribute('data-username');
-        window.openUserProfileCard(u);
+        window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
     });
 
     // Voting
@@ -1175,7 +1177,7 @@ function createPostCardElement(post) {
         });
     });
 
-    // Post comment toggle
+    // Toggle comments
     const toggleBtn = item.querySelector('.btn-toggle-comments');
     const container = item.querySelector(`#comments-container-${post.id}`);
     toggleBtn.addEventListener('click', () => {
@@ -1185,10 +1187,10 @@ function createPostCardElement(post) {
         }
     });
 
-    // Initial comment count lookup
+    // Initial count
     fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
 
-    // Handle Comment Submission
+    // Submit comment
     const commentForm = item.querySelector('.comment-form');
     commentForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1217,12 +1219,27 @@ function createPostCardElement(post) {
         fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
     });
 
-    // Post Deletion
+    // Delete post
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
             if (!confirm("Are you sure you want to delete this post?")) return;
             await deletePostById(post.id);
+        });
+    }
+
+    // Revoke author
+    const revokeBtn = item.querySelector('.btn-revoke-author');
+    if (revokeBtn) {
+        revokeBtn.addEventListener('click', () => {
+            const target = revokeBtn.getAttribute('data-author');
+            if (!confirm(`Revoke posting privileges from @${target} in "${post.thread}"?`)) return;
+            const meta = threadMetaMap[post.thread] || { owner: '', moderators: [], banned: [] };
+            if (!meta.banned) meta.banned = [];
+            if (!meta.banned.includes(target)) meta.banned.push(target);
+            saveThreadMeta();
+            alert(`@${target} has had their posting access revoked in this thread.`);
+            renderCurrentFeed();
         });
     }
 
@@ -1232,48 +1249,57 @@ function createPostCardElement(post) {
 // Helpers for Comment fetching
 async function fetchCommentCount(postId, countElement) {
     if (!db || !countElement) return;
-    const { count } = await db
-        .from('post_comments')
-        .select('*', { count: 'exact', head: true })
-        .eq('post_id', postId);
+    try {
+        const { count } = await db
+            .from('post_comments')
+            .select('*', { count: 'exact', head: true })
+            .eq('post_id', postId);
 
-    countElement.textContent = `(${count || 0})`;
+        countElement.textContent = `(${count || 0})`;
+    } catch (e) {
+        countElement.textContent = `(0)`;
+    }
 }
 
 async function loadPostComments(postId) {
     const listEl = document.getElementById(`comments-list-${postId}`);
     if (!listEl || !db) return;
 
-    const { data: comments, error } = await db
-        .from('post_comments')
-        .select('*')
-        .eq('post_id', postId)
-        .order('id', { ascending: true });
+    try {
+        const { data: comments, error } = await db
+            .from('post_comments')
+            .select('*')
+            .eq('post_id', postId)
+            .order('id', { ascending: true });
 
-    if (error || !comments || comments.length === 0) {
-        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">No comments yet. Start the conversation!</div>';
-        return;
-    }
+        if (error || !comments || comments.length === 0) {
+            listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">No comments yet. Start the conversation!</div>';
+            return;
+        }
 
-    listEl.innerHTML = '';
-    comments.forEach(c => {
-        const div = document.createElement('div');
-        div.className = 'comment-item';
-        div.innerHTML = `
-            <div class="comment-meta">
-                <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
-                <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </div>
-            <div class="comment-content">${renderFormattedContent(c.content)}</div>
-        `;
+        listEl.innerHTML = '';
+        comments.forEach(c => {
+            const div = document.createElement('div');
+            div.className = 'comment-item';
+            div.innerHTML = `
+                <div class="comment-meta">
+                    <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
+                    <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <div class="comment-content">${renderFormattedContent(c.content)}</div>
+            `;
 
-        div.querySelector('.clickable-username').addEventListener('click', (e) => {
-            window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+            div.querySelector('.clickable-username').addEventListener('click', (e) => {
+                window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+            });
+
+            listEl.appendChild(div);
         });
-
-        listEl.appendChild(div);
-    });
+    } catch (e) {
+        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444;">Could not load comments.</div>';
+    }
 }
+
 async function deletePostById(postId) {
     if (db) {
         const { error } = await db.from('Posts').delete().eq('id', postId);
@@ -1340,7 +1366,6 @@ async function loadProminentUpdates() {
 
     cachedUpdates = updates;
 
-    // Render marquee ticker (duplicated items so seamless linear loop works)
     const items = updates.map(u => {
         const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
         return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
@@ -1348,7 +1373,6 @@ async function loadProminentUpdates() {
 
     tickerContent.innerHTML = items + items;
 
-    // Click handler to open the full drawer
     tickerBadge.onclick = () => openUpdatesDrawer();
     tickerContent.onclick = () => openUpdatesDrawer();
 }
@@ -1373,48 +1397,52 @@ updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) u
 async function checkNotifications() {
     if (!currentUser || !db) return;
 
-    const { count: pendingReqs } = await db
-        .from('friendships')
-        .select('*', { count: 'exact', head: true })
-        .eq('friend_id', currentUser.id)
-        .eq('status', 'pending');
+    try {
+        const { count: pendingReqs } = await db
+            .from('friendships')
+            .select('*', { count: 'exact', head: true })
+            .eq('friend_id', currentUser.id)
+            .eq('status', 'pending');
 
-    const { data: memberships } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
-
-    let unreadTotal = 0;
-    unreadCountsByConv.clear();
-
-    if (memberships && memberships.length > 0) {
-        const convIds = memberships.map(m => m.conversation_id);
-        const { data: unreadMsgs } = await db
-            .from('chat_messages')
+        const { data: memberships } = await db
+            .from('conversation_members')
             .select('conversation_id')
-            .in('conversation_id', convIds)
-            .neq('sender_id', currentUser.id)
-            .eq('is_read', false);
+            .eq('user_id', currentUser.id);
 
-        if (unreadMsgs) {
-            unreadTotal = unreadMsgs.length;
-            unreadMsgs.forEach(m => {
-                const cur = unreadCountsByConv.get(m.conversation_id) || 0;
-                unreadCountsByConv.set(m.conversation_id, cur + 1);
-            });
+        let unreadTotal = 0;
+        unreadCountsByConv.clear();
+
+        if (memberships && memberships.length > 0) {
+            const convIds = memberships.map(m => m.conversation_id);
+            const { data: unreadMsgs } = await db
+                .from('chat_messages')
+                .select('conversation_id')
+                .in('conversation_id', convIds)
+                .neq('sender_id', currentUser.id)
+                .eq('is_read', false);
+
+            if (unreadMsgs) {
+                unreadTotal = unreadMsgs.length;
+                unreadMsgs.forEach(m => {
+                    const cur = unreadCountsByConv.get(m.conversation_id) || 0;
+                    unreadCountsByConv.set(m.conversation_id, cur + 1);
+                });
+            }
         }
-    }
 
-    const total = (pendingReqs || 0) + unreadTotal;
-    if (total > 0) {
-        notifBadge.textContent = total > 99 ? '99+' : total;
-        notifBadge.classList.remove('hidden');
-    } else {
-        notifBadge.classList.add('hidden');
-    }
+        const total = (pendingReqs || 0) + unreadTotal;
+        if (total > 0) {
+            notifBadge.textContent = total > 99 ? '99+' : total;
+            notifBadge.classList.remove('hidden');
+        } else {
+            notifBadge.classList.add('hidden');
+        }
 
-    if (!dmModal.classList.contains('hidden')) {
-        updateSidebarBadges();
+        if (!dmModal.classList.contains('hidden')) {
+            updateSidebarBadges();
+        }
+    } catch (e) {
+        console.error("Notif check error:", e);
     }
 }
 
@@ -1537,12 +1565,16 @@ async function loadFriendRequests() {
         const item = document.createElement('div');
         item.className = 'req-item';
         item.innerHTML = `
-            <span>@${escapeHTML(username)}</span>
+            <span class="clickable-username" data-username="${escapeHTML(username)}">@${escapeHTML(username)}</span>
             <div class="req-actions">
                 <button class="btn-accept" title="Accept">✓</button>
                 <button class="btn-deny" title="Deny">✕</button>
             </div>
         `;
+
+        item.querySelector('.clickable-username').addEventListener('click', () => {
+            window.openUserProfileCard(username);
+        });
 
         item.querySelector('.btn-accept').addEventListener('click', () => handleRequest(req.id, true));
         item.querySelector('.btn-deny').addEventListener('click', () => handleRequest(req.id, false));
@@ -1636,10 +1668,15 @@ async function loadFriends() {
 
         div.innerHTML = `
             <div class="conv-item-label">
-                <span>@${escapeHTML(friend.username)}</span>
+                <span class="clickable-username" data-username="${escapeHTML(friend.username)}">@${escapeHTML(friend.username)}</span>
             </div>
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
+
+        div.querySelector('.clickable-username').addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.openUserProfileCard(friend.username);
+        });
 
         div.addEventListener('click', () => startOrOpenDirectChat(friend));
         friendsContainer.appendChild(div);
@@ -1661,7 +1698,7 @@ addFriendBtn.addEventListener('click', async () => {
     const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
     if (!targetUsername) return;
 
-    if (targetUsername === currentUsername) {
+    if (targetUsername === currentUsername.toLowerCase()) {
         alert("You cannot add yourself as a friend.");
         return;
     }
@@ -1669,7 +1706,7 @@ addFriendBtn.addEventListener('click', async () => {
     const { data: targetProfile, error: profileErr } = await db
         .from('profiles')
         .select('id, username')
-        .eq('username', targetUsername)
+        .ilike('username', targetUsername)
         .maybeSingle();
 
     if (profileErr || !targetProfile) {
@@ -1807,7 +1844,6 @@ async function startOrOpenDirectChat(friend) {
     }
 }
 
-// Group Chat Creation
 toggleGroupCreateBtn.addEventListener('click', () => groupCreatorBox.classList.toggle('hidden'));
 cancelGroupBtn.addEventListener('click', () => groupCreatorBox.classList.add('hidden'));
 
@@ -1945,7 +1981,7 @@ async function loadMessages(forceScroll = false) {
         const row = document.createElement('div');
         row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
 
-        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
+        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
         const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
         const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
@@ -1963,13 +1999,14 @@ async function loadMessages(forceScroll = false) {
             attachedImg.onload = () => scrollToBottom(forceScroll);
         }
 
+        row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
+            clickable.addEventListener('click', (e) => {
+                const u = e.currentTarget.getAttribute('data-username');
+                if (u) window.openUserProfileCard(u);
+            });
+        });
+
         chatMessages.appendChild(row);
-        const authorLink = row.querySelector('.clickable-username');
-if (authorLink) {
-    authorLink.addEventListener('click', (e) => {
-        window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
-    });
-}
     });
 
     scrollToBottom(forceScroll);
@@ -2076,7 +2113,6 @@ function startCompositionTimer() {
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
-// Telemetry Paste detector ONLY monitors the main typing box
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
@@ -2156,12 +2192,12 @@ forumForm.addEventListener('submit', async (event) => {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked by an administrator or moderator.`);
         return;
     }
-// --- RESTRICT UPDATE THREAD TO SITE ADMIN ONLY ---
+
     if (targetThread === "Update Thread" && !isSiteAdmin()) {
         alert("Permission Denied: Only @gemini can publish to the Official Updates section.");
         return;
     }
-    // --------------------------------------------------
+
     if (honeypotField.value !== "") {
         alert("Submission Blocked: Honeypot triggered.");
         return;
@@ -2186,7 +2222,6 @@ forumForm.addEventListener('submit', async (event) => {
 
     let postImageUrl = null;
 
-    // Upload post photo if attached
     if (selectedPostPhotoFile) {
         const fileExt = selectedPostPhotoFile.name.split('.').pop();
         const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
