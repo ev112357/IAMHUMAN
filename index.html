@@ -199,6 +199,26 @@
             position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px);
             display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px;
         }
+        <!-- PUBLIC USER PROFILE CARD MODAL -->
+    <div id="user-profile-modal" class="modal-overlay hidden">
+        <div class="modal-box modal-box-small">
+            <div class="modal-header">
+                <h2>👤 Human Profile</h2>
+                <button id="close-user-profile-btn" class="close-btn">&times;</button>
+            </div>
+            <div class="profile-card-header">
+                <img id="user-card-pfp" class="profile-card-pfp" src="" alt="Avatar">
+                <div id="user-card-username" class="profile-card-user">@username</div>
+                <div class="profile-score-badge">
+                    <span>⚡ Human Score:</span>
+                    <strong id="user-card-score">0</strong>
+                </div>
+            </div>
+            <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 8px;">
+                <button type="button" id="user-card-add-friend-btn">➕ Add Friend</button>
+            </div>
+        </div>
+    </div>
         .modal-box {
             background-color: #1e293b; border: 1px solid #334155; border-radius: 14px;
             width: 100%; max-width: 860px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
@@ -273,6 +293,117 @@
 
         .hidden { display: none !important; }
         .hidden-honeypot { display: none !important; visibility: hidden !important; }
+        /* User Profile Modal & Clickable Names */
+.clickable-username {
+    cursor: pointer;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 2px;
+}
+.clickable-username:hover {
+    color: #7dd3fc !important;
+}
+
+.profile-card-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.profile-card-pfp {
+    width: 86px;
+    height: 86px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #38bdf8;
+    background-color: #0f172a;
+}
+.profile-card-user {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+.profile-score-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #38bdf8;
+}
+
+/* Post Comments Section */
+.post-comments-container {
+    margin-top: 14px;
+    border-top: 1px solid #1e293b;
+    padding-top: 12px;
+}
+.comments-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.comment-item {
+    background-color: #1e293b;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border-left: 3px solid #475569;
+    font-size: 0.88rem;
+}
+.comment-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #94a3b8;
+    font-size: 0.76rem;
+    margin-bottom: 4px;
+}
+.comment-content {
+    color: #e2e8f0;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.comment-form {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+.comment-form input {
+    margin-bottom: 0 !important;
+    padding: 8px 12px;
+    font-size: 0.88rem;
+    height: 38px;
+}
+.comment-form button {
+    width: auto;
+    padding: 0 14px;
+    font-size: 0.85rem;
+    height: 38px;
+    white-space: nowrap;
+}
+.btn-toggle-comments {
+    background: none;
+    border: none;
+    color: #38bdf8;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+    margin-top: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    width: auto;
+}
+.btn-toggle-comments:hover {
+    color: #7dd3fc;
+}
     </style>
 </head>
 <body>
