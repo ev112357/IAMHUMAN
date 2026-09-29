@@ -130,6 +130,7 @@ const closeUserProfileBtn = document.getElementById('close-user-profile-btn');
 const userCardPfp = document.getElementById('user-card-pfp');
 const userCardUsername = document.getElementById('user-card-username');
 const userCardScore = document.getElementById('user-card-score');
+const userCardMsgBtn = document.getElementById('user-card-msg-btn');
 const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn');
 const unaddConfirmBox = document.getElementById('unadd-confirm-box');
 const confirmUnaddBtn = document.getElementById('confirm-unadd-btn');
@@ -177,6 +178,7 @@ const friendsContainer = document.getElementById('friends-container');
 const groupsContainer = document.getElementById('groups-container');
 const chatHeader = document.getElementById('chat-header');
 const chatMessages = document.getElementById('chat-messages');
+const chatPendingBanner = document.getElementById('chat-pending-banner');
 
 // Form & Photo Upload Inputs
 const dmForm = document.getElementById('dm-form');
@@ -201,8 +203,11 @@ let currentAvatarUrl = null;
 let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
+let activeConversationPartnerId = null; // for direct 1-on-1 approval check
+let activeConversationIsFriend = false; // are we accepted friends?
 let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
+let usernameAvatarMap = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
@@ -538,12 +543,16 @@ async function updateProfileFriendButtonUI() {
     unaddConfirmBox.classList.add('hidden');
     targetFriendshipRecord = null;
 
-    if (!currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '')) {
+    const isOwnProfile = !currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '');
+
+    if (isOwnProfile) {
         userCardAddFriendBtn.classList.add('hidden');
+        userCardMsgBtn.classList.add('hidden');
         return;
     }
 
     userCardAddFriendBtn.classList.remove('hidden');
+    userCardMsgBtn.classList.remove('hidden');
 
     const { data: friendship } = await db
         .from('friendships')
@@ -558,10 +567,10 @@ async function updateProfileFriendButtonUI() {
         userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
     } else if (friendship && friendship.status === 'pending') {
         if (friendship.user_id === currentUser.id) {
-            userCardAddFriendBtn.innerHTML = `⏳ Request Sent`;
+            userCardAddFriendBtn.innerHTML = `⏳ Sent`;
             userCardAddFriendBtn.className = 'btn-friend-state secondary';
         } else {
-            userCardAddFriendBtn.innerHTML = `📬 Accept Request`;
+            userCardAddFriendBtn.innerHTML = `📬 Accept`;
             userCardAddFriendBtn.className = 'btn-friend-state';
         }
     } else {
@@ -582,13 +591,16 @@ window.openUserProfileCard = async function(username) {
     try {
         const { data: profile } = await db
             .from('profiles')
-            .select('id, avatar_url')
+            .select('id, username, avatar_url')
             .ilike('username', cleanUser)
             .maybeSingle();
 
         if (profile) {
             targetProfileId = profile.id;
-            if (profile.avatar_url) userCardPfp.src = profile.avatar_url;
+            if (profile.avatar_url) {
+                userCardPfp.src = profile.avatar_url;
+                usernameAvatarMap.set(cleanUser, profile.avatar_url);
+            }
         } else {
             targetProfileId = null;
         }
@@ -608,6 +620,24 @@ userProfileModal.addEventListener('click', (e) => {
     if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
 });
 
+// Profile "Send Message" Button Click
+userCardMsgBtn.addEventListener('click', async () => {
+    if (!currentUser) {
+        alert("Please log in to send direct messages.");
+        return;
+    }
+    if (!targetProfileId || !targetProfileUsername) return;
+
+    userProfileModal.classList.add('hidden');
+    dmModal.classList.remove('hidden');
+
+    await startOrOpenDirectChat({
+        id: targetProfileId,
+        username: targetProfileUsername
+    });
+});
+
+// Profile Add/Unadd Friend Button Click
 userCardAddFriendBtn.addEventListener('click', async () => {
     if (!currentUser) {
         alert("Please log in to manage friends.");
@@ -706,6 +736,7 @@ async function syncUserState(user) {
 
         if (currentAvatarUrl) {
             userAvatarCache.set(currentUser.id, currentAvatarUrl);
+            usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
         }
 
         authPanel.classList.add('hidden');
@@ -886,7 +917,9 @@ profileAvatarFile.addEventListener('change', async () => {
 
     currentAvatarUrl = newAvatarUrl;
     userAvatarCache.set(currentUser.id, currentAvatarUrl);
+    if (currentUsername) usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
     renderUserAvatar(currentAvatarUrl);
+    renderCurrentFeed();
     alert("Avatar updated successfully!");
 });
 
@@ -1505,6 +1538,29 @@ function sortPosts(posts) {
     });
 }
 
+async function ensureAuthorAvatarsCached(authors) {
+    if (!db || !authors || authors.length === 0) return;
+    const cleanAuthors = Array.from(new Set(authors.map(a => a.toLowerCase().replace('@', ''))));
+    const missing = cleanAuthors.filter(a => !usernameAvatarMap.has(a));
+
+    if (missing.length === 0) return;
+
+    try {
+        const { data: profiles } = await db
+            .from('profiles')
+            .select('username, avatar_url')
+            .in('username', missing);
+
+        (profiles || []).forEach(p => {
+            if (p.username) {
+                usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url || null);
+            }
+        });
+    } catch (e) {
+        console.error("Avatar batch fetch err:", e);
+    }
+}
+
 // --- POST CREATION & MODERATION UI ---
 
 function createPostCardElement(post) {
@@ -1538,6 +1594,9 @@ function createPostCardElement(post) {
 
     const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
 
+    const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
+    const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
+
     item.innerHTML = `
         <div class="vote-box">
             <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
@@ -1547,7 +1606,8 @@ function createPostCardElement(post) {
         <div class="post-body">
             <div class="post-meta">
                 <div class="post-author-wrap">
-                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(post.author || 'anonymous')}">@${escapeHTML(post.author || 'anonymous')}</strong></span>
+                    <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp" title="View @${escapeHTML(cleanAuthor)}'s profile">
+                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>
                     ${roleBadge}
                 </div>
                 <span>${dateFormatted}</span>
@@ -1574,8 +1634,11 @@ function createPostCardElement(post) {
         </div>
     `;
 
-    item.querySelector('.clickable-username').addEventListener('click', (e) => {
-        window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
+    item.querySelectorAll('.clickable-username, .post-author-avatar').forEach(clickable => {
+        clickable.addEventListener('click', (e) => {
+            const u = e.currentTarget.getAttribute('data-username');
+            if (u) window.openUserProfileCard(u);
+        });
     });
 
     item.querySelectorAll('.vote-btn').forEach(btn => {
@@ -1750,7 +1813,7 @@ async function deletePostById(postId) {
     }
 
     if (db) {
-        const { error, count } = await db
+        const { error } = await db
             .from('Posts')
             .delete()
             .eq('id', postId);
@@ -1758,11 +1821,10 @@ async function deletePostById(postId) {
         if (error) {
             alert(`Database deletion failed: ${error.message}`);
             console.error("Delete error:", error);
-            return; // STOP: Do not remove from UI if database rejected it!
+            return;
         }
     }
 
-    // Only update local view once the database confirms the deletion
     cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
     postCacheMap.delete(Number(postId));
     renderCurrentFeed();
@@ -1801,6 +1863,10 @@ async function loadForumPosts() {
 
     cachedPosts = posts || [];
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
+
+    const postAuthors = cachedPosts.map(p => p.author).filter(Boolean);
+    await ensureAuthorAvatarsCached(postAuthors);
+
     renderCurrentFeed();
 }
 
@@ -1875,7 +1941,8 @@ async function checkNotifications() {
                 .select('conversation_id')
                 .in('conversation_id', convIds)
                 .neq('sender_id', currentUser.id)
-                .eq('is_read', false);
+                .eq('is_read', false)
+                .eq('pending_approval', false);
 
             if (unreadMsgs) {
                 unreadTotal = unreadMsgs.length;
@@ -1979,6 +2046,7 @@ function showChatViewOnMobile() {
 backToListBtn.addEventListener('click', () => {
     if (dmInterval) clearInterval(dmInterval);
     activeConversationId = null;
+    activeConversationPartnerId = null;
     showSidebarViewOnMobile();
     refreshMessagingHub();
 });
@@ -2040,12 +2108,23 @@ async function loadFriendRequests() {
 
 async function handleRequest(requestId, accept) {
     if (accept) {
-        const { error } = await db
+        const { data: updatedReq, error } = await db
             .from('friendships')
             .update({ status: 'accepted' })
-            .eq('id', requestId);
+            .eq('id', requestId)
+            .select()
+            .single();
 
-        if (error) alert(`Error accepting request: ${error.message}`);
+        if (error) {
+            alert(`Error accepting request: ${error.message}`);
+        } else if (updatedReq) {
+            // Unlock any pending direct messages between these two users
+            await db
+                .from('chat_messages')
+                .update({ pending_approval: false })
+                .or(`and(sender_id.eq.${updatedReq.user_id}),and(sender_id.eq.${updatedReq.friend_id})`)
+                .eq('pending_approval', true);
+        }
     } else {
         const { error } = await db
             .from('friendships')
@@ -2088,6 +2167,7 @@ async function loadFriends() {
     myFriendsList = profiles || [];
     myFriendsList.forEach(p => {
         if (p.avatar_url) userAvatarCache.set(p.id, p.avatar_url);
+        if (p.username && p.avatar_url) usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url);
     });
 
     const { data: myMemberships } = await db
@@ -2253,7 +2333,7 @@ async function loadConversations() {
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
 
-        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`));
+        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, true));
         groupsContainer.appendChild(div);
     });
 }
@@ -2284,8 +2364,17 @@ async function startOrOpenDirectChat(friend) {
         if (convMatches) existing1on1Id = convMatches.id;
     }
 
+    // Check friendship status between the two
+    const { data: friendship } = await db
+        .from('friendships')
+        .select('status')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+    const isFriend = friendship && friendship.status === 'accepted';
+
     if (existing1on1Id) {
-        selectConversation(existing1on1Id, `@${friend.username}`);
+        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, isFriend);
     } else {
         const { data: newConv, error: convErr } = await db
             .from('conversations')
@@ -2303,7 +2392,7 @@ async function startOrOpenDirectChat(friend) {
             { conversation_id: newConv.id, user_id: friend.id }
         ]);
 
-        selectConversation(newConv.id, `@${friend.username}`);
+        selectConversation(newConv.id, `@${friend.username}`, friend.id, isFriend);
     }
 }
 
@@ -2357,15 +2446,25 @@ createGroupConfirmBtn.addEventListener('click', async () => {
     groupNameInput.value = '';
     groupCreatorBox.classList.add('hidden');
     await loadConversations();
-    selectConversation(newGroup.id, `Group: ${groupName}`);
+    selectConversation(newGroup.id, `Group: ${groupName}`, null, true);
 });
 
-function selectConversation(conversationId, title) {
+function selectConversation(conversationId, title, partnerId = null, isFriend = true) {
     activeConversationId = conversationId;
+    activeConversationPartnerId = partnerId;
+    activeConversationIsFriend = isFriend;
+
     chatHeader.textContent = title;
     dmText.disabled = false;
     dmImageInput.disabled = false;
     dmSendBtn.disabled = false;
+
+    // Show warning banner if messages will be pending
+    if (!isFriend && partnerId) {
+        chatPendingBanner.classList.remove('hidden');
+    } else {
+        chatPendingBanner.classList.add('hidden');
+    }
 
     showChatViewOnMobile();
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
@@ -2423,23 +2522,30 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
+    // Filter out messages pending approval from others (recipient won't see them until friend request accepted)
+    const visibleMessages = (messages || []).filter(msg => {
+        if (!msg.pending_approval) return true;
+        return msg.sender_id === currentUser.id; // Only sender sees their own pending message
+    });
+
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
-    if (!forceScroll && messages && messages.length === currentMsgCount) {
+    if (!forceScroll && visibleMessages.length === currentMsgCount) {
         return;
     }
 
     chatMessages.innerHTML = '';
-    if (!messages || messages.length === 0) {
+    if (!visibleMessages || visibleMessages.length === 0) {
         chatMessages.innerHTML = '<div class="no-posts">No messages in this chat yet. Start the conversation!</div>';
         return;
     }
 
-    const senderIds = Array.from(new Set(messages.map(m => m.sender_id)));
+    const senderIds = Array.from(new Set(visibleMessages.map(m => m.sender_id)));
     await ensureAvatarsCached(senderIds);
 
-    messages.forEach(msg => {
+    visibleMessages.forEach(msg => {
         const isMine = msg.sender_id === currentUser.id;
         const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
+        const isPending = msg.pending_approval;
 
         const row = document.createElement('div');
         row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
@@ -2448,10 +2554,11 @@ async function loadMessages(forceScroll = false) {
         const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
         const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+        const pendingBadge = (isMine && isPending) ? `<span class="pending-tag">⏳ Pending Friend Acceptance</span>` : '';
 
         const bubbleHtml = `
-            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'}">
-                ${authorHtml}${textHtml}${imgHtml}
+            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
+                ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
             </div>
         `;
 
@@ -2538,6 +2645,9 @@ dmForm.addEventListener('submit', async (e) => {
         uploadedImageUrl = publicUrlData.publicUrl;
     }
 
+    // Determine if message is pending approval (only in 1-on-1 chats where not yet friends)
+    const isPendingApproval = Boolean(activeConversationPartnerId && !activeConversationIsFriend);
+
     const { error } = await db
         .from('chat_messages')
         .insert([{
@@ -2545,7 +2655,8 @@ dmForm.addEventListener('submit', async (e) => {
             sender_id: currentUser.id,
             sender_username: currentUsername,
             content: content || '',
-            image_url: uploadedImageUrl
+            image_url: uploadedImageUrl,
+            pending_approval: isPendingApproval
         }]);
 
     dmSendBtn.disabled = false;
@@ -2554,6 +2665,22 @@ dmForm.addEventListener('submit', async (e) => {
     if (error) {
         alert(`Error sending message: ${error.message}`);
         return;
+    }
+
+    // Auto-send friend request if messaging someone not yet added
+    if (isPendingApproval && activeConversationPartnerId) {
+        await db.from('friendships').insert([{
+            user_id: currentUser.id,
+            friend_id: activeConversationPartnerId,
+            status: 'pending'
+        }]).then(() => {
+            sendNotification(
+                activeConversationPartnerId,
+                'friend_request',
+                null,
+                'sent you a friend request and a pending message.'
+            );
+        }).catch(() => {});
     }
 
     dmText.value = '';
@@ -2663,29 +2790,24 @@ forumForm.addEventListener('submit', async (event) => {
 
     let behaviorPoints = 0;
 
-    // 1. Honeypot check
     if (honeypotField.value !== "") {
         behaviorPoints += 5;
     }
 
-    // 2. Paste scoring
     if (textWasPasted) {
         behaviorPoints += 1;
     }
 
-    // 3. Impossibly fast timing
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
     if (totalTimeElapsed < 1.5 && textBox.value.length > 50) {
         behaviorPoints += 1;
     }
 
-    // 4. Rate-limit burst detection
     const now = Date.now();
     if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) {
         behaviorPoints += 2;
     }
 
-    // 5. Cadence uniformity
     if (keystrokeGaps.length > 5) {
         let perfectIntervals = 0;
         for (let i = 2; i < keystrokeGaps.length; i++) {
