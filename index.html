@@ -99,7 +99,7 @@
         .thread-chip:hover { border-color: #38bdf8; color: #f8fafc; }
         .thread-chip.active { background-color: #0284c7; color: #ffffff; border-color: #38bdf8; font-weight: 600; }
 
-        /* SECONDARY VIEW: POST CREATION (NOW PROMINENT & FULL-WIDTH) */
+        /* SECONDARY VIEW: POST CREATION */
         .post-composer-wrap { max-width: 1000px; width: 100%; margin-bottom: 24px; }
         .card { background-color: #1e293b; padding: 24px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         h2 { font-size: 1.35rem; margin-bottom: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
@@ -138,7 +138,7 @@
             padding: 8px 12px; font-size: 0.85rem; color: #e2e8f0; margin-bottom: 12px;
         }
 
-        /* Post Items */
+        /* Post Items & Real Avatars */
         .post-item { 
             background-color: #0f172a; padding: 16px; border-radius: 10px; border-left: 4px solid #38bdf8; 
             margin-bottom: 14px; display: flex; gap: 16px; align-items: flex-start; position: relative;
@@ -160,8 +160,13 @@
         .vote-score { font-size: 0.85rem; font-weight: 700; margin: 4px 0; color: #f8fafc; }
 
         .post-body { flex: 1; min-width: 0; }
-        .post-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #64748b; margin-bottom: 6px; }
-        .post-author-wrap { display: flex; align-items: center; gap: 6px; }
+        .post-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.82rem; color: #64748b; margin-bottom: 8px; }
+        
+        .post-author-wrap { display: flex; align-items: center; gap: 8px; }
+        .post-author-avatar {
+            width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+            border: 1px solid #38bdf8; background: #1e293b; cursor: pointer; flex-shrink: 0;
+        }
         .post-author { color: #38bdf8; font-weight: 600; }
         .post-content { font-size: 0.96rem; line-height: 1.5; color: #e2e8f0; word-break: break-word; }
         .post-content a { color: #38bdf8; text-decoration: underline; font-weight: 500; }
@@ -219,80 +224,40 @@
             color: #38bdf8;
         }
 
-        /* Profile Friend Button States */
+        .profile-btn-row { display: flex; gap: 8px; width: 100%; }
         button.btn-friend-state {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; flex: 1;
         }
         button.btn-friend-added {
-            background-color: #1e293b !important;
-            border: 1px solid #22c55e !important;
-            color: #22c55e !important;
+            background-color: #1e293b !important; border: 1px solid #22c55e !important; color: #22c55e !important;
         }
         button.btn-friend-added:hover {
-            background-color: #0f172a !important;
-            border-color: #ef4444 !important;
-            color: #ef4444 !important;
+            background-color: #0f172a !important; border-color: #ef4444 !important; color: #ef4444 !important;
         }
 
         .unadd-confirm-box {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background-color: #0f172a;
-            border: 1px solid #ef4444;
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin-top: 8px;
-            font-size: 0.85rem;
+            display: flex; align-items: center; justify-content: space-between;
+            background-color: #0f172a; border: 1px solid #ef4444; border-radius: 8px;
+            padding: 8px 12px; margin-top: 8px; font-size: 0.85rem;
         }
         .unadd-actions { display: flex; gap: 6px; }
         .btn-unadd-action {
-            width: auto !important;
-            padding: 3px 8px !important;
-            font-size: 0.8rem !important;
-            border-radius: 4px !important;
+            width: auto !important; padding: 3px 8px !important; font-size: 0.8rem !important; border-radius: 4px !important;
         }
 
         /* Post Comments Section */
-        .post-comments-container {
-            margin-top: 14px;
-            border-top: 1px solid #1e293b;
-            padding-top: 12px;
-        }
+        .post-comments-container { margin-top: 14px; border-top: 1px solid #1e293b; padding-top: 12px; }
         .comments-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
         .comment-item {
-            background-color: #1e293b;
-            padding: 10px 14px;
-            border-radius: 8px;
-            border-left: 3px solid #475569;
-            font-size: 0.88rem;
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
+            background-color: #1e293b; padding: 10px 14px; border-radius: 8px; border-left: 3px solid #475569;
+            font-size: 0.88rem; display: flex; gap: 12px; align-items: flex-start;
         }
         .comment-vote-box {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            background: #0f172a;
-            padding: 4px;
-            border-radius: 6px;
-            min-width: 32px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: #0f172a; padding: 4px; border-radius: 6px; min-width: 32px;
         }
         .comment-vote-btn {
-            background: none;
-            border: none;
-            color: #94a3b8;
-            font-size: 0.85rem;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-            width: auto;
+            background: none; border: none; color: #94a3b8; font-size: 0.85rem; cursor: pointer; padding: 0; line-height: 1; width: auto;
         }
         .comment-vote-btn:hover { color: #38bdf8; }
         .comment-vote-btn.upvoted { color: #22c55e !important; }
@@ -300,132 +265,47 @@
         .comment-vote-score { font-size: 0.75rem; font-weight: 700; margin: 2px 0; color: #f8fafc; }
 
         .comment-body { flex: 1; min-width: 0; }
-        .comment-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: #94a3b8;
-            font-size: 0.76rem;
-            margin-bottom: 4px;
-        }
+        .comment-meta { display: flex; justify-content: space-between; align-items: center; color: #94a3b8; font-size: 0.76rem; margin-bottom: 4px; }
         .comment-content { color: #e2e8f0; line-height: 1.4; word-break: break-word; }
         .comment-form { display: flex; gap: 8px; margin-top: 8px; }
-        .comment-form input {
-            margin-bottom: 0 !important;
-            padding: 8px 12px;
-            font-size: 0.88rem;
-            height: 38px;
-        }
-        .comment-form button {
-            width: auto;
-            padding: 0 14px;
-            font-size: 0.85rem;
-            height: 38px;
-            white-space: nowrap;
-        }
+        .comment-form input { margin-bottom: 0 !important; padding: 8px 12px; font-size: 0.88rem; height: 38px; }
+        .comment-form button { width: auto; padding: 0 14px; font-size: 0.85rem; height: 38px; white-space: nowrap; }
         .btn-toggle-comments {
-            background: none;
-            border: none;
-            color: #38bdf8;
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            padding: 0;
-            margin-top: 8px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            width: auto;
+            background: none; border: none; color: #38bdf8; font-size: 0.8rem; font-weight: 600;
+            cursor: pointer; padding: 0; margin-top: 8px; display: inline-flex; align-items: center; gap: 4px; width: auto;
         }
         .btn-toggle-comments:hover { color: #7dd3fc; }
 
         /* Notifications Activity List */
         .notif-item {
-            background-color: #0f172a;
-            border: 1px solid #334155;
-            padding: 12px;
-            border-radius: 8px;
-            font-size: 0.88rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
+            background-color: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px;
+            font-size: 0.88rem; display: flex; align-items: center; justify-content: space-between; gap: 10px;
         }
         .notif-item.unread { border-left: 4px solid #38bdf8; background-color: #172554; }
         .notif-text { color: #e2e8f0; line-height: 1.4; }
         .notif-time { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
 
-        /* COMPACT FLOATING TELEMETRY HUD (FOLLOWS USER) */
+        /* COMPACT FLOATING TELEMETRY HUD */
         .floating-telemetry-hud {
-            position: fixed;
-            bottom: 18px;
-            right: 18px;
-            z-index: 90;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            position: fixed; bottom: 18px; right: 18px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end;
         }
         .telemetry-pill {
-            background: #1e293b;
-            border: 1px solid #38bdf8;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.45);
-            color: #f8fafc;
-            padding: 7px 14px;
-            border-radius: 30px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            cursor: pointer;
-            backdrop-filter: blur(8px);
-            transition: transform 0.15s, background-color 0.2s;
+            background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+            color: #f8fafc; padding: 7px 14px; border-radius: 30px; font-size: 0.8rem; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 8px; cursor: pointer; backdrop-filter: blur(8px);
         }
-        .telemetry-pill:hover {
-            transform: translateY(-2px);
-            background: #0f172a;
-            border-color: #7dd3fc;
-        }
+        .telemetry-pill:hover { transform: translateY(-2px); background: #0f172a; border-color: #7dd3fc; }
         .telemetry-drawer {
-            background: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            padding: 14px 16px;
-            width: 250px;
-            box-shadow: 0 12px 28px rgba(0,0,0,0.5);
-            margin-bottom: 8px;
-            backdrop-filter: blur(10px);
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+            background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 14px 16px;
+            width: 250px; box-shadow: 0 12px 28px rgba(0,0,0,0.5); margin-bottom: 8px; backdrop-filter: blur(10px);
+            display: flex; flex-direction: column; gap: 8px;
         }
         .telemetry-drawer-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: #38bdf8;
-            border-bottom: 1px solid #334155;
-            padding-bottom: 6px;
+            display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem;
+            font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 6px;
         }
-        .btn-hud-close {
-            background: none;
-            border: none;
-            color: #94a3b8;
-            cursor: pointer;
-            font-size: 1rem;
-            line-height: 1;
-            padding: 0;
-            width: auto;
-        }
-        .hud-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.78rem;
-        }
+        .btn-hud-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; width: auto; }
+        .hud-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; }
 
         .badge { padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: bold; text-transform: uppercase; }
         .badge-green { background-color: #16a34a; color: #ffffff; }
@@ -434,28 +314,23 @@
         .badge-yellow { background-color: #ca8a04; color: #ffffff; }
         .badge-blue { background-color: #0284c7; color: #ffffff; }
 
+        /* Pending Approval Message Styling */
+        .msg-pending-banner {
+            background-color: rgba(234, 179, 8, 0.15); border: 1px dashed #eab308; color: #fde047;
+            padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; text-align: center;
+        }
+        .msg-bubble.pending-approval {
+            border: 1px dashed #eab308; opacity: 0.88;
+        }
+        .pending-tag {
+            display: block; font-size: 0.7rem; color: #fef08a; margin-top: 4px; font-style: italic;
+        }
+
         /* CAPTCHA SUSPENSION MODAL */
-        .captcha-box {
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 14px;
-        }
-        .captcha-canvas-wrap {
-            position: relative;
-            margin: 10px 0;
-            border-radius: 8px;
-            overflow: hidden;
-            border: 2px solid #38bdf8;
-        }
+        .captcha-box { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+        .captcha-canvas-wrap { position: relative; margin: 10px 0; border-radius: 8px; overflow: hidden; border: 2px solid #38bdf8; }
         #captchaCanvas { background-color: #0f172a; display: block; }
-        .captcha-input-group {
-            display: flex;
-            gap: 8px;
-            width: 100%;
-            max-width: 320px;
-        }
+        .captcha-input-group { display: flex; gap: 8px; width: 100%; max-width: 320px; }
 
         /* Modals */
         .modal-overlay {
@@ -639,7 +514,7 @@
                 <select id="post-sort-select" class="toolbar-sort">
                     <option value="top">🔥 Most Liked (Top Score)</option>
                     <option value="newest">🕒 Newest First</option>
-                    <option value="oldest">🕰️️ Oldest First</option>
+                    <option value="oldest">🕰 Oldest First</option>
                 </select>
                 <button type="button" id="trigger-create-thread-btn" class="toolbar-btn">+ Thread</button>
             </div>
@@ -662,7 +537,7 @@
         </div>
     </main>
 
-    <!-- 2. SECONDARY VIEW: POST CREATION (PROMINENT FULL-WIDTH CARD) -->
+    <!-- 2. SECONDARY VIEW: POST CREATION (FULL-WIDTH PROMINENT CARD) -->
     <div class="post-composer-wrap">
         <div class="card">
             <div id="auth-panel">
@@ -730,7 +605,7 @@
         </div>
     </div>
 
-    <!-- 3. COMPACT FLOATING TELEMETRY HUD (FOLLOWS USER AT BOTTOM-RIGHT) -->
+    <!-- 3. COMPACT FLOATING TELEMETRY HUD -->
     <div id="floating-telemetry" class="floating-telemetry-hud">
         <div id="telemetry-drawer" class="telemetry-drawer hidden">
             <div class="telemetry-drawer-header">
@@ -756,7 +631,7 @@
         </div>
 
         <div id="telemetry-pill" class="telemetry-pill" title="Click to view security monitor">
-            <span>🛡️️</span>
+            <span>🛡</span>
             <span>Security: <strong id="pill-suspicion-tag">0/3 Risk</strong></span>
         </div>
     </div>
@@ -797,7 +672,7 @@
         </div>
     </div>
 
-    <!-- PUBLIC USER PROFILE CARD MODAL -->
+    <!-- PUBLIC USER PROFILE CARD MODAL WITH MESSAGE BUTTON -->
     <div id="user-profile-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
@@ -812,8 +687,11 @@
                     <strong id="user-card-score">0</strong>
                 </div>
             </div>
-            <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 8px;">
-                <button type="button" id="user-card-add-friend-btn" class="btn-friend-state">➕ Add Friend</button>
+            <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="profile-btn-row">
+                    <button type="button" id="user-card-msg-btn" style="flex: 1; background-color: #0284c7;">💬 Send Message</button>
+                    <button type="button" id="user-card-add-friend-btn" class="btn-friend-state">➕ Add Friend</button>
+                </div>
                 
                 <div id="unadd-confirm-box" class="unadd-confirm-box hidden">
                     <span style="color: #ef4444; font-weight: 600;">Unadd friend?</span>
@@ -966,6 +844,11 @@
                         <div id="chat-header" style="font-weight: 600; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             Select a friend or group
                         </div>
+                    </div>
+
+                    <!-- Pending Approval Warning Banner (shown dynamically) -->
+                    <div id="chat-pending-banner" class="msg-pending-banner hidden">
+                        🔒 You and this user are not yet accepted friends. Messages you send will remain <strong>pending</strong> and hidden until they accept your friend request.
                     </div>
 
                     <div id="chat-messages" class="chat-history">
