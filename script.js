@@ -1744,14 +1744,27 @@ async function loadPostComments(postId, post) {
 }
 
 async function deletePostById(postId) {
+    if (!currentUser) {
+        alert("You must be logged in to delete posts.");
+        return;
+    }
+
     if (db) {
-        const { error } = await db.from('Posts').delete().eq('id', postId);
+        const { error, count } = await db
+            .from('Posts')
+            .delete()
+            .eq('id', postId);
+
         if (error) {
-            alert(`Error deleting post: ${error.message}`);
-            return;
+            alert(`Database deletion failed: ${error.message}`);
+            console.error("Delete error:", error);
+            return; // STOP: Do not remove from UI if database rejected it!
         }
     }
+
+    // Only update local view once the database confirms the deletion
     cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
+    postCacheMap.delete(Number(postId));
     renderCurrentFeed();
     loadProminentUpdates();
 }
