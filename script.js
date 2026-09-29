@@ -46,14 +46,14 @@ const closeNotificationsBtn = document.getElementById('close-notifications-btn')
 const clearActivityNotifsBtn = document.getElementById('clear-activity-notifs-btn');
 const notificationsList = document.getElementById('notifications-list');
 
-// DOM Elements - Pinned Updates Ticker & Modal
+// Pinned Updates Ticker & Modal
 const tickerBadge = document.getElementById('ticker-badge');
 const tickerContent = document.getElementById('ticker-content');
 const updatesModal = document.getElementById('updates-modal');
 const closeUpdatesModalBtn = document.getElementById('close-updates-modal-btn');
 const updatesModalFeed = document.getElementById('updates-modal-feed');
 
-// DOM Elements - Forum & Threads
+// Forum & Threads
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
@@ -137,15 +137,24 @@ const cancelUnaddBtn = document.getElementById('cancel-unadd-btn');
 
 let targetProfileUsername = null;
 let targetProfileId = null;
-let targetFriendshipRecord = null; // stores friendship obj if exists
+let targetFriendshipRecord = null;
 
-// DOM Elements - Telemetry Console
+// Telemetry & Suspension Monitor Elements
 const statPaste = document.getElementById('stat-paste');
 const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
-const statUniformity = document.getElementById('stat-uniformity');
+const statSuspicion = document.getElementById('stat-suspicion');
 
-// DOM Elements - Direct Messages & Groups
+// CAPTCHA Suspension Modal Elements
+const captchaSuspensionModal = document.getElementById('captcha-suspension-modal');
+const captchaCanvas = document.getElementById('captchaCanvas');
+const captchaInput = document.getElementById('captcha-input');
+const submitCaptchaBtn = document.getElementById('submit-captcha-btn');
+const refreshCaptchaBtn = document.getElementById('refresh-captcha-btn');
+const captchaStatusMsg = document.getElementById('captcha-status-msg');
+let currentCaptchaSecret = "";
+
+// Direct Messages & Groups Elements
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
 const notifBadge = document.getElementById('notif-badge');
@@ -179,7 +188,6 @@ const groupFriendsChecklist = document.getElementById('group-friends-checklist')
 const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
 const cancelGroupBtn = document.getElementById('cancel-group-btn');
 
-// Default fallback avatar SVG
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
 
 // App State
@@ -212,7 +220,7 @@ let cachedPosts = [];
 let cachedUpdates = [];
 let postCacheMap = new Map();
 
-// Telemetry State
+// Telemetry & Rate-Limiting State
 let pageLoadTime = null; 
 let textWasPasted = false;
 let keystrokeGaps = [];
@@ -220,6 +228,103 @@ let lastKeyTime = null;
 let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
+
+// Suspicion & Account Risk Ledger
+let suspicionScore = 0;
+let isSuspended = false;
+let lastPostTimestamp = 0; // For burst post rate detection
+
+// --- CAPTCHA GENERATOR & ESCALATION GATE ---
+
+function generateCaptchaCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 5; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
+
+function drawCaptcha(code) {
+    if (!captchaCanvas) return;
+    const ctx = captchaCanvas.getContext('2d');
+    ctx.clearRect(0, 0, captchaCanvas.width, captchaCanvas.height);
+    
+    // Background noise
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(0, 0, captchaCanvas.width, captchaCanvas.height);
+
+    for (let i = 0; i < 6; i++) {
+        ctx.strokeStyle = `rgba(56, 189, 248, ${0.2 + Math.random() * 0.3})`;
+        ctx.beginPath();
+        ctx.moveTo(Math.random() * captchaCanvas.width, Math.random() * captchaCanvas.height);
+        ctx.lineTo(Math.random() * captchaCanvas.width, Math.random() * captchaCanvas.height);
+        ctx.stroke();
+    }
+
+    // Text rendering with random skew
+    ctx.font = "bold 32px monospace";
+    for (let i = 0; i < code.length; i++) {
+        ctx.fillStyle = i % 2 === 0 ? "#38bdf8" : "#f8fafc";
+        ctx.save();
+        ctx.translate(25 + i * 36, 45);
+        ctx.rotate((Math.random() - 0.5) * 0.4);
+        ctx.fillText(code[i], 0, 0);
+        ctx.restore();
+    }
+}
+
+function triggerSuspensionGate() {
+    isSuspended = true;
+    currentCaptchaSecret = generateCaptchaCode();
+    drawCaptcha(currentCaptchaSecret);
+    captchaInput.value = "";
+    captchaStatusMsg.textContent = "";
+    captchaSuspensionModal.classList.remove('hidden');
+
+    if (currentUser && db) {
+        db.from('profiles').update({ is_suspended: true, suspicion_score: suspicionScore }).eq('id', currentUser.id);
+    }
+}
+
+refreshCaptchaBtn.addEventListener('click', () => {
+    currentCaptchaSecret = generateCaptchaCode();
+    drawCaptcha(currentCaptchaSecret);
+    captchaInput.value = "";
+    captchaStatusMsg.textContent = "";
+});
+
+submitCaptchaBtn.addEventListener('click', async () => {
+    const entered = captchaInput.value.trim().toUpperCase();
+    if (entered === currentCaptchaSecret) {
+        // Solved
+        isSuspended = false;
+        suspicionScore = 0;
+        updateSuspicionUI();
+        captchaSuspensionModal.classList.add('hidden');
+
+        if (currentUser && db) {
+            await db.from('profiles').update({ is_suspended: false, suspicion_score: 0 }).eq('id', currentUser.id);
+        }
+        alert("Verification successful! Your account is restored.");
+    } else {
+        captchaStatusMsg.textContent = "Incorrect code. Please try again.";
+        currentCaptchaSecret = generateCaptchaCode();
+        drawCaptcha(currentCaptchaSecret);
+        captchaInput.value = "";
+    }
+});
+
+function updateSuspicionUI() {
+    statSuspicion.textContent = `${suspicionScore} / 3`;
+    if (suspicionScore === 0) {
+        statSuspicion.className = "badge badge-green";
+    } else if (suspicionScore < 3) {
+        statSuspicion.className = "badge badge-yellow";
+    } else {
+        statSuspicion.className = "badge badge-red";
+    }
+}
 
 // --- PERMISSIONS HELPERS ---
 
@@ -356,7 +461,6 @@ openNotifBtn.addEventListener('click', () => {
     notificationsModal.classList.remove('hidden');
     loadUserNotifications();
     
-    // Mark as read on open
     if (currentUser && db) {
         db.from('user_notifications')
             .update({ is_read: true })
@@ -424,7 +528,6 @@ async function updateProfileFriendButtonUI() {
 
     userCardAddFriendBtn.classList.remove('hidden');
 
-    // Query friendship status
     const { data: friendship } = await db
         .from('friendships')
         .select('*')
@@ -488,7 +591,6 @@ userProfileModal.addEventListener('click', (e) => {
     if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
 });
 
-// Profile Add/Unadd Friend Button Click
 userCardAddFriendBtn.addEventListener('click', async () => {
     if (!currentUser) {
         alert("Please log in to manage friends.");
@@ -496,21 +598,18 @@ userCardAddFriendBtn.addEventListener('click', async () => {
     }
 
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
-        // Toggle the "unadd friend?" confirmation box
         unaddConfirmBox.classList.toggle('hidden');
         return;
     }
 
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
         if (targetFriendshipRecord.user_id !== currentUser.id) {
-            // Accept the incoming request
             await handleRequest(targetFriendshipRecord.id, true);
             await updateProfileFriendButtonUI();
         }
         return;
     }
 
-    // Otherwise Send Friend Request
     if (!targetProfileId) return;
 
     const { error: insertErr } = await db
@@ -526,7 +625,6 @@ userCardAddFriendBtn.addEventListener('click', async () => {
         return;
     }
 
-    // Send in-app notification to receiver
     await sendNotification(
         targetProfileId,
         'friend_request',
@@ -539,7 +637,6 @@ userCardAddFriendBtn.addEventListener('click', async () => {
     refreshMessagingHub();
 });
 
-// Confirm Unadd Friend (✓)
 confirmUnaddBtn.addEventListener('click', async () => {
     if (!targetFriendshipRecord) return;
 
@@ -562,7 +659,6 @@ confirmUnaddBtn.addEventListener('click', async () => {
     refreshMessagingHub();
 });
 
-// Cancel Unadd Friend (✕)
 cancelUnaddBtn.addEventListener('click', () => {
     unaddConfirmBox.classList.add('hidden');
 });
@@ -574,12 +670,18 @@ async function syncUserState(user) {
         currentUser = user;
         const { data: profile } = await db
             .from('profiles')
-            .select('username, avatar_url')
+            .select('username, avatar_url, is_suspended, suspicion_score')
             .eq('id', currentUser.id)
             .maybeSingle();
 
         currentUsername = profile?.username || currentUser.user_metadata?.username || "human";
         currentAvatarUrl = profile?.avatar_url || null;
+        suspicionScore = profile?.suspicion_score || 0;
+        updateSuspicionUI();
+
+        if (profile?.is_suspended) {
+            triggerSuspensionGate();
+        }
 
         currentUserTag.textContent = `@${currentUsername}`;
         deleteConfirmUserTag.textContent = `@${currentUsername}`;
@@ -607,6 +709,8 @@ async function syncUserState(user) {
         currentUsername = null;
         currentAvatarUrl = null;
         activeConversationId = null;
+        suspicionScore = 0;
+        updateSuspicionUI();
         if (dmInterval) clearInterval(dmInterval);
         if (notifPollInterval) clearInterval(notifPollInterval);
 
@@ -624,6 +728,7 @@ async function syncUserState(user) {
         threadDeleteModal.classList.add('hidden');
         linkModal.classList.add('hidden');
         userProfileModal.classList.add('hidden');
+        captchaSuspensionModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
         syncThreadDropdown();
     }
@@ -1275,6 +1380,10 @@ async function handleVote(postId, direction) {
         alert("You must be logged in to like or dislike posts.");
         return;
     }
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
 
     const post = postCacheMap.get(Number(postId));
     const currentVote = userVotes[postId] || 0;
@@ -1297,7 +1406,6 @@ async function handleVote(postId, direction) {
 
     renderCurrentFeed();
 
-    // Notify author if upvoted
     if (post && post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
         const { data: targetProfile } = await db
             .from('profiles')
@@ -1316,10 +1424,13 @@ async function handleVote(postId, direction) {
     }
 }
 
-// Comment Voting Engine
 async function handleCommentVote(commentId, direction, commentAuthor) {
     if (!currentUser) {
         alert("You must be logged in to vote on comments.");
+        return;
+    }
+    if (isSuspended) {
+        triggerSuspensionGate();
         return;
     }
 
@@ -1330,26 +1441,17 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
     userCommentVotes[commentId] = newVote;
     localStorage.setItem('user_forum_comment_votes', JSON.stringify(userCommentVotes));
 
-    // Update in Supabase
     if (delta !== 0) {
-        const col = direction === 1 ? 'likes' : 'dislikes';
-        await db.rpc('increment_comment_vote', {
-            comment_id_input: commentId,
-            delta_val: delta
-        }).catch(async () => {
-            // Fallback direct read-modify-write
-            const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
-            if (c) {
-                if (direction === 1) {
-                    await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
-                } else {
-                    await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
-                }
+        const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
+        if (c) {
+            if (direction === 1) {
+                await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
+            } else {
+                await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
             }
-        });
+        }
     }
 
-    // Notify comment author on upvote
     if (newVote === 1 && commentAuthor && commentAuthor.toLowerCase() !== currentUsername.toLowerCase()) {
         const { data: targetProfile } = await db
             .from('profiles')
@@ -1448,19 +1550,17 @@ function createPostCardElement(post) {
                     <div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>
                 </div>
                 <form class="comment-form" data-post-id="${post.id}">
-                    <input type="text" placeholder="Write a comment..." required autocomplete="off">
+                    <input type="text" placeholder="Write a reply..." required autocomplete="off">
                     <button type="submit">Reply</button>
                 </form>
             </div>
         </div>
     `;
 
-    // Click author to view profile
     item.querySelector('.clickable-username').addEventListener('click', (e) => {
         window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
     });
 
-    // Voting
     item.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const pId = e.currentTarget.getAttribute('data-post-id');
@@ -1469,7 +1569,6 @@ function createPostCardElement(post) {
         });
     });
 
-    // Toggle comments
     const toggleBtn = item.querySelector('.btn-toggle-comments');
     const container = item.querySelector(`#comments-container-${post.id}`);
     toggleBtn.addEventListener('click', () => {
@@ -1479,10 +1578,8 @@ function createPostCardElement(post) {
         }
     });
 
-    // Initial count
     fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
 
-    // Submit comment
     const commentForm = item.querySelector('.comment-form');
     commentForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1490,6 +1587,11 @@ function createPostCardElement(post) {
             alert("You must be logged in to comment.");
             return;
         }
+        if (isSuspended) {
+            triggerSuspensionGate();
+            return;
+        }
+
         const input = commentForm.querySelector('input');
         const text = input.value.trim();
         if (!text) return;
@@ -1506,7 +1608,6 @@ function createPostCardElement(post) {
             return;
         }
 
-        // Notify post author that someone commented
         if (post.author && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
             const { data: authorProfile } = await db
                 .from('profiles')
@@ -1529,7 +1630,6 @@ function createPostCardElement(post) {
         fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
     });
 
-    // Delete post
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
@@ -1538,7 +1638,6 @@ function createPostCardElement(post) {
         });
     }
 
-    // Revoke author
     const revokeBtn = item.querySelector('.btn-revoke-author');
     if (revokeBtn) {
         revokeBtn.addEventListener('click', () => {
@@ -1556,7 +1655,6 @@ function createPostCardElement(post) {
     return item;
 }
 
-// Helpers for Comment fetching
 async function fetchCommentCount(postId, countElement) {
     if (!db || !countElement) return;
     try {
@@ -1720,7 +1818,7 @@ function openUpdatesDrawer() {
 closeUpdatesModalBtn.addEventListener('click', () => updatesModal.classList.add('hidden'));
 updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) updatesModal.classList.add('hidden'); });
 
-// --- NOTIFICATION ENGINE ---
+// --- NOTIFICATION ENGINE (Direct Messages) ---
 
 async function checkNotifications() {
     if (!currentUser || !db) return;
@@ -2371,6 +2469,11 @@ dmImageInput.addEventListener('change', () => {
 
 dmForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+
     const content = dmText.value.trim();
     const file = dmImageInput.files[0];
 
@@ -2448,10 +2551,11 @@ function startCompositionTimer() {
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
+// Note: Paste is allowed and NO LONGER blocked! It only registers internally.
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
-    statPaste.className = "badge badge-red";
+    statPaste.className = "badge badge-yellow";
     if (!isTimerRunning) startCompositionTimer();
 });
 
@@ -2465,15 +2569,6 @@ textBox.addEventListener('keydown', (e) => {
     if (lastKeyTime !== null) {
         const gap = currentTime - lastKeyTime;
         if (keystrokeGaps.length < 50) keystrokeGaps.push(gap);
-        
-        if (keystrokeGaps.length > 3) {
-            let perfectIntervals = 0;
-            for (let i = 2; i < keystrokeGaps.length; i++) {
-                if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
-            }
-            const uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
-            statUniformity.textContent = `${(uniformityRatio * 100).toFixed(0)}%`;
-        }
     }
     
     lastKeyTime = currentTime;
@@ -2508,10 +2603,9 @@ function resetTelemetryConsole() {
     statPaste.className = "badge badge-green";
     statTimer.textContent = "0.0s"; 
     statKeys.textContent = "0 keys";
-    statUniformity.textContent = "0%";
 }
 
-// --- FORUM SUBMISSION WITH PHOTO UPLOAD & PERMISSION CHECKS ---
+// --- FORUM SUBMISSION WITH RISK SCORING & CAPTCHA ESCALATION ---
 
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
@@ -2521,10 +2615,15 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+
     const targetThread = topicSelect.value;
 
     if (isUserBannedFromThread(targetThread, currentUsername)) {
-        alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked by an administrator or moderator.`);
+        alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
         return;
     }
 
@@ -2533,23 +2632,64 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
+    // --- ACCESSIBILITY-SAFE RISK SCORING ---
+    let behaviorPoints = 0;
+
+    // 1. Honeypot check (instant bot trigger)
     if (honeypotField.value !== "") {
-        alert("Submission Blocked: Honeypot triggered.");
+        behaviorPoints += 5;
+    }
+
+    // 2. Paste scoring (flagged as 1 point rather than blocking assistive copy/paste)
+    if (textWasPasted) {
+        behaviorPoints += 1;
+    }
+
+    // 3. Impossibly fast timing (< 1.5s total typing window)
+    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
+    if (totalTimeElapsed < 1.5 && textBox.value.length > 50) {
+        behaviorPoints += 1;
+    }
+
+    // 4. Rate-limit burst detection (multiple posts within 15 seconds)
+    const now = Date.now();
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) {
+        behaviorPoints += 2;
+    }
+
+    // 5. Cadence uniformity
+    if (keystrokeGaps.length > 5) {
+        let perfectIntervals = 0;
+        for (let i = 2; i < keystrokeGaps.length; i++) {
+            if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
+        }
+        const uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
+        if (uniformityRatio > 0.75) {
+            behaviorPoints += 1;
+        }
+    }
+
+    // Accumulate suspicion
+    if (behaviorPoints > 0) {
+        suspicionScore += behaviorPoints;
+        updateSuspicionUI();
+
+        if (currentUser && db) {
+            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id);
+        }
+
+        // If threshold reached (>= 3), lock account and present CAPTCHA
+        if (suspicionScore >= 3) {
+            triggerSuspensionGate();
+            return;
+        }
+    }
+
+    // Standard length requirement
+    if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
+        alert("Please enter a message or attach a photo.");
         return;
     }
-
-    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
-    if (textWasPasted) { alert("Submission Blocked: Paste detected in message body. Use the '🔗 Link' button to insert external links safely."); return; }
-    if (totalTimeElapsed < 3) { alert("Submission Blocked: Impossibly fast post time."); return; }
-    if (mouseMovementsRecorded === 0) { alert("Submission Blocked: No interaction track detected."); return; }
-    if (textBox.value.trim().length < 5 && !selectedPostPhotoFile) { alert("Submission Blocked: Type a longer message or attach a photo."); return; }
-
-    let perfectIntervals = 0;
-    for (let i = 2; i < keystrokeGaps.length; i++) {
-        if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
-    }
-    const uniformityRatio = keystrokeGaps.length > 2 ? (perfectIntervals / (keystrokeGaps.length - 2)) : 0;
-    if (uniformityRatio > 0.60) { alert("Submission Blocked: Automation detected."); return; }
 
     const submitBtn = document.getElementById('forum-submit-btn');
     submitBtn.disabled = true;
@@ -2592,6 +2732,8 @@ forumForm.addEventListener('submit', async (event) => {
         console.error("Supabase Insert Error:", error);
         return;
     }
+
+    lastPostTimestamp = Date.now();
 
     if (targetThread === "Update Thread") {
         await loadProminentUpdates();
