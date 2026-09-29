@@ -139,7 +139,11 @@ let targetProfileUsername = null;
 let targetProfileId = null;
 let targetFriendshipRecord = null;
 
-// Telemetry & Suspension Monitor Elements
+// Floating Telemetry HUD Elements
+const telemetryPill = document.getElementById('telemetry-pill');
+const telemetryDrawer = document.getElementById('telemetry-drawer');
+const closeHudBtn = document.getElementById('close-hud-btn');
+const pillSuspicionTag = document.getElementById('pill-suspicion-tag');
 const statPaste = document.getElementById('stat-paste');
 const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
@@ -232,7 +236,18 @@ let isTimerRunning = false;
 // Suspicion & Account Risk Ledger
 let suspicionScore = 0;
 let isSuspended = false;
-let lastPostTimestamp = 0; // For burst post rate detection
+let lastPostTimestamp = 0;
+
+// --- FLOATING HUD TOGGLES ---
+
+telemetryPill.addEventListener('click', () => {
+    telemetryDrawer.classList.toggle('hidden');
+});
+
+closeHudBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    telemetryDrawer.classList.add('hidden');
+});
 
 // --- CAPTCHA GENERATOR & ESCALATION GATE ---
 
@@ -250,7 +265,6 @@ function drawCaptcha(code) {
     const ctx = captchaCanvas.getContext('2d');
     ctx.clearRect(0, 0, captchaCanvas.width, captchaCanvas.height);
     
-    // Background noise
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, captchaCanvas.width, captchaCanvas.height);
 
@@ -262,7 +276,6 @@ function drawCaptcha(code) {
         ctx.stroke();
     }
 
-    // Text rendering with random skew
     ctx.font = "bold 32px monospace";
     for (let i = 0; i < code.length; i++) {
         ctx.fillStyle = i % 2 === 0 ? "#38bdf8" : "#f8fafc";
@@ -297,7 +310,6 @@ refreshCaptchaBtn.addEventListener('click', () => {
 submitCaptchaBtn.addEventListener('click', async () => {
     const entered = captchaInput.value.trim().toUpperCase();
     if (entered === currentCaptchaSecret) {
-        // Solved
         isSuspended = false;
         suspicionScore = 0;
         updateSuspicionUI();
@@ -317,12 +329,17 @@ submitCaptchaBtn.addEventListener('click', async () => {
 
 function updateSuspicionUI() {
     statSuspicion.textContent = `${suspicionScore} / 3`;
+    pillSuspicionTag.textContent = `${suspicionScore}/3 Risk`;
+
     if (suspicionScore === 0) {
         statSuspicion.className = "badge badge-green";
+        pillSuspicionTag.style.color = "#22c55e";
     } else if (suspicionScore < 3) {
         statSuspicion.className = "badge badge-yellow";
+        pillSuspicionTag.style.color = "#eab308";
     } else {
         statSuspicion.className = "badge badge-red";
+        pillSuspicionTag.style.color = "#ef4444";
     }
 }
 
@@ -2551,7 +2568,6 @@ function startCompositionTimer() {
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
-// Note: Paste is allowed and NO LONGER blocked! It only registers internally.
 textBox.addEventListener('paste', () => {
     textWasPasted = true;
     statPaste.textContent = "TRUE";
@@ -2632,26 +2648,25 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    // --- ACCESSIBILITY-SAFE RISK SCORING ---
     let behaviorPoints = 0;
 
-    // 1. Honeypot check (instant bot trigger)
+    // 1. Honeypot check
     if (honeypotField.value !== "") {
         behaviorPoints += 5;
     }
 
-    // 2. Paste scoring (flagged as 1 point rather than blocking assistive copy/paste)
+    // 2. Paste scoring
     if (textWasPasted) {
         behaviorPoints += 1;
     }
 
-    // 3. Impossibly fast timing (< 1.5s total typing window)
+    // 3. Impossibly fast timing
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
     if (totalTimeElapsed < 1.5 && textBox.value.length > 50) {
         behaviorPoints += 1;
     }
 
-    // 4. Rate-limit burst detection (multiple posts within 15 seconds)
+    // 4. Rate-limit burst detection
     const now = Date.now();
     if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) {
         behaviorPoints += 2;
@@ -2669,7 +2684,6 @@ forumForm.addEventListener('submit', async (event) => {
         }
     }
 
-    // Accumulate suspicion
     if (behaviorPoints > 0) {
         suspicionScore += behaviorPoints;
         updateSuspicionUI();
@@ -2678,14 +2692,12 @@ forumForm.addEventListener('submit', async (event) => {
             db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id);
         }
 
-        // If threshold reached (>= 3), lock account and present CAPTCHA
         if (suspicionScore >= 3) {
             triggerSuspensionGate();
             return;
         }
     }
 
-    // Standard length requirement
     if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
         alert("Please enter a message or attach a photo.");
         return;
