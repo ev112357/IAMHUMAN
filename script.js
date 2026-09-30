@@ -307,7 +307,10 @@ function openProfileSettingsModal() {
 
 function closeMessagesModal() {
     dmModal.classList.add('hidden');
-    if (dmInterval) clearInterval(dmInterval);
+   if (window.chatSubscription) {
+        db.removeChannel(window.chatSubscription);
+        window.chatSubscription = null;
+    }
     activeConversationId = null;
     activeConversationPartnerId = null;
     activeConversationPartnerUsername = null;
@@ -885,7 +888,10 @@ async function syncUserState(user) {
         activeConversationId = null;
         suspicionScore = 0;
         updateSuspicionUI();
-        if (dmInterval) clearInterval(dmInterval);
+        if (window.chatSubscription) {
+        db.removeChannel(window.chatSubscription);
+        window.chatSubscription = null;
+    }
         if (notifPollInterval) clearInterval(notifPollInterval);
 
         postPanel.classList.add('hidden');
@@ -1757,42 +1763,57 @@ async function handleVote(postId, direction) {
         return;
     }
 
+    // 1. Get the current post and your previous vote
     const post = postCacheMap.get(Number(postId));
+    if (!post) return;
+    
     const currentVote = userVotes[postId] || 0;
     let newVote = 0;
-    let deltaChange = 0;
 
+    // 2. Calculate the new vote state
     if (currentVote === direction) {
-        newVote = 0;
-        deltaChange = -direction;
+        newVote = 0; // Clicking the same button removes the vote
     } else {
         newVote = direction;
-        deltaChange = direction - currentVote;
     }
 
+    // 3. Save your personal vote locally so the UI remembers your choice
     userVotes[postId] = newVote;
-    scoreOffsets[postId] = (scoreOffsets[postId] || 0) + deltaChange;
-
     localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
-    localStorage.setItem('forum_score_offsets', JSON.stringify(scoreOffsets));
 
+    // 4. Calculate the new total for the database
+    let newLikes = Number(post.likes || 0);
+    let newDislikes = Number(post.dislikes || 0);
+
+    // Remove old vote stats
+    if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
+    if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
+    
+    // Apply new vote stats
+    if (newVote === 1) newLikes += 1;
+    if (newVote === -1) newDislikes += 1;
+
+    // 5. Update the local cache so the screen updates instantly
+    post.likes = newLikes;
+    post.dislikes = newDislikes;
     renderCurrentFeed();
 
-    if (post && post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
+    // 6. Send the final numbers to Supabase!
+    const { error } = await db
+        .from('Posts')
+        .update({ likes: newLikes, dislikes: newDislikes })
+        .eq('id', postId);
+
+    if (error) console.error("Failed to save vote to database:", error);
+
+    // 7. Send notification if it was an upvote
+    if (post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
         try {
             const { data: targetProfile } = await db
-                .from('profiles')
-                .select('id')
-                .ilike('username', post.author)
-                .maybeSingle();
+                .from('profiles').select('id').ilike('username', post.author).maybeSingle();
 
             if (targetProfile) {
-                await sendNotification(
-                    targetProfile.id,
-                    'upvote_post',
-                    postId,
-                    `upvoted your post in "${post.thread}".`
-                );
+                await sendNotification(targetProfile.id, 'upvote_post', postId, `upvoted your post in "${post.thread}".`);
             }
         } catch (e) {}
     }
@@ -2456,7 +2477,10 @@ function showChatViewOnMobile() {
 }
 
 backToListBtn.addEventListener('click', () => {
-    if (dmInterval) clearInterval(dmInterval);
+    if (window.chatSubscription) {
+        db.removeChannel(window.chatSubscription);
+        window.chatSubscription = null;
+    }
     activeConversationId = null;
     activeConversationPartnerId = null;
     activeConversationPartnerUsername = null;
@@ -2889,8 +2913,27 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
 
     loadMessages(true);
 
-    if (dmInterval) clearInterval(dmInterval);
-    dmInterval = setInterval(() => loadMessages(false), 3000);
+    // Cancel any existing Realtime listener before starting a new one
+    if (window.chatSubscription) {
+        db.removeChannel(window.chatSubscription);
+    }
+
+    // Subscribe to instant updates from Supabase!
+    window.chatSubscription = db.channel(`chat_${activeConversationId}`)
+        .on(
+            'postgres_changes',
+            { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'chat_messages', 
+                filter: `conversation_id=eq.${activeConversationId}` 
+            },
+            (payload) => {
+                // When a new message hits the database, immediately load it
+                loadMessages(true);
+            }
+        )
+        .subscribe();
 }
 
 function scrollToBottom(force = false) {
