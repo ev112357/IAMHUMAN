@@ -242,7 +242,6 @@ if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: S
 
 // Voting and score cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
-let scoreOffsets = JSON.parse(localStorage.getItem('forum_score_offsets') || '{}');
 let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
 let cachedUpdates = [];
@@ -1748,9 +1747,7 @@ removePostPhotoBtn.addEventListener('click', () => {
 function getPostScore(post) {
     const dbLikes = Number(post.likes || 0);
     const dbDislikes = Number(post.dislikes || 0);
-    const baseScore = dbLikes - dbDislikes;
-    const localDelta = scoreOffsets[post.id] || 0;
-    return baseScore + localDelta;
+    return dbLikes - dbDislikes;
 }
 
 async function handleVote(postId, direction) {
@@ -1831,44 +1828,46 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
 
     const currentVote = userCommentVotes[commentId] || 0;
     let newVote = currentVote === direction ? 0 : direction;
-    let delta = newVote - currentVote;
 
     userCommentVotes[commentId] = newVote;
     localStorage.setItem('user_forum_comment_votes', JSON.stringify(userCommentVotes));
 
-    if (delta !== 0) {
-        try {
-            const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
-            if (c) {
-                if (direction === 1) {
-                    await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
-                } else {
-                    await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
-                }
-            }
-        } catch (e) {}
+    try {
+        const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
+        if (c) {
+            let newLikes = Number(c.likes || 0);
+            let newDislikes = Number(c.dislikes || 0);
+
+            // Strip the old vote
+            if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
+            if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
+
+            // Apply the new vote
+            if (newVote === 1) newLikes += 1;
+            if (newVote === -1) newDislikes += 1;
+
+            // Save to database
+            const { error } = await db.from('post_comments')
+                .update({ likes: newLikes, dislikes: newDislikes })
+                .eq('id', commentId);
+                
+            if (error) console.error("Comment vote DB error:", error);
+        }
+    } catch (e) {
+        console.error("Failed to update comment vote", e);
     }
 
     if (newVote === 1 && commentAuthor && commentAuthor.toLowerCase() !== currentUsername.toLowerCase()) {
         try {
             const { data: targetProfile } = await db
-                .from('profiles')
-                .select('id')
-                .ilike('username', commentAuthor)
-                .maybeSingle();
+                .from('profiles').select('id').ilike('username', commentAuthor).maybeSingle();
 
             if (targetProfile) {
-                await sendNotification(
-                    targetProfile.id,
-                    'upvote_comment',
-                    commentId,
-                    `upvoted your comment.`
-                );
+                await sendNotification(targetProfile.id, 'upvote_comment', commentId, `upvoted your comment.`);
             }
         } catch (e) {}
     }
 }
-
 // Post Sorting & Trending Logic
 function sortPosts(posts) {
     const sortMode = postSortSelect.value;
