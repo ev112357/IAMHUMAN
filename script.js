@@ -2074,8 +2074,6 @@ Explore topics, participate in discussions, and enjoy an authenticated bot-free 
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
-    const item = document.createElement('div');
-    item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
     item.id = `post-${post.id}`; // <--- ADD THIS EXACT LINE
     
     const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
