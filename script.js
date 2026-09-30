@@ -437,16 +437,23 @@ function renderJoinedThreadsSidebar() {
             ${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7;">Default</span>' : ''}
         `;
 
-        btn.addEventListener('click', () => {
+       btn.addEventListener('click', async () => {
             activeThread = tName;
+            
+            // --- EXPLICIT CACHE CLEAR & FEED RESET ---
+            cachedPosts = [];
+            postCacheMap.clear();
+            forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+            
             renderJoinedThreadsSidebar();
+            syncTopicDropdown();
             updateThreadControlsUI();
-            loadForumPosts();
+            
+            // Force fresh database retrieval for the new thread
+            await loadForumPosts();
+            
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
-
-        joinedThreadsContainer.appendChild(btn);
-    });
 }
 
 function syncTopicDropdown() {
