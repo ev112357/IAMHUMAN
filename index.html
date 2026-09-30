@@ -2,12 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Human-Only Forum Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: 12px 16px 80px; display: flex; flex-direction: column; align-items: center; position: relative; }
         
+        /* Safe Area Padding for iPhone Notch / Dynamic Island and Home Indicator */
+        body { 
+            background-color: #0f172a; 
+            color: #f8fafc; 
+            min-height: 100vh; 
+            padding: calc(12px + env(safe-area-inset-top, 0px)) 16px calc(80px + env(safe-area-inset-bottom, 0px)); 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            position: relative; 
+        }
+
         /* Top Pinned Updates Scrolling Ticker */
         .ticker-wrap {
             max-width: 1000px; width: 100%; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b);
@@ -22,7 +33,7 @@
             border-right: 1px solid #38bdf8; z-index: 2;
         }
         .ticker-content {
-            display: flex; white-space: nowrap; animation: ticker-scroll 32s linear infinite;
+            display: flex; white-space: nowrap; animation: ticker-scroll 24s linear infinite;
             padding-left: 20px; will-change: transform;
         }
         .ticker-wrap:hover .ticker-content { animation-play-state: paused; }
@@ -99,7 +110,7 @@
         .thread-chip:hover { border-color: #38bdf8; color: #f8fafc; }
         .thread-chip.active { background-color: #0284c7; color: #ffffff; border-color: #38bdf8; font-weight: 600; }
 
-        /* SECONDARY VIEW: POST CREATION */
+        /* SECONDARY VIEW: POST CREATION (PROMINENT FULL-WIDTH CARD) */
         .post-composer-wrap { max-width: 1000px; width: 100%; margin-bottom: 24px; }
         .card { background-color: #1e293b; padding: 24px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         h2 { font-size: 1.35rem; margin-bottom: 18px; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
@@ -287,7 +298,7 @@
 
         /* COMPACT FLOATING TELEMETRY HUD */
         .floating-telemetry-hud {
-            position: fixed; bottom: 18px; right: 18px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end;
+            position: fixed; bottom: 84px; right: 18px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end;
         }
         .telemetry-pill {
             background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 8px 20px rgba(0,0,0,0.45);
@@ -319,11 +330,73 @@
             background-color: rgba(234, 179, 8, 0.15); border: 1px dashed #eab308; color: #fde047;
             padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; text-align: center;
         }
-        .msg-bubble.pending-approval {
-            border: 1px dashed #eab308; opacity: 0.88;
+        .msg-bubble.pending-approval { border: 1px dashed #eab308; opacity: 0.88; }
+        .pending-tag { display: block; font-size: 0.7rem; color: #fef08a; margin-top: 4px; font-style: italic; }
+
+        /* DEDICATED MOBILE BOTTOM NAVIGATION BAR */
+        .mobile-bottom-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: calc(58px + env(safe-area-inset-bottom, 0px));
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            background-color: #0f172a;
+            border-top: 1px solid #334155;
+            z-index: 100;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
         }
-        .pending-tag {
-            display: block; font-size: 0.7rem; color: #fef08a; margin-top: 4px; font-style: italic;
+        .mobile-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            color: #94a3b8;
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            position: relative;
+            background: none;
+            border: none;
+            width: auto;
+            padding: 6px 12px;
+            transition: color 0.15s;
+        }
+        .mobile-nav-item.active {
+            color: #38bdf8;
+        }
+        .mobile-nav-icon {
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
+        /* Responsive Breakpoint for Mobile App Experience */
+        @media (max-width: 768px) {
+            .nav-actions { display: none !important; }
+            .mobile-bottom-nav { display: flex !important; }
+            .floating-telemetry-hud { bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
+
+            /* On Mobile, Modals convert to Dedicated Full-Screen App Views */
+            .modal-overlay.mobile-dedicated-page {
+                background: #0f172a !important;
+                backdrop-filter: none !important;
+                padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+                align-items: stretch !important;
+            }
+            .modal-overlay.mobile-dedicated-page .modal-box {
+                max-width: 100% !important;
+                height: 100% !important;
+                max-height: 100% !important;
+                border-radius: 0 !important;
+                border: none !important;
+                padding: 12px 6px !important;
+                box-shadow: none !important;
+                background-color: transparent !important;
+            }
         }
 
         /* CAPTCHA SUSPENSION MODAL */
@@ -332,7 +405,7 @@
         #captchaCanvas { background-color: #0f172a; display: block; }
         .captcha-input-group { display: flex; gap: 8px; width: 100%; max-width: 320px; }
 
-        /* Modals */
+        /* Modals Default */
         .modal-overlay {
             position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(6px);
             display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px;
@@ -415,15 +488,15 @@
 </head>
 <body>
 
-    <!-- PINNED UPDATES SCROLLING TICKER -->
-    <div class="ticker-wrap" title="Click to view all pinned updates">
-        <div id="ticker-badge" class="ticker-badge">📢 Pinned Updates</div>
+    <!-- PINNED UPDATES SCROLLING TICKER (Protected from notch by safe-area padding) -->
+    <div class="ticker-wrap" title="Click to view recent updates">
+        <div id="ticker-badge" class="ticker-badge">📢 Updates</div>
         <div id="ticker-content" class="ticker-content">
-            <span class="ticker-item">Loading system updates...</span>
+            <span class="ticker-item">Loading updates...</span>
         </div>
     </div>
 
-    <!-- TOP HEADER BANNER -->
+    <!-- TOP HEADER BANNER (Desktop navigation preserved) -->
     <header class="top-banner">
         <div class="brand-container">
             <div class="brand-logo-wrap" title="Human-Only Verified">
@@ -486,19 +559,19 @@
         </div>
 
         <div class="nav-actions">
-            <!-- Notifications Icon -->
+            <!-- Notifications Icon (Desktop) -->
             <div class="btn-badge-wrap">
                 <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
                 <span id="activity-notif-badge" class="notif-badge hidden">0</span>
             </div>
 
-            <!-- Mail Button -->
+            <!-- Mail Button (Desktop) -->
             <div class="btn-badge-wrap">
                 <button id="open-dm-btn" class="icon-btn hidden" title="Messages & Group Chats">✉️</button>
                 <span id="notif-badge" class="notif-badge hidden">0</span>
             </div>
 
-            <!-- Profile Settings Button -->
+            <!-- Profile Settings Button (Desktop) -->
             <button id="open-profile-btn" class="icon-btn hidden" title="Profile Settings">
                 <span id="header-avatar-fallback">👤</span>
                 <img id="header-avatar-img" class="user-nav-avatar hidden" alt="Avatar">
@@ -507,7 +580,7 @@
     </header>
 
     <!-- 1. PRIMARY VIEW: THREAD SEARCH, SELECTION & ACTIVE POSTS AT THE TOP -->
-    <main class="feed-card">
+    <main class="feed-card" id="main-feed-section">
         <div class="feed-toolbar">
             <div class="toolbar-top">
                 <input type="text" id="thread-search-input" class="toolbar-search" placeholder="🔍 Search or filter threads...">
@@ -538,7 +611,7 @@
     </main>
 
     <!-- 2. SECONDARY VIEW: POST CREATION (FULL-WIDTH PROMINENT CARD) -->
-    <div class="post-composer-wrap">
+    <div class="post-composer-wrap" id="main-composer-section">
         <div class="card">
             <div id="auth-panel">
                 <h2 id="auth-header">🔑 Member Login</h2>
@@ -636,6 +709,28 @@
         </div>
     </div>
 
+    <!-- 4. DEDICATED MOBILE BOTTOM NAVIGATION DOCK (Appears on Mobile & Web) -->
+    <nav id="mobile-bottom-nav" class="mobile-bottom-nav">
+        <button type="button" class="mobile-nav-item active" id="tab-btn-feed">
+            <span class="mobile-nav-icon">📜</span>
+            <span>Feed</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="tab-btn-notifs">
+            <span class="mobile-nav-icon">🔔</span>
+            <span>Alerts</span>
+            <span id="mobile-activity-badge" class="notif-badge hidden" style="top: 2px; right: 8px;">0</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="tab-btn-messages">
+            <span class="mobile-nav-icon">✉️</span>
+            <span>Chats</span>
+            <span id="mobile-dm-badge" class="notif-badge hidden" style="top: 2px; right: 8px;">0</span>
+        </button>
+        <button type="button" class="mobile-nav-item" id="tab-btn-profile">
+            <span class="mobile-nav-icon" id="mobile-tab-avatar-icon">👤</span>
+            <span>Profile</span>
+        </button>
+    </nav>
+
     <!-- MANDATORY CAPTCHA SUSPENSION MODAL -->
     <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
@@ -656,8 +751,8 @@
         </div>
     </div>
 
-    <!-- NOTIFICATIONS MODAL -->
-    <div id="notifications-modal" class="modal-overlay hidden">
+    <!-- NOTIFICATIONS VIEW / MODAL (Converts to dedicated mobile page on small screens) -->
+    <div id="notifications-modal" class="modal-overlay hidden mobile-dedicated-page">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>🔔 Notifications</h2>
@@ -666,7 +761,7 @@
                     <button id="close-notifications-btn" class="close-btn">&times;</button>
                 </div>
             </div>
-            <div id="notifications-list" style="display: flex; flex-direction: column; gap: 8px; max-height: 480px; overflow-y: auto;">
+            <div id="notifications-list" style="display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 180px); overflow-y: auto;">
                 <div class="no-posts">No new notifications.</div>
             </div>
         </div>
@@ -790,8 +885,8 @@
         </div>
     </div>
 
-    <!-- MESSAGING & GROUP CHATS MODAL -->
-    <div id="dm-modal" class="modal-overlay hidden">
+    <!-- MESSAGING VIEW / MODAL (Converts to dedicated mobile page on small screens) -->
+    <div id="dm-modal" class="modal-overlay hidden mobile-dedicated-page">
         <div class="modal-box">
             <div class="modal-header">
                 <h2>💬 Messages & Groups</h2>
@@ -846,7 +941,6 @@
                         </div>
                     </div>
 
-                    <!-- Pending Approval Warning Banner (shown dynamically) -->
                     <div id="chat-pending-banner" class="msg-pending-banner hidden">
                         🔒 You and this user are not yet accepted friends. Messages you send will remain <strong>pending</strong> and hidden until they accept your friend request.
                     </div>
@@ -867,8 +961,8 @@
         </div>
     </div>
 
-    <!-- PROFILE SETTINGS MODAL -->
-    <div id="profile-modal" class="modal-overlay hidden">
+    <!-- PROFILE SETTINGS VIEW / MODAL (Converts to dedicated mobile page on small screens) -->
+    <div id="profile-modal" class="modal-overlay hidden mobile-dedicated-page">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>⚙️ Profile Settings</h2>
