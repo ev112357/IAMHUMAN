@@ -592,6 +592,19 @@ async function loadUserNotifications() {
                 </div>
                 <div class="notif-time">${timeAgo}</div>
             `;
+        
+
+            // --- ADD THIS BLOCK FOR CLICKABLE NAVIGATION ---
+            if (['upvote_post', 'comment_reply', 'upvote_comment'].includes(n.type) && n.entity_id) {
+                div.style.cursor = 'pointer';
+                div.addEventListener('click', (e) => {
+                    // Prevent triggering if they clicked the username instead
+                    if (!e.target.classList.contains('clickable-username')) {
+                        navigateToPost(n.entity_id);
+                    }
+                });
+            }
+            // --- END NEW BLOCK ---
 
             div.querySelector('.clickable-username').addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1301,7 +1314,9 @@ threadSearchInput.addEventListener('input', () => {
         const actionBtn = document.createElement('button');
         actionBtn.type = 'button';
         actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
-        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
+        
+        const isPrivate = t.is_private;
+        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : (isPrivate ? 'Request Join 🔒' : '+ Join'));
         actionBtn.disabled = isMandatory;
 
         actionBtn.addEventListener('click', async () => {
@@ -1309,7 +1324,26 @@ threadSearchInput.addEventListener('input', () => {
                 alert("Please log in to join or leave threads.");
                 return;
             }
-            await toggleThreadMembership(t.name);
+            if (isJoined || !isPrivate) {
+                await toggleThreadMembership(t.name);
+            } else if (isPrivate) {
+                actionBtn.disabled = true;
+                actionBtn.textContent = 'Requested ⏳';
+                
+                await db.from('thread_requests').insert([{
+                    thread_name: t.name, user_id: currentUser.id, username: currentUsername
+                }]);
+                
+                const meta = threadMetaMap[t.name] || { owner: '', moderators: [] };
+                const notifyTargets = [meta.owner, ...(meta.moderators || [])].filter(Boolean);
+                if (notifyTargets.length > 0) {
+                     const { data: targetProfiles } = await db.from('profiles').select('id').in('username', notifyTargets);
+                     (targetProfiles || []).forEach(p => {
+                         sendNotification(p.id, 'thread_request', null, `requested to join "${t.name}".`);
+                     });
+                }
+                alert(`Join request sent for ${t.name}! You will be notified if approved.`);
+            }
         });
 
         row.appendChild(label);
@@ -1391,12 +1425,15 @@ createThreadForm.addEventListener('submit', async (e) => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating...';
 
+    const isPrivate = document.getElementById('new-thread-private-chk').checked;
+
     const { data: created, error } = await db
         .from('forum_threads')
         .insert([{
             name: newName,
             created_by: currentUser.id,
-            owner_username: currentUsername
+            owner_username: currentUsername,
+            is_private: isPrivate
         }])
         .select()
         .single();
@@ -1542,10 +1579,79 @@ managePermsBtn.addEventListener('click', () => openPermissionsManager());
 closePermsModalBtn.addEventListener('click', () => permsModal.classList.add('hidden'));
 permsModal.addEventListener('click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
 
-function openPermissionsManager() {
+async function openPermissionsManager() {
     permsThreadName.textContent = activeThread;
     renderPermissionsUserList();
     permsModal.classList.remove('hidden');
+
+    const threadData = allCloudThreads.find(t => t.name === activeThread);
+    const privacyWrap = document.getElementById('private-thread-toggle-wrap');
+    const togglePrivacyBtn = document.getElementById('toggle-privacy-btn');
+    const reqSection = document.getElementById('thread-requests-section');
+    const reqList = document.getElementById('thread-requests-list');
+
+    if (!privacyWrap || !reqSection) return; // Failsafe if HTML isn't added yet
+
+    // 1. Thread Privacy Toggle (Owners & Admins only)
+    if (getThreadRole(activeThread) === 'Owner' || isSiteAdmin()) {
+        privacyWrap.classList.remove('hidden');
+        let isPrivate = threadData ? threadData.is_private : false;
+        
+        togglePrivacyBtn.textContent = isPrivate ? 'Make Public' : 'Make Private';
+        togglePrivacyBtn.className = isPrivate ? 'btn-perm secondary' : 'btn-perm danger';
+        
+        togglePrivacyBtn.onclick = async () => {
+            isPrivate = !isPrivate;
+            await db.from('forum_threads').update({ is_private: isPrivate }).eq('name', activeThread);
+            if (threadData) threadData.is_private = isPrivate;
+            openPermissionsManager(); // Refresh view
+        };
+    } else {
+        privacyWrap.classList.add('hidden');
+    }
+
+    // 2. Pending Requests Dashboard (Owners & Mods only)
+    if (threadData && threadData.is_private && (getThreadRole(activeThread) === 'Owner' || getThreadRole(activeThread) === 'Moderator' || isSiteAdmin())) {
+        reqSection.classList.remove('hidden');
+        reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">Loading requests...</div>';
+        
+        const { data: requests } = await db.from('thread_requests').select('*').eq('thread_name', activeThread).eq('status', 'pending');
+        
+        reqList.innerHTML = '';
+        if (!requests || requests.length === 0) {
+            reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
+        } else {
+            requests.forEach(req => {
+                const row = document.createElement('div');
+                row.className = 'perm-user-row';
+                row.innerHTML = `
+                    <span class="perm-user-name">@${escapeHTML(req.username)}</span>
+                    <div class="perm-user-buttons">
+                        <button class="btn-perm" style="background: #16a34a; border: none; color: #fff;">Approve</button>
+                        <button class="btn-perm danger" style="border: none;">Deny</button>
+                    </div>
+                `;
+                
+                row.querySelectorAll('button')[0].onclick = async () => {
+                    await db.from('thread_requests').update({ status: 'approved' }).eq('id', req.id);
+                    await db.from('forum_thread_members').insert([{ user_id: req.user_id, thread_name: activeThread }]);
+                    sendNotification(req.user_id, 'request_approved', null, `Your request to join "${activeThread}" was approved!`);
+                    row.remove();
+                    if (reqList.children.length === 0) reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
+                };
+                
+                row.querySelectorAll('button')[1].onclick = async () => {
+                    await db.from('thread_requests').update({ status: 'denied' }).eq('id', req.id);
+                    row.remove();
+                    if (reqList.children.length === 0) reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
+                };
+                
+                reqList.appendChild(row);
+            });
+        }
+    } else {
+        reqSection.classList.add('hidden');
+    }
 }
 
 function renderPermissionsUserList() {
@@ -1968,6 +2074,9 @@ Explore topics, participate in discussions, and enjoy an authenticated bot-free 
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
+    const item = document.createElement('div');
+    item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
+    item.id = `post-${post.id}`; // <--- ADD THIS EXACT LINE
     
     const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
     const score = getPostScore(post);
@@ -3341,6 +3450,35 @@ forumForm.addEventListener('submit', async (event) => {
 
     resetTelemetryConsole();
 });
+async function navigateToPost(postId) {
+    if (!db) return;
+    const { data: post } = await db.from('Posts').select('thread').eq('id', postId).maybeSingle();
+    
+    if (!post) {
+        alert("This post may have been deleted.");
+        return;
+    }
+
+    notificationsModal.classList.add('hidden'); // Close the notification modal
+    
+    // Switch threads if necessary
+    if (activeThread !== post.thread) {
+        activeThread = post.thread;
+        syncTopicDropdown();
+        await loadForumPosts(); // Wait for the new thread feed to render
+    }
+
+    // Find the post and scroll to it smoothly
+    const targetEl = document.getElementById(`post-${postId}`);
+    if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Briefly flash a highlight ring around the post so they spot it
+        targetEl.style.transition = 'box-shadow 0.4s ease';
+        targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
+        setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
+    }
+}
 
 // Boot Application
 syncCloudThreads();
