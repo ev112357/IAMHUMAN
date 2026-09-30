@@ -173,6 +173,7 @@ let currentCaptchaSecret = "";
 // Direct Messages & Groups Elements
 const openDmBtn = document.getElementById('open-dm-btn');
 const closeDmBtn = document.getElementById('close-dm-btn');
+const chatCloseBtn = document.getElementById('chat-close-btn');
 const notifBadge = document.getElementById('notif-badge');
 const clearAllNotifsBtn = document.getElementById('clear-all-notifs-btn');
 const dmModal = document.getElementById('dm-modal');
@@ -223,7 +224,7 @@ let usernameAvatarMap = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
-// Thread & Permissions State: "Welcome & Security" is the Default
+// Thread State
 const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Text Thread #2", "Text Thread #3"];
 let availableThreads = [...DEFAULT_THREADS];
 let activeThread = "Welcome & Security";
@@ -242,7 +243,7 @@ let cachedPosts = [];
 let cachedUpdates = [];
 let postCacheMap = new Map();
 
-// Telemetry & Rate-Limiting State
+// Telemetry State
 let pageLoadTime = null; 
 let textWasPasted = false;
 let keystrokeGaps = [];
@@ -299,6 +300,17 @@ function openProfileSettingsModal() {
     setMobileTabActive('profile');
 }
 
+function closeMessagesModal() {
+    dmModal.classList.add('hidden');
+    if (dmInterval) clearInterval(dmInterval);
+    activeConversationId = null;
+    activeConversationPartnerId = null;
+    activeConversationPartnerUsername = null;
+    showSidebarViewOnMobile();
+    setMobileTabActive('feed');
+    checkNotifications();
+}
+
 // --- MOBILE NAVIGATION BAR ROUTING ---
 
 function setMobileTabActive(tabName) {
@@ -312,7 +324,7 @@ function setMobileTabActive(tabName) {
 }
 
 tabNavFeed.addEventListener('click', () => {
-    dmModal.classList.add('hidden');
+    closeMessagesModal();
     notificationsModal.classList.add('hidden');
     profileModal.classList.add('hidden');
     userProfileModal.classList.add('hidden');
@@ -328,8 +340,17 @@ openDmBtn.addEventListener('click', openMessagesModal);
 openNotifBtn.addEventListener('click', openNotificationsModal);
 openProfileBtn.addEventListener('click', openProfileSettingsModal);
 
-[closeDmBtn, closeNotificationsBtn, closeProfileBtn].forEach(btn => {
-    btn.addEventListener('click', () => setMobileTabActive('feed'));
+// Close button listeners for modals
+closeDmBtn.addEventListener('click', closeMessagesModal);
+if (chatCloseBtn) chatCloseBtn.addEventListener('click', closeMessagesModal);
+
+closeNotificationsBtn.addEventListener('click', () => {
+    notificationsModal.classList.add('hidden');
+    setMobileTabActive('feed');
+});
+closeProfileBtn.addEventListener('click', () => {
+    profileModal.classList.add('hidden');
+    setMobileTabActive('feed');
 });
 
 chatHeader.addEventListener('click', () => {
@@ -575,7 +596,7 @@ async function loadUserNotifications() {
         });
 
     } catch (e) {
-        console.error("Error loading activity notifications:", e);
+        console.warn("Error loading activity notifications:", e);
     }
 }
 
@@ -615,7 +636,7 @@ async function calculateUserScore(username) {
 
         return total;
     } catch (e) {
-        console.error("Error computing score:", e);
+        console.warn("Error computing score:", e);
         return 0;
     }
 }
@@ -635,26 +656,31 @@ async function updateProfileFriendButtonUI() {
     userCardAddFriendBtn.classList.remove('hidden');
     userCardMsgBtn.classList.remove('hidden');
 
-    const { data: friendship } = await db
-        .from('friendships')
-        .select('*')
-        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
-        .maybeSingle();
+    try {
+        const { data: friendship } = await db
+            .from('friendships')
+            .select('*')
+            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
+            .maybeSingle();
 
-    targetFriendshipRecord = friendship;
+        targetFriendshipRecord = friendship;
 
-    if (friendship && friendship.status === 'accepted') {
-        userCardAddFriendBtn.innerHTML = `✓ Friends`;
-        userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
-    } else if (friendship && friendship.status === 'pending') {
-        if (friendship.user_id === currentUser.id) {
-            userCardAddFriendBtn.innerHTML = `⏳ Sent`;
-            userCardAddFriendBtn.className = 'btn-friend-state secondary';
+        if (friendship && friendship.status === 'accepted') {
+            userCardAddFriendBtn.innerHTML = `✓ Friends`;
+            userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
+        } else if (friendship && friendship.status === 'pending') {
+            if (friendship.user_id === currentUser.id) {
+                userCardAddFriendBtn.innerHTML = `⏳ Sent`;
+                userCardAddFriendBtn.className = 'btn-friend-state secondary';
+            } else {
+                userCardAddFriendBtn.innerHTML = `📬 Accept`;
+                userCardAddFriendBtn.className = 'btn-friend-state';
+            }
         } else {
-            userCardAddFriendBtn.innerHTML = `📬 Accept`;
+            userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
             userCardAddFriendBtn.className = 'btn-friend-state';
         }
-    } else {
+    } catch (e) {
         userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
         userCardAddFriendBtn.className = 'btn-friend-state';
     }
@@ -686,7 +712,7 @@ window.openUserProfileCard = async function(username) {
             targetProfileId = null;
         }
     } catch (e) {
-        console.error("Profile load err:", e);
+        console.warn("Profile load err:", e);
     }
 
     await updateProfileFriendButtonUI();
@@ -792,13 +818,22 @@ cancelUnaddBtn.addEventListener('click', () => {
     unaddConfirmBox.classList.add('hidden');
 });
 
-// --- RESILIENT SESSION & AUTHENTICATION (NO HANGS) ---
+// --- SESSION & AUTHENTICATION (FAIL-SAFE LOGIN) ---
 
 async function syncUserState(user) {
     if (user) {
         currentUser = user;
+        
+        currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
+        currentUserTag.textContent = `@${currentUsername}`;
+        deleteConfirmUserTag.textContent = `@${currentUsername}`;
+        
+        authPanel.classList.add('hidden');
+        postPanel.classList.remove('hidden');
+        openNotifBtn.classList.remove('hidden');
+        openDmBtn.classList.remove('hidden');
+        openProfileBtn.classList.remove('hidden');
 
-        // Resilient Profile Lookup (won't crash if optional columns are missing)
         try {
             const { data: profile } = await db
                 .from('profiles')
@@ -806,40 +841,34 @@ async function syncUserState(user) {
                 .eq('id', currentUser.id)
                 .maybeSingle();
 
-            currentUsername = profile?.username || currentUser.user_metadata?.username || currentUser.email?.split('@')[0] || "human";
-            currentAvatarUrl = profile?.avatar_url || null;
-            suspicionScore = profile?.suspicion_score || 0;
-            updateSuspicionUI();
-
-            if (profile?.is_suspended) {
-                triggerSuspensionGate();
+            if (profile) {
+                if (profile.username) {
+                    currentUsername = profile.username;
+                    currentUserTag.textContent = `@${currentUsername}`;
+                    deleteConfirmUserTag.textContent = `@${currentUsername}`;
+                }
+                if (profile.avatar_url) {
+                    currentAvatarUrl = profile.avatar_url;
+                    userAvatarCache.set(currentUser.id, currentAvatarUrl);
+                    usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
+                    renderUserAvatar(currentAvatarUrl);
+                }
+                if (profile.suspicion_score != null) {
+                    suspicionScore = profile.suspicion_score;
+                    updateSuspicionUI();
+                }
+                if (profile.is_suspended) {
+                    triggerSuspensionGate();
+                }
             }
-        } catch (e) {
-            console.warn("Non-fatal profile lookup error, falling back to auth metadata:", e);
-            currentUsername = currentUser.user_metadata?.username || currentUser.email?.split('@')[0] || "human";
-            currentAvatarUrl = null;
+        } catch (err) {
+            console.warn("Profile synchronization notice:", err);
         }
 
-        currentUserTag.textContent = `@${currentUsername}`;
-        deleteConfirmUserTag.textContent = `@${currentUsername}`;
         renderUserAvatar(currentAvatarUrl);
-
-        if (currentAvatarUrl) {
-            userAvatarCache.set(currentUser.id, currentAvatarUrl);
-            usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
-        }
-
-        // Toggle Views
-        authPanel.classList.add('hidden');
-        postPanel.classList.remove('hidden');
-        openNotifBtn.classList.remove('hidden');
-        openDmBtn.classList.remove('hidden');
-        openProfileBtn.classList.remove('hidden');
-        
         syncThreadDropdown();
         checkNotifications();
         loadUserNotifications();
-        
         if (notifPollInterval) clearInterval(notifPollInterval);
         notifPollInterval = setInterval(() => {
             checkNotifications();
@@ -852,7 +881,6 @@ async function syncUserState(user) {
         activeConversationId = null;
         suspicionScore = 0;
         updateSuspicionUI();
-        
         if (dmInterval) clearInterval(dmInterval);
         if (notifPollInterval) clearInterval(notifPollInterval);
 
@@ -873,7 +901,6 @@ async function syncUserState(user) {
         linkModal.classList.add('hidden');
         userProfileModal.classList.add('hidden');
         captchaSuspensionModal.classList.add('hidden');
-        
         authPanel.classList.remove('hidden');
         syncThreadDropdown();
     }
@@ -906,14 +933,10 @@ function renderUserAvatar(url) {
     }
 }
 
-// Session Initializer
 if (db) {
     db.auth.getSession().then(({ data: { session } }) => {
         syncUserState(session?.user || null);
-    }).catch(err => {
-        console.error("Initial session fetch error:", err);
-        syncUserState(null);
-    });
+    }).catch(e => console.warn("Session check error:", e));
 
     db.auth.onAuthStateChange((_event, session) => {
         syncUserState(session?.user || null);
@@ -943,7 +966,7 @@ authForm.addEventListener('submit', async (e) => {
     const password = authPasswordInput.value;
 
     authSubmitBtn.disabled = true;
-    authSubmitBtn.textContent = isSignUpMode ? "Creating..." : "Logging In...";
+    authSubmitBtn.textContent = isSignUpMode ? "Signing up..." : "Logging in...";
 
     if (isSignUpMode) {
         const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
@@ -954,22 +977,20 @@ authForm.addEventListener('submit', async (e) => {
             return;
         }
 
-        try {
-            const { data: existingUser } = await db
-                .from('profiles')
-                .select('username')
-                .eq('username', username)
-                .maybeSingle();
+        const { data: existingUser } = await db
+            .from('profiles')
+            .select('username')
+            .eq('username', username)
+            .maybeSingle();
 
-            if (existingUser) {
-                alert("Username already taken. Please choose another.");
-                authSubmitBtn.disabled = false;
-                authSubmitBtn.textContent = "Sign Up";
-                return;
-            }
-        } catch (_) {}
+        if (existingUser) {
+            alert("Username already taken. Please choose another.");
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = "Sign Up";
+            return;
+        }
 
-        const { data, error } = await db.auth.signUp({
+        const { error } = await db.auth.signUp({
             email,
             password,
             options: { data: { username: username } }
@@ -983,16 +1004,10 @@ authForm.addEventListener('submit', async (e) => {
             return;
         }
 
-        // If email confirmation is off, immediately ensure profile exists
-        if (data?.user) {
-            await db.from('profiles').upsert([{ id: data.user.id, username: username }]).catch(() => {});
-        }
-
-        alert("Account created successfully! Logging you in...");
+        alert("Account created successfully!");
         authForm.reset();
     } else {
         const { error } = await db.auth.signInWithPassword({ email, password });
-        
         authSubmitBtn.disabled = false;
         authSubmitBtn.textContent = "Log In";
 
@@ -1137,7 +1152,7 @@ function loadSavedThreads() {
                 if (!availableThreads.includes(t)) availableThreads.push(t);
             });
         } catch (e) {
-            console.error("Error reading stored threads", e);
+            console.warn("Error reading stored threads", e);
         }
     }
     syncThreadDropdown();
@@ -1313,7 +1328,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
 
     if (db) {
         const { error } = await db.from('Posts').delete().eq('thread', activeThread);
-        if (error) console.error("Error purging thread posts:", error);
+        if (error) console.warn("Error purging thread posts:", error);
     }
 
     delete threadMetaMap[activeThread];
@@ -1584,20 +1599,22 @@ async function handleVote(postId, direction) {
     renderCurrentFeed();
 
     if (post && post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
-        const { data: targetProfile } = await db
-            .from('profiles')
-            .select('id')
-            .ilike('username', post.author)
-            .maybeSingle();
+        try {
+            const { data: targetProfile } = await db
+                .from('profiles')
+                .select('id')
+                .ilike('username', post.author)
+                .maybeSingle();
 
-        if (targetProfile) {
-            await sendNotification(
-                targetProfile.id,
-                'upvote_post',
-                postId,
-                `upvoted your post in "${post.thread}".`
-            );
-        }
+            if (targetProfile) {
+                await sendNotification(
+                    targetProfile.id,
+                    'upvote_post',
+                    postId,
+                    `upvoted your post in "${post.thread}".`
+                );
+            }
+        } catch (e) {}
     }
 }
 
@@ -1619,31 +1636,35 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
     localStorage.setItem('user_forum_comment_votes', JSON.stringify(userCommentVotes));
 
     if (delta !== 0) {
-        const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
-        if (c) {
-            if (direction === 1) {
-                await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
-            } else {
-                await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
+        try {
+            const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
+            if (c) {
+                if (direction === 1) {
+                    await db.from('post_comments').update({ likes: Math.max(0, (c.likes || 0) + delta) }).eq('id', commentId);
+                } else {
+                    await db.from('post_comments').update({ dislikes: Math.max(0, (c.dislikes || 0) + delta) }).eq('id', commentId);
+                }
             }
-        }
+        } catch (e) {}
     }
 
     if (newVote === 1 && commentAuthor && commentAuthor.toLowerCase() !== currentUsername.toLowerCase()) {
-        const { data: targetProfile } = await db
-            .from('profiles')
-            .select('id')
-            .ilike('username', commentAuthor)
-            .maybeSingle();
+        try {
+            const { data: targetProfile } = await db
+                .from('profiles')
+                .select('id')
+                .ilike('username', commentAuthor)
+                .maybeSingle();
 
-        if (targetProfile) {
-            await sendNotification(
-                targetProfile.id,
-                'upvote_comment',
-                commentId,
-                `upvoted your comment.`
-            );
-        }
+            if (targetProfile) {
+                await sendNotification(
+                    targetProfile.id,
+                    'upvote_comment',
+                    commentId,
+                    `upvoted your comment.`
+                );
+            }
+        } catch (e) {}
     }
 }
 
@@ -1687,11 +1708,10 @@ async function ensureAuthorAvatarsCached(authors) {
             }
         });
     } catch (e) {
-        console.error("Avatar batch fetch err:", e);
+        console.warn("Avatar batch fetch err:", e);
     }
 }
 
-// Organic welcome post without inflated vote counts
 function getWelcomeSecurityPost() {
     return {
         id: 'welcome-seed',
@@ -1864,20 +1884,22 @@ function createPostCardElement(post) {
         }
 
         if (post.author && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
-            const { data: authorProfile } = await db
-                .from('profiles')
-                .select('id')
-                .ilike('username', post.author)
-                .maybeSingle();
+            try {
+                const { data: authorProfile } = await db
+                    .from('profiles')
+                    .select('id')
+                    .ilike('username', post.author)
+                    .maybeSingle();
 
-            if (authorProfile) {
-                await sendNotification(
-                    authorProfile.id,
-                    'comment_reply',
-                    post.id,
-                    `replied to your post: "${text.substring(0, 36)}..."`
-                );
-            }
+                if (authorProfile) {
+                    await sendNotification(
+                        authorProfile.id,
+                        'comment_reply',
+                        post.id,
+                        `replied to your post: "${text.substring(0, 36)}..."`
+                    );
+                }
+            } catch (e) {}
         }
 
         input.value = '';
@@ -2036,7 +2058,7 @@ async function loadForumPosts() {
         .eq('thread', activeThread);
 
     if (error) {
-        console.error("Cloud Retrieval Error:", error);
+        console.warn("Cloud Retrieval Error:", error);
         forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
         return;
     }
@@ -2101,7 +2123,7 @@ function openUpdatesDrawer() {
 closeUpdatesModalBtn.addEventListener('click', () => updatesModal.classList.add('hidden'));
 updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) updatesModal.classList.add('hidden'); });
 
-// --- NOTIFICATION ENGINE (Messages & Mobile Badges) ---
+// --- NOTIFICATION ENGINE ---
 
 async function checkNotifications() {
     if (!currentUser || !db) return;
@@ -2156,7 +2178,7 @@ async function checkNotifications() {
             updateSidebarBadges();
         }
     } catch (e) {
-        console.error("Notif check error:", e);
+        console.warn("Notif check notice:", e);
     }
 }
 
@@ -2205,9 +2227,7 @@ clearAllNotifsBtn.addEventListener('click', async () => {
 
 dmModal.addEventListener('click', (e) => {
     if (e.target === dmModal) {
-        dmModal.classList.add('hidden');
-        if (dmInterval) clearInterval(dmInterval);
-        checkNotifications();
+        closeMessagesModal();
     }
 });
 
@@ -2327,7 +2347,7 @@ async function loadFriends() {
         .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
 
     if (error) {
-        console.error("Error loading friends:", error);
+        console.warn("Error loading friends:", error);
         return;
     }
 
@@ -2697,7 +2717,7 @@ async function loadMessages(forceScroll = false) {
         .order('id', { ascending: true });
 
     if (error) {
-        console.error("Error loading chat messages:", error);
+        console.warn("Error loading chat messages:", error);
         return;
     }
 
@@ -3029,7 +3049,7 @@ forumForm.addEventListener('submit', async (event) => {
             .upload(filePath, selectedPostPhotoFile);
 
         if (uploadError) {
-            console.error("Post image upload failed:", uploadError);
+            console.warn("Post image upload failed:", uploadError);
         } else {
             const { data: publicUrlData } = db.storage
                 .from('chat-images')
