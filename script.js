@@ -215,6 +215,7 @@ let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
 let activeConversationPartnerId = null;
+let activeConversationPartnerUsername = null; // Stored to allow header click to open profile
 let activeConversationIsFriend = false;
 let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
@@ -300,9 +301,15 @@ tabNavProfile.addEventListener('click', () => {
     openProfileBtn.click();
 });
 
-// Update active tab when modals are closed
 [closeDmBtn, closeNotificationsBtn, closeProfileBtn].forEach(btn => {
     btn.addEventListener('click', () => setMobileTabActive('feed'));
+});
+
+// --- CHAT HEADER CLICK (OPENS PARTNER'S PROFILE CARD) ---
+chatHeader.addEventListener('click', () => {
+    if (activeConversationPartnerUsername) {
+        window.openUserProfileCard(activeConversationPartnerUsername);
+    }
 });
 
 // --- FLOATING HUD TOGGLES ---
@@ -1954,7 +1961,6 @@ async function loadForumPosts() {
 async function loadProminentUpdates() {
     if (!db) return;
 
-    // Fetch ONLY the 3 most recent updates
     const { data: updates, error } = await db
         .from('Posts')
         .select('*')
@@ -1969,7 +1975,6 @@ async function loadProminentUpdates() {
 
     cachedUpdates = updates;
 
-    // Duplicate string items so marquee performs seamless continuous scroll
     const items = updates.map(u => {
         const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
         return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
@@ -2134,6 +2139,7 @@ backToListBtn.addEventListener('click', () => {
     if (dmInterval) clearInterval(dmInterval);
     activeConversationId = null;
     activeConversationPartnerId = null;
+    activeConversationPartnerUsername = null;
     showSidebarViewOnMobile();
     refreshMessagingHub();
 });
@@ -2288,17 +2294,13 @@ async function loadFriends() {
         const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
         const badgeHidden = unreadCount === 0 ? 'hidden' : '';
 
+        // Entire row opens conversation (no propagation stopping or opening profile here)
         div.innerHTML = `
             <div class="conv-item-label">
-                <span class="clickable-username" data-username="${escapeHTML(friend.username)}">@${escapeHTML(friend.username)}</span>
+                <span>@${escapeHTML(friend.username)}</span>
             </div>
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
-
-        div.querySelector('.clickable-username').addEventListener('click', (e) => {
-            e.stopPropagation();
-            window.openUserProfileCard(friend.username);
-        });
 
         div.addEventListener('click', () => startOrOpenDirectChat(friend));
         friendsContainer.appendChild(div);
@@ -2419,7 +2421,7 @@ async function loadConversations() {
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
 
-        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, true));
+        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, null, true));
         groupsContainer.appendChild(div);
     });
 }
@@ -2459,7 +2461,7 @@ async function startOrOpenDirectChat(friend) {
     const isFriend = friendship && friendship.status === 'accepted';
 
     if (existing1on1Id) {
-        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, isFriend);
+        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, friend.username, isFriend);
     } else {
         const { data: newConv, error: convErr } = await db
             .from('conversations')
@@ -2477,7 +2479,7 @@ async function startOrOpenDirectChat(friend) {
             { conversation_id: newConv.id, user_id: friend.id }
         ]);
 
-        selectConversation(newConv.id, `@${friend.username}`, friend.id, isFriend);
+        selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
     }
 }
 
@@ -2531,15 +2533,21 @@ createGroupConfirmBtn.addEventListener('click', async () => {
     groupNameInput.value = '';
     groupCreatorBox.classList.add('hidden');
     await loadConversations();
-    selectConversation(newGroup.id, `Group: ${groupName}`, null, true);
+    selectConversation(newGroup.id, `Group: ${groupName}`, null, null, true);
 });
 
-function selectConversation(conversationId, title, partnerId = null, isFriend = true) {
+function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
     activeConversationId = conversationId;
     activeConversationPartnerId = partnerId;
+    activeConversationPartnerUsername = partnerUsername;
     activeConversationIsFriend = isFriend;
 
-    chatHeader.textContent = title;
+    if (partnerUsername) {
+        chatHeader.innerHTML = `<span class="clickable-username" title="Click to view @${escapeHTML(partnerUsername)}'s profile">@${escapeHTML(partnerUsername)}</span>`;
+    } else {
+        chatHeader.textContent = title;
+    }
+
     dmText.disabled = false;
     dmImageInput.disabled = false;
     dmSendBtn.disabled = false;
