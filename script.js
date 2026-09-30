@@ -18,6 +18,9 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
 
+// Mandatory default threads that all users are enrolled in
+const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
+
 // DOM Elements - Auth & Nav
 const authPanel = document.getElementById('auth-panel');
 const postPanel = document.getElementById('post-panel');
@@ -64,7 +67,15 @@ const updatesModal = document.getElementById('updates-modal');
 const closeUpdatesModalBtn = document.getElementById('close-updates-modal-btn');
 const updatesModalFeed = document.getElementById('updates-modal-feed');
 
-// Forum & Threads
+// Thread Sidebar & Discovery Elements
+const joinedThreadsContainer = document.getElementById('joined-threads-container');
+const sidebarNewThreadBtn = document.getElementById('sidebar-new-thread-btn');
+const threadSearchInput = document.getElementById('thread-search-input');
+const threadDiscoveryBox = document.getElementById('thread-discovery-box');
+const postSortSelect = document.getElementById('post-sort-select');
+const joinLeaveActiveThreadBtn = document.getElementById('join-leave-active-thread-btn');
+
+// Forum & Active Thread Elements
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
@@ -90,10 +101,7 @@ const insertLinkForm = document.getElementById('insertLinkForm');
 const linkUrlInput = document.getElementById('link-url-input');
 const linkTextInput = document.getElementById('link-text-input');
 
-// Thread Management & Filter Elements
-const threadSearchInput = document.getElementById('thread-search-input');
-const threadChipsContainer = document.getElementById('thread-chips-container');
-const postSortSelect = document.getElementById('post-sort-select');
+// Thread Creation Modal Elements
 const openNewThreadModalBtn = document.getElementById('open-new-thread-modal-btn');
 const triggerCreateThreadBtn = document.getElementById('trigger-create-thread-btn');
 const threadModal = document.getElementById('thread-modal');
@@ -224,16 +232,12 @@ let usernameAvatarMap = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
-// Thread State
-const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Text Thread #2", "Text Thread #3"];
-let availableThreads = [...DEFAULT_THREADS];
+// Thread State (Synced to Cloud)
+let allCloudThreads = []; // Array of { name, owner_username }
+let myJoinedThreadNames = new Set(MANDATORY_THREADS);
 let activeThread = "Welcome & Security";
 
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
-if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
-if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
-if (!threadMetaMap["Text Thread #2"]) threadMetaMap["Text Thread #2"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
-if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
 // Voting and score cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
@@ -340,7 +344,6 @@ openDmBtn.addEventListener('click', openMessagesModal);
 openNotifBtn.addEventListener('click', openNotificationsModal);
 openProfileBtn.addEventListener('click', openProfileSettingsModal);
 
-// Close button listeners for modals
 closeDmBtn.addEventListener('click', closeMessagesModal);
 if (chatCloseBtn) chatCloseBtn.addEventListener('click', closeMessagesModal);
 
@@ -366,6 +369,211 @@ telemetryPill.addEventListener('click', () => {
 closeHudBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     telemetryDrawer.classList.add('hidden');
+});
+
+// --- CLOUD THREADS & MEMBERSHIP SYNC ---
+
+async function syncCloudThreads() {
+    if (!db) return;
+
+    // 1. Fetch all system & user-created threads from Supabase
+    const { data: threads, error: threadErr } = await db
+        .from('forum_threads')
+        .select('*')
+        .order('id', { ascending: true });
+
+    if (!threadErr && threads && threads.length > 0) {
+        allCloudThreads = threads;
+    } else {
+        // Fallback default threads if table was just created
+        allCloudThreads = [
+            { name: "Welcome & Security", owner_username: "gemini" },
+            { name: "Update Thread", owner_username: "gemini" },
+            { name: "Text Thread #2", owner_username: "gemini" },
+            { name: "Text Thread #3", owner_username: "gemini" }
+        ];
+    }
+
+    // 2. Fetch current user's joined threads from Supabase
+    myJoinedThreadNames = new Set(MANDATORY_THREADS);
+
+    if (currentUser) {
+        const { data: memberships } = await db
+            .from('forum_thread_members')
+            .select('thread_name')
+            .eq('user_id', currentUser.id);
+
+        (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
+    } else {
+        // For guest mode, include initial text threads
+        myJoinedThreadNames.add("Text Thread #2");
+        myJoinedThreadNames.add("Text Thread #3");
+    }
+
+    renderJoinedThreadsSidebar();
+    syncTopicDropdown();
+    updateThreadControlsUI();
+}
+
+function renderJoinedThreadsSidebar() {
+    joinedThreadsContainer.innerHTML = '';
+
+    const joinedList = Array.from(myJoinedThreadNames);
+    if (joinedList.length === 0) {
+        joinedThreadsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No threads joined.</div>';
+        return;
+    }
+
+    joinedList.forEach(tName => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
+        
+        const isMandatory = MANDATORY_THREADS.includes(tName);
+        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : "💬");
+
+        btn.innerHTML = `
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>
+            ${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7;">Default</span>' : ''}
+        `;
+
+        btn.addEventListener('click', () => {
+            activeThread = tName;
+            renderJoinedThreadsSidebar();
+            updateThreadControlsUI();
+            loadForumPosts();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        joinedThreadsContainer.appendChild(btn);
+    });
+}
+
+function syncTopicDropdown() {
+    topicSelect.innerHTML = '';
+    
+    // Users can post into threads they have joined (excluding Update Thread unless Admin)
+    Array.from(myJoinedThreadNames).forEach(tName => {
+        if (tName === "Update Thread" && !isSiteAdmin()) return;
+
+        const opt = document.createElement('option');
+        opt.value = tName;
+        opt.textContent = tName;
+        topicSelect.appendChild(opt);
+    });
+
+    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
+        topicSelect.value = activeThread;
+    } else if (topicSelect.options.length > 0) {
+        topicSelect.selectedIndex = 0;
+    }
+}
+
+// --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
+
+function fuzzyMatch(str, pattern) {
+    const s = str.toLowerCase();
+    const p = pattern.toLowerCase().trim();
+    if (!p) return true;
+    if (s.includes(p)) return true;
+
+    // Fuzzy subsequence search (e.g. "wlc" matches "Welcome & Security")
+    let pIdx = 0;
+    for (let char of s) {
+        if (char === p[pIdx]) pIdx++;
+        if (pIdx === p.length) return true;
+    }
+    return false;
+}
+
+threadSearchInput.addEventListener('input', () => {
+    const q = threadSearchInput.value.trim();
+    if (!q) {
+        threadDiscoveryBox.classList.add('hidden');
+        threadDiscoveryBox.innerHTML = '';
+        return;
+    }
+
+    const matches = allCloudThreads.filter(t => fuzzyMatch(t.name, q));
+    threadDiscoveryBox.innerHTML = '';
+
+    if (matches.length === 0) {
+        threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ Thread" to create it!</div>`;
+        threadDiscoveryBox.classList.remove('hidden');
+        return;
+    }
+
+    matches.forEach(t => {
+        const isJoined = myJoinedThreadNames.has(t.name);
+        const isMandatory = MANDATORY_THREADS.includes(t.name);
+
+        const row = document.createElement('div');
+        row.className = 'discovery-item';
+
+        const label = document.createElement('span');
+        label.style.fontWeight = '600';
+        label.style.color = '#e2e8f0';
+        label.textContent = t.name;
+
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
+        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
+        actionBtn.disabled = isMandatory;
+
+        actionBtn.addEventListener('click', async () => {
+            if (!currentUser) {
+                alert("Please log in to join or leave threads.");
+                return;
+            }
+            await toggleThreadMembership(t.name);
+        });
+
+        row.appendChild(label);
+        row.appendChild(actionBtn);
+        threadDiscoveryBox.appendChild(row);
+    });
+
+    threadDiscoveryBox.classList.remove('hidden');
+});
+
+async function toggleThreadMembership(tName) {
+    if (!currentUser || !db) return;
+    if (MANDATORY_THREADS.includes(tName)) return;
+
+    if (myJoinedThreadNames.has(tName)) {
+        // Leave
+        await db.from('forum_thread_members')
+            .delete()
+            .eq('user_id', currentUser.id)
+            .eq('thread_name', tName);
+
+        myJoinedThreadNames.delete(tName);
+        if (activeThread === tName) activeThread = "Welcome & Security";
+    } else {
+        // Join
+        await db.from('forum_thread_members')
+            .insert([{ user_id: currentUser.id, thread_name: tName }]);
+
+        myJoinedThreadNames.add(tName);
+        activeThread = tName;
+    }
+
+    renderJoinedThreadsSidebar();
+    syncTopicDropdown();
+    updateThreadControlsUI();
+    loadForumPosts();
+
+    // Refresh discovery view
+    threadSearchInput.dispatchEvent(new Event('input'));
+}
+
+joinLeaveActiveThreadBtn.addEventListener('click', async () => {
+    if (!currentUser) {
+        alert("Please log in to manage your threads.");
+        return;
+    }
+    await toggleThreadMembership(activeThread);
 });
 
 // --- CAPTCHA GENERATOR & ESCALATION GATE ---
@@ -495,7 +703,7 @@ function canDeletePost(post) {
 
 function canDeleteThread(threadName = activeThread) {
     if (!currentUsername) return false;
-    if (threadName === "Update Thread" || threadName === "Welcome & Security") return false;
+    if (MANDATORY_THREADS.includes(threadName)) return false;
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner";
 }
@@ -818,7 +1026,7 @@ cancelUnaddBtn.addEventListener('click', () => {
     unaddConfirmBox.classList.add('hidden');
 });
 
-// --- SESSION & AUTHENTICATION (FAIL-SAFE LOGIN) ---
+// --- SESSION & AUTHENTICATION ---
 
 async function syncUserState(user) {
     if (user) {
@@ -866,7 +1074,7 @@ async function syncUserState(user) {
         }
 
         renderUserAvatar(currentAvatarUrl);
-        syncThreadDropdown();
+        await syncCloudThreads();
         checkNotifications();
         loadUserNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
@@ -902,7 +1110,8 @@ async function syncUserState(user) {
         userProfileModal.classList.add('hidden');
         captchaSuspensionModal.classList.add('hidden');
         authPanel.classList.remove('hidden');
-        syncThreadDropdown();
+
+        await syncCloudThreads();
     }
 
     updateThreadControlsUI();
@@ -1141,72 +1350,90 @@ finalDeleteBtn.addEventListener('click', async () => {
     alert("Your account has been deleted.");
 });
 
-// --- THREAD SEARCH, SELECTION & UI SYNC ---
+// --- THREAD CREATION & SYNC (PERSISTED IN SUPABASE) ---
 
-function loadSavedThreads() {
-    const stored = localStorage.getItem('custom_forum_threads');
-    if (stored) {
-        try {
-            const parsed = JSON.parse(stored);
-            parsed.forEach(t => {
-                if (!availableThreads.includes(t)) availableThreads.push(t);
-            });
-        } catch (e) {
-            console.warn("Error reading stored threads", e);
-        }
-    }
-    syncThreadDropdown();
-    renderThreadChips();
+function openCreateThreadModal() {
+    if (!currentUser) { alert("Please log in to create a thread."); return; }
+    threadModal.classList.remove('hidden');
 }
 
-function syncThreadDropdown() {
-    topicSelect.innerHTML = '';
-    
-    availableThreads.forEach(t => {
-        if (t === "Update Thread" && !isSiteAdmin()) {
-            return;
-        }
+openNewThreadModalBtn.addEventListener('click', openCreateThreadModal);
+triggerCreateThreadBtn.addEventListener('click', openCreateThreadModal);
+sidebarNewThreadBtn.addEventListener('click', openCreateThreadModal);
+closeThreadModalBtn.addEventListener('click', () => threadModal.classList.add('hidden'));
+threadModal.addEventListener('click', (e) => { if (e.target === threadModal) threadModal.classList.add('hidden'); });
 
-        const opt = document.createElement('option');
-        opt.value = t;
-        opt.textContent = t;
-        topicSelect.appendChild(opt);
-    });
-
-    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
-        topicSelect.value = activeThread;
-    } else if (topicSelect.options.length > 0) {
-        topicSelect.selectedIndex = 0;
-    }
-}
-
-function renderThreadChips(filterQuery = '') {
-    threadChipsContainer.innerHTML = '';
-    const query = filterQuery.toLowerCase().trim();
-    
-    const nonUpdateThreads = availableThreads.filter(t => t !== "Update Thread");
-    const matching = nonUpdateThreads.filter(t => t.toLowerCase().includes(query));
-
-    if (matching.length === 0) {
-        threadChipsContainer.innerHTML = '<span style="font-size: 0.8rem; color: #64748b; padding: 4px 8px;">No matching threads found.</span>';
+createThreadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentUser || !currentUsername) {
+        alert("You must be logged in to create a thread.");
         return;
     }
 
-    matching.forEach(threadName => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = `thread-chip ${threadName === activeThread ? 'active' : ''}`;
-        chip.textContent = threadName;
-        chip.addEventListener('click', () => {
-            activeThread = threadName;
-            topicSelect.value = threadName;
-            renderThreadChips(threadSearchInput.value);
-            updateThreadControlsUI();
-            loadForumPosts();
-        });
-        threadChipsContainer.appendChild(chip);
-    });
-}
+    const newName = newThreadTitleInput.value.trim();
+    if (!newName) return;
+
+    if (allCloudThreads.some(t => t.name.toLowerCase() === newName.toLowerCase())) {
+        alert("A thread with this name already exists.");
+        return;
+    }
+
+    const submitBtn = document.getElementById('create-thread-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+
+    // 1. Insert into Supabase forum_threads table
+    const { data: created, error } = await db
+        .from('forum_threads')
+        .insert([{
+            name: newName,
+            created_by: currentUser.id,
+            owner_username: currentUsername
+        }])
+        .select()
+        .single();
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Create & Join Thread';
+
+    if (error) {
+        alert(`Could not create thread: ${error.message}`);
+        return;
+    }
+
+    // 2. Automatically enroll creator in the new thread
+    await db.from('forum_thread_members').insert([{
+        user_id: currentUser.id,
+        thread_name: newName
+    }]);
+
+    threadMetaMap[newName] = {
+        owner: currentUsername,
+        moderators: [],
+        banned: []
+    };
+    saveThreadMeta();
+
+    newThreadTitleInput.value = '';
+    threadModal.classList.add('hidden');
+
+    await syncCloudThreads();
+    activeThread = newName;
+    renderJoinedThreadsSidebar();
+    updateThreadControlsUI();
+    loadForumPosts();
+});
+
+topicSelect.addEventListener('change', () => {
+    activeThread = topicSelect.value;
+    renderJoinedThreadsSidebar();
+    updateThreadControlsUI();
+    loadForumPosts();
+});
+
+postSortSelect.addEventListener('change', () => {
+    loadForumPosts();
+});
 
 function updateThreadControlsUI() {
     currentThreadTitle.textContent = activeThread;
@@ -1220,6 +1447,17 @@ function updateThreadControlsUI() {
     else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
     else currentUserThreadRole.classList.add('badge-blue');
 
+    const isMandatory = MANDATORY_THREADS.includes(activeThread);
+    const isJoined = myJoinedThreadNames.has(activeThread);
+
+    if (!isMandatory && currentUser) {
+        joinLeaveActiveThreadBtn.classList.remove('hidden');
+        joinLeaveActiveThreadBtn.textContent = isJoined ? 'Leave Thread' : '+ Join Thread';
+        joinLeaveActiveThreadBtn.className = isJoined ? 'secondary btn-thread-action' : 'btn-thread-action';
+    } else {
+        joinLeaveActiveThreadBtn.classList.add('hidden');
+    }
+
     if (canManagePermissions(activeThread)) {
         managePermsBtn.classList.remove('hidden');
     } else {
@@ -1232,71 +1470,6 @@ function updateThreadControlsUI() {
         deleteThreadBtn.classList.add('hidden');
     }
 }
-
-threadSearchInput.addEventListener('input', (e) => {
-    renderThreadChips(e.target.value);
-});
-
-openNewThreadModalBtn.addEventListener('click', () => {
-    if (!currentUser) { alert("Please log in to create a thread."); return; }
-    threadModal.classList.remove('hidden');
-});
-triggerCreateThreadBtn.addEventListener('click', () => {
-    if (!currentUser) { alert("Please log in to create a thread."); return; }
-    threadModal.classList.remove('hidden');
-});
-closeThreadModalBtn.addEventListener('click', () => threadModal.classList.add('hidden'));
-threadModal.addEventListener('click', (e) => {
-    if (e.target === threadModal) threadModal.classList.add('hidden');
-});
-
-createThreadForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (!currentUsername) {
-        alert("You must be logged in to create a thread.");
-        return;
-    }
-
-    const newName = newThreadTitleInput.value.trim();
-    if (!newName) return;
-
-    if (availableThreads.some(t => t.toLowerCase() === newName.toLowerCase())) {
-        alert("A thread with this name already exists.");
-        return;
-    }
-
-    availableThreads.push(newName);
-    
-    threadMetaMap[newName] = {
-        owner: currentUsername,
-        moderators: [],
-        banned: []
-    };
-    saveThreadMeta();
-
-    const customList = availableThreads.filter(t => !DEFAULT_THREADS.includes(t));
-    localStorage.setItem('custom_forum_threads', JSON.stringify(customList));
-
-    syncThreadDropdown();
-    activeThread = newName;
-    topicSelect.value = newName;
-    newThreadTitleInput.value = '';
-    threadModal.classList.add('hidden');
-    renderThreadChips(threadSearchInput.value);
-    updateThreadControlsUI();
-    loadForumPosts();
-});
-
-topicSelect.addEventListener('change', () => {
-    activeThread = topicSelect.value;
-    renderThreadChips(threadSearchInput.value);
-    updateThreadControlsUI();
-    loadForumPosts();
-});
-
-postSortSelect.addEventListener('change', () => {
-    loadForumPosts();
-});
 
 // --- THREAD DELETION MODAL ---
 
@@ -1327,16 +1500,12 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     finalDeleteThreadBtn.textContent = 'Deleting...';
 
     if (db) {
-        const { error } = await db.from('Posts').delete().eq('thread', activeThread);
-        if (error) console.warn("Error purging thread posts:", error);
+        await db.from('Posts').delete().eq('thread', activeThread);
+        await db.from('forum_threads').delete().eq('name', activeThread);
     }
 
     delete threadMetaMap[activeThread];
     saveThreadMeta();
-
-    availableThreads = availableThreads.filter(t => t !== activeThread);
-    const customList = availableThreads.filter(t => !DEFAULT_THREADS.includes(t));
-    localStorage.setItem('custom_forum_threads', JSON.stringify(customList));
 
     threadDeleteModal.classList.add('hidden');
     finalDeleteThreadBtn.disabled = false;
@@ -1345,9 +1514,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     alert(`Thread "${inputVal}" has been permanently removed.`);
 
     activeThread = "Welcome & Security";
-    syncThreadDropdown();
-    renderThreadChips();
-    updateThreadControlsUI();
+    await syncCloudThreads();
     loadForumPosts();
 });
 
@@ -1668,16 +1835,32 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
     }
 }
 
+// Post Sorting & Trending Logic
 function sortPosts(posts) {
     const sortMode = postSortSelect.value;
-    return [...posts].sort((a, b) => {
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    let filtered = [...posts];
+
+    // Trending filter: Only posts created in the last 7 days
+    if (sortMode === 'trending') {
+        filtered = filtered.filter(p => {
+            if (p.is_pinned) return true; // keep pinned guides visible
+            if (!p.created_at) return true;
+            const postAge = now - new Date(p.created_at).getTime();
+            return postAge <= sevenDaysMs;
+        });
+    }
+
+    return filtered.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1;
         if (!a.is_pinned && b.is_pinned) return 1;
 
         const scoreA = getPostScore(a);
         const scoreB = getPostScore(b);
 
-        if (sortMode === 'top') {
+        if (sortMode === 'top' || sortMode === 'trending') {
             if (scoreB !== scoreA) return scoreB - scoreA;
             return Number(b.id) - Number(a.id);
         } else if (sortMode === 'newest') {
@@ -1710,42 +1893,6 @@ async function ensureAuthorAvatarsCached(authors) {
     } catch (e) {
         console.warn("Avatar batch fetch err:", e);
     }
-}
-
-function getWelcomeSecurityPost() {
-    return {
-        id: 'welcome-seed',
-        is_pinned: true,
-        author: 'gemini',
-        thread: 'Welcome & Security',
-        created_at: new Date().toISOString(),
-        likes: 0,
-        dislikes: 0,
-        content: `### Welcome to Turing's Gate: The Verified Human Community
-
-Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client telemetry.
-
-<div class="welcome-diagram">
-    <div class="diagram-step">
-        <span class="diagram-badge">1. Telemetry Cadence</span>
-        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
-        <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">3. Verification Escrow</span>
-        <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">4. Verified Direct Messaging</span>
-        <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
-    </div>
-</div>
-
-Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
-    };
 }
 
 // --- POST CREATION & MODERATION UI ---
@@ -2036,7 +2183,7 @@ async function deletePostById(postId) {
 function renderCurrentFeed() {
     const sorted = sortPosts(cachedPosts);
     if (!sorted || sorted.length === 0) {
-        forumFeed.innerHTML = `<div class="no-posts">No human content posted inside "${escapeHTML(activeThread)}" yet...</div>`;
+        forumFeed.innerHTML = `<div class="no-posts">No posts found for "${escapeHTML(activeThread)}".</div>`;
         return;
     }
 
@@ -3082,7 +3229,6 @@ forumForm.addEventListener('submit', async (event) => {
         await loadProminentUpdates();
     } else {
         activeThread = targetThread;
-        renderThreadChips(threadSearchInput.value);
         await loadForumPosts();
     }
 
@@ -3090,6 +3236,6 @@ forumForm.addEventListener('submit', async (event) => {
 });
 
 // Boot Application
-loadSavedThreads();
+syncCloudThreads();
 loadProminentUpdates();
 loadForumPosts();
