@@ -16,7 +16,7 @@
             display: flex; 
             flex-direction: column; 
             align-items: center; 
-            position: relative;
+            position: relative; 
             overflow-x: hidden;
         }
         
@@ -202,7 +202,7 @@
             padding: 8px 12px; font-size: 0.85rem; color: #e2e8f0; margin-bottom: 12px;
         }
 
-        /* Post Items - Wide & Responsive */
+        /* Post Items */
         .post-item { 
             background-color: #0f172a; padding: 14px; border-radius: 10px; border-left: 4px solid #38bdf8; 
             margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start; position: relative;
@@ -971,11 +971,15 @@
                 </div>
 
                 <div id="chat-pane" class="chat-pane mobile-hidden">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px;">
-                        <button id="back-to-list-btn" class="back-btn">← Back</button>
-                        <div id="chat-header" style="font-weight: 600; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            Select a friend or group
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px; gap: 8px;">
+                        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
+                            <button id="back-to-list-btn" class="back-btn">← Back</button>
+                            <div id="chat-header" style="font-weight: 600; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                Select a friend or group
+                            </div>
                         </div>
+                        <!-- In-chat exit button -->
+                        <button type="button" id="chat-close-btn" class="close-btn" title="Close Messages">&times;</button>
                     </div>
 
                     <div id="chat-pending-banner" class="msg-pending-banner hidden">
