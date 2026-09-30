@@ -6,275 +6,72 @@
     <title>Turing's Gate Dashboard</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; width: 100%; padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(80px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; position: relative; overflow-x: hidden; }
         
-        body { 
-            background-color: #0f172a; 
-            color: #f8fafc; 
-            min-height: 100vh; 
-            width: 100%;
-            padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(80px + env(safe-area-inset-bottom, 0px)); 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            position: relative; 
-            overflow-x: hidden;
-        }
-        
-        /* Top Pinned Updates Scrolling Ticker */
-        .ticker-wrap {
-            max-width: 1100px; width: 100%; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b);
-            border: 1px solid #38bdf8; border-radius: 10px; margin-bottom: 14px;
-            display: flex; align-items: center; overflow: hidden; height: 38px;
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.15); flex-shrink: 0;
-        }
-        .ticker-badge {
-            background-color: #0284c7; color: #fff; font-size: 0.72rem; font-weight: 800;
-            padding: 0 12px; height: 100%; display: flex; align-items: center; justify-content: center;
-            white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer;
-            border-right: 1px solid #38bdf8; z-index: 2; flex-shrink: 0;
-        }
-        .ticker-content {
-            display: flex; white-space: nowrap; animation: ticker-scroll 24s linear infinite;
-            padding-left: 20px; will-change: transform;
-        }
+        .ticker-wrap { max-width: 1100px; width: 100%; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b); border: 1px solid #38bdf8; border-radius: 10px; margin-bottom: 14px; display: flex; align-items: center; overflow: hidden; height: 38px; box-shadow: 0 0 12px rgba(56, 189, 248, 0.15); flex-shrink: 0; }
+        .ticker-badge { background-color: #0284c7; color: #fff; font-size: 0.72rem; font-weight: 800; padding: 0 12px; height: 100%; display: flex; align-items: center; justify-content: center; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; border-right: 1px solid #38bdf8; z-index: 2; flex-shrink: 0; }
+        .ticker-content { display: flex; white-space: nowrap; animation: ticker-scroll 24s linear infinite; padding-left: 20px; will-change: transform; }
         .ticker-wrap:hover .ticker-content { animation-play-state: paused; }
-        @keyframes ticker-scroll {
-            0% { transform: translateX(0); }
-            100% { transform: translateX(-50%); }
-        }
-        .ticker-item {
-            display: inline-flex; align-items: center; gap: 8px; margin-right: 40px;
-            font-size: 0.86rem; color: #e2e8f0; cursor: pointer;
-        }
+        @keyframes ticker-scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+        .ticker-item { display: inline-flex; align-items: center; gap: 8px; margin-right: 40px; font-size: 0.86rem; color: #e2e8f0; cursor: pointer; }
         .ticker-item:hover { color: #38bdf8; text-decoration: underline; }
 
-        /* Top Navigation Bar */
-        .top-banner {
-            max-width: 1100px; width: 100%; display: flex; align-items: center; justify-content: space-between;
-            padding: 12px 16px; background-color: #1e293b; border: 1px solid #334155; border-radius: 14px;
-            margin-bottom: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); flex-shrink: 0;
-        }
+        .top-banner { max-width: 1100px; width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background-color: #1e293b; border: 1px solid #334155; border-radius: 14px; margin-bottom: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); flex-shrink: 0; }
         .brand-container { display: flex; align-items: center; gap: 10px; }
         .brand-logo-wrap { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
         .brand-title { font-size: 1.25rem; font-weight: 700; color: #f8fafc; letter-spacing: -0.02em; white-space: nowrap; }
         .brand-title span { color: #38bdf8; }
 
-        /* Desktop Nav Actions */
         .desktop-nav-actions { display: flex; align-items: center; gap: 12px; }
         .btn-badge-wrap { position: relative; display: inline-block; }
-        .icon-btn {
-            background-color: #0f172a; border: 1px solid #334155; color: #38bdf8;
-            width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-size: 1.25rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); overflow: hidden;
-        }
+        .icon-btn { background-color: #0f172a; border: 1px solid #334155; color: #38bdf8; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.2); overflow: hidden; }
         .icon-btn:hover { background-color: #0284c7; color: #ffffff; border-color: #38bdf8; transform: translateY(-1px); }
         .user-nav-avatar { width: 100%; height: 100%; object-fit: cover; }
+        .notif-badge { position: absolute; top: -4px; right: -4px; background-color: #ef4444; color: #ffffff; font-size: 0.72rem; font-weight: 800; min-width: 19px; height: 19px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #0f172a; pointer-events: none; }
+        .conv-badge { background-color: #ef4444; color: #ffffff; font-size: 0.7rem; font-weight: 800; min-width: 18px; height: 18px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; }
 
-        .notif-badge {
-            position: absolute; top: -4px; right: -4px; background-color: #ef4444; color: #ffffff;
-            font-size: 0.72rem; font-weight: 800; min-width: 19px; height: 19px; border-radius: 10px;
-            display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #0f172a;
-            pointer-events: none;
-        }
-        .conv-badge {
-            background-color: #ef4444; color: #ffffff; font-size: 0.7rem; font-weight: 800;
-            min-width: 18px; height: 18px; border-radius: 9px; display: inline-flex;
-            align-items: center; justify-content: center; padding: 0 5px;
-        }
-
-        /* Mobile Bottom Tab Bar */
-        .mobile-tab-bar {
-            display: none;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: calc(56px + env(safe-area-inset-bottom, 0px));
-            padding-bottom: env(safe-area-inset-bottom, 0px);
-            background: rgba(15, 23, 42, 0.98);
-            backdrop-filter: blur(16px);
-            border-top: 1px solid #334155;
-            z-index: 99;
-            justify-content: space-around;
-            align-items: center;
-            box-shadow: 0 -4px 20px rgba(0,0,0,0.6);
-        }
-        .tab-btn {
-            background: none;
-            border: none;
-            color: #94a3b8;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 2px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            cursor: pointer;
-            position: relative;
-            flex: 1;
-            height: 100%;
-            transition: color 0.15s;
-        }
+        .mobile-tab-bar { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: calc(56px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(16px); border-top: 1px solid #334155; z-index: 99; justify-content: space-around; align-items: center; box-shadow: 0 -4px 20px rgba(0,0,0,0.6); }
+        .tab-btn { background: none; border: none; color: #94a3b8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 0.7rem; font-weight: 600; cursor: pointer; position: relative; flex: 1; height: 100%; transition: color 0.15s; }
         .tab-btn.active { color: #38bdf8; }
         .tab-icon { font-size: 1.25rem; line-height: 1; }
         .tab-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; }
-        .tab-badge {
-            position: absolute; top: 4px; right: calc(50% - 16px); background-color: #ef4444; color: #fff;
-            font-size: 0.65rem; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px;
-            display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid #0f172a;
-        }
+        .tab-badge { position: absolute; top: 4px; right: calc(50% - 16px); background-color: #ef4444; color: #fff; font-size: 0.65rem; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid #0f172a; }
 
-        @media (max-width: 768px) {
-            .desktop-nav-actions { display: none !important; }
-            .mobile-tab-bar { display: flex !important; }
-            body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
-        }
+        @media (max-width: 768px) { .desktop-nav-actions { display: none !important; } .mobile-tab-bar { display: flex !important; } body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
 
-        /* PRIMARY TWO-COLUMN WORKSPACE LAYOUT */
-        .workspace-grid {
-            max-width: 1100px;
-            width: 100%;
-            display: grid;
-            grid-template-columns: 260px 1fr;
-            gap: 16px;
-            margin-bottom: 24px;
-            align-items: start;
-        }
-        @media (max-width: 860px) {
-            .workspace-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        .workspace-grid { max-width: 1100px; width: 100%; display: grid; grid-template-columns: 260px 1fr; gap: 16px; margin-bottom: 24px; align-items: start; }
+        @media (max-width: 860px) { .workspace-grid { grid-template-columns: 1fr; } }
+        .threads-sidebar { background-color: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .sidebar-title-bar { display: flex; justify-content: space-between; align-items: center; }
+        .sidebar-heading { font-size: 0.85rem; text-transform: uppercase; font-weight: 700; color: #94a3b8; letter-spacing: 0.05em; }
+        .joined-threads-list { display: flex; flex-direction: column; gap: 6px; max-height: 380px; overflow-y: auto; }
+        .thread-nav-btn { background-color: #0f172a; border: 1px solid #334155; color: #e2e8f0; padding: 8px 12px; border-radius: 8px; font-size: 0.86rem; font-weight: 500; cursor: pointer; text-align: left; display: flex; justify-content: space-between; align-items: center; transition: all 0.15s; }
+        .thread-nav-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+        .thread-nav-btn.active { background-color: #0284c7; border-color: #38bdf8; color: #ffffff; font-weight: 700; }
 
-        /* SIDEBAR: MY THREADS & DISCOVERY */
-        .threads-sidebar {
-            background-color: #1e293b;
-            border: 1px solid #334155;
-            border-radius: 12px;
-            padding: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-        }
-        .sidebar-title-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .sidebar-heading {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            font-weight: 700;
-            color: #94a3b8;
-            letter-spacing: 0.05em;
-        }
-        .joined-threads-list {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            max-height: 380px;
-            overflow-y: auto;
-        }
-        .thread-nav-btn {
-            background-color: #0f172a;
-            border: 1px solid #334155;
-            color: #e2e8f0;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 0.86rem;
-            font-weight: 500;
-            cursor: pointer;
-            text-align: left;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.15s;
-        }
-        .thread-nav-btn:hover {
-            border-color: #38bdf8;
-            color: #38bdf8;
-        }
-        .thread-nav-btn.active {
-            background-color: #0284c7;
-            border-color: #38bdf8;
-            color: #ffffff;
-            font-weight: 700;
-        }
-
-        /* MAIN FEED CONTAINER */
-        .main-feed-column {
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-            min-width: 0;
-            width: 100%;
-        }
-        .feed-card { 
-            width: 100%; background-color: #1e293b; padding: 18px; 
-            border-radius: 12px; border: 1px solid #334155;
-        }
-        
-        .thread-header-bar {
-            display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;
-        }
+        .main-feed-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; width: 100%; }
+        .feed-card { width: 100%; background-color: #1e293b; padding: 18px; border-radius: 12px; border: 1px solid #334155; }
+        .thread-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
         .thread-badge-wrap { display: flex; align-items: center; gap: 8px; }
         .thread-role-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 700; white-space: nowrap; }
         .thread-actions-bar { display: flex; gap: 8px; }
         .btn-thread-action { width: auto; padding: 6px 12px; font-size: 0.8rem; height: 34px; white-space: nowrap; }
 
-        /* Search, Sort & Trending Tabs Toolbar */
-        .feed-toolbar {
-            display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;
-            background-color: #0f172a; padding: 14px; border-radius: 10px; border: 1px solid #334155;
-        }
+        .feed-toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; background-color: #0f172a; padding: 14px; border-radius: 10px; border: 1px solid #334155; }
         .toolbar-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .toolbar-search { flex: 2; min-width: 180px; margin-bottom: 0 !important; }
         .toolbar-sort { flex: 1; min-width: 140px; margin-bottom: 0 !important; }
         .toolbar-btn { width: auto; white-space: nowrap; padding: 12px 18px; margin-top: 0; }
+        .discovery-results-box { background-color: #1e293b; border: 1px solid #38bdf8; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+        .discovery-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background-color: #0f172a; border-radius: 6px; font-size: 0.86rem; }
+        .btn-join-toggle { width: auto; padding: 4px 10px; font-size: 0.75rem; margin-top: 0; border-radius: 6px; }
 
-        /* Search Results Discovery Dropdown Box */
-        .discovery-results-box {
-            background-color: #1e293b;
-            border: 1px solid #38bdf8;
-            border-radius: 8px;
-            padding: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            max-height: 220px;
-            overflow-y: auto;
-        }
-        .discovery-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 6px 10px;
-            background-color: #0f172a;
-            border-radius: 6px;
-            font-size: 0.86rem;
-        }
-        .btn-join-toggle {
-            width: auto;
-            padding: 4px 10px;
-            font-size: 0.75rem;
-            margin-top: 0;
-            border-radius: 6px;
-        }
-
-        /* POST CREATOR CARD */
         .card { background-color: #1e293b; padding: 18px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); width: 100%; }
         h2 { font-size: 1.3rem; margin-bottom: 16px; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
-
         label { display: block; font-size: 0.875rem; margin-bottom: 8px; color: #94a3b8; font-weight: 500; }
-        select, textarea, input[type="text"], input[type="email"], input[type="password"] { 
-            width: 100%; background-color: #0f172a; border: 1px solid #475569; border-radius: 8px; 
-            color: #f8fafc; padding: 12px; font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 15px; 
-        }
+        select, textarea, input[type="text"], input[type="email"], input[type="password"] { width: 100%; background-color: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #f8fafc; padding: 12px; font-size: 1rem; outline: none; transition: border-color 0.2s; margin-bottom: 15px; }
         textarea { height: 110px; resize: vertical; }
         select:focus, textarea:focus, input:focus { border-color: #38bdf8; }
-        
         button { width: 100%; padding: 12px; background-color: #0284c7; color: #ffffff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
         button:hover { background-color: #0369a1; }
         button.secondary { background-color: transparent; border: 1px solid #475569; color: #94a3b8; margin-top: 10px; }
@@ -288,104 +85,33 @@
         .btn-small { width: auto; padding: 6px 12px; font-size: 0.85rem; }
 
         .editor-action-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-        .editor-tool-btn {
-            background-color: #0f172a; border: 1px solid #475569; color: #38bdf8;
-            padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600;
-            cursor: pointer; width: auto; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px;
-        }
+        .editor-tool-btn { background-color: #0f172a; border: 1px solid #475569; color: #38bdf8; padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; width: auto; transition: all 0.15s; display: inline-flex; align-items: center; gap: 5px; }
         .editor-tool-btn:hover { background-color: #334155; border-color: #38bdf8; color: #fff; }
-        .post-photo-preview {
-            display: flex; align-items: center; justify-content: space-between;
-            background-color: #0f172a; border: 1px dashed #38bdf8; border-radius: 6px;
-            padding: 8px 12px; font-size: 0.85rem; color: #e2e8f0; margin-bottom: 12px;
-        }
+        .post-photo-preview { display: flex; align-items: center; justify-content: space-between; background-color: #0f172a; border: 1px dashed #38bdf8; border-radius: 6px; padding: 8px 12px; font-size: 0.85rem; color: #e2e8f0; margin-bottom: 12px; }
 
-        /* Post Items */
-        .post-item { 
-            background-color: #0f172a; padding: 14px; border-radius: 10px; border-left: 4px solid #38bdf8; 
-            margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start; position: relative;
-            width: 100%; box-sizing: border-box;
-        }
-        .post-item.pinned-post {
-            border-left: 4px solid #eab308;
-            background: linear-gradient(180deg, #1e293b, #0f172a);
-        }
+        .post-item { background-color: #0f172a; padding: 14px; border-radius: 10px; border-left: 4px solid #38bdf8; margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start; position: relative; width: 100%; box-sizing: border-box; }
+        .post-item.pinned-post { border-left: 4px solid #eab308; background: linear-gradient(180deg, #1e293b, #0f172a); }
         .post-item:last-child { margin-bottom: 0; }
-        
-        .vote-box {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: #1e293b; padding: 6px 4px; border-radius: 8px; border: 1px solid #334155;
-            width: 40px; min-width: 40px; flex-shrink: 0;
-        }
-        .vote-btn {
-            background: transparent; border: none; font-size: 1rem; cursor: pointer; color: #94a3b8;
-            padding: 2px; width: 100%; text-align: center; line-height: 1;
-        }
+        .vote-box { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1e293b; padding: 6px 4px; border-radius: 8px; border: 1px solid #334155; width: 40px; min-width: 40px; flex-shrink: 0; }
+        .vote-btn { background: transparent; border: none; font-size: 1rem; cursor: pointer; color: #94a3b8; padding: 2px; width: 100%; text-align: center; line-height: 1; }
         .vote-btn:hover { color: #38bdf8; transform: scale(1.15); }
         .vote-btn.upvoted { color: #22c55e !important; }
         .vote-btn.downvoted { color: #ef4444 !important; }
         .vote-score { font-size: 0.82rem; font-weight: 700; margin: 3px 0; color: #f8fafc; }
-
-        .post-body { 
-            flex: 1 1 0%; 
-            min-width: 0; 
-            width: 100%;
-        }
-        .post-meta { 
-            display: flex; justify-content: space-between; align-items: center; 
-            font-size: 0.8rem; color: #64748b; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; 
-        }
-        
+        .post-body { flex: 1 1 0%; min-width: 0; width: 100%; }
+        .post-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.8rem; color: #64748b; margin-bottom: 6px; flex-wrap: wrap; gap: 4px; }
         .post-author-wrap { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-        .post-author-avatar {
-            width: 26px; height: 26px; border-radius: 50%; object-fit: cover;
-            border: 1px solid #38bdf8; background: #1e293b; cursor: pointer; flex-shrink: 0;
-        }
+        .post-author-avatar { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; background: #1e293b; cursor: pointer; flex-shrink: 0; }
         .post-author { color: #38bdf8; font-weight: 600; white-space: nowrap; }
-        
-        .post-content { 
-            font-size: 0.95rem; line-height: 1.5; color: #e2e8f0; 
-            overflow-wrap: break-word; word-wrap: break-word; word-break: normal;
-            width: 100%;
-        }
+        .post-content { font-size: 0.95rem; line-height: 1.5; color: #e2e8f0; overflow-wrap: break-word; word-wrap: break-word; word-break: normal; width: 100%; }
         .post-content a { color: #38bdf8; text-decoration: underline; font-weight: 500; overflow-wrap: anywhere; }
         .post-content a:hover { color: #7dd3fc; }
-        
-        .post-img-thumb {
-            max-width: 100%; max-height: 340px; border-radius: 8px; margin-top: 10px;
-            display: block; object-fit: cover; border: 1px solid #334155; cursor: pointer;
-            transition: opacity 0.2s;
-        }
+        .post-img-thumb { max-width: 100%; max-height: 340px; border-radius: 8px; margin-top: 10px; display: block; object-fit: cover; border: 1px solid #334155; cursor: pointer; transition: opacity 0.2s; }
         .post-img-thumb:hover { opacity: 0.92; }
 
-        /* Welcome Diagram Box */
-        .welcome-diagram {
-            background-color: #0f172a;
-            border: 1px solid #334155;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 12px 0;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .diagram-step {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            font-size: 0.88rem;
-        }
-        .diagram-badge {
-            background-color: #0284c7;
-            color: #fff;
-            font-size: 0.72rem;
-            font-weight: 700;
-            padding: 2px 7px;
-            border-radius: 5px;
-            align-self: flex-start;
-        }
+        .welcome-diagram { background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin: 12px 0; display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
+        .diagram-step { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; }
+        .diagram-badge { background-color: #0284c7; color: #fff; font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: 5px; align-self: flex-start; }
 
         .post-admin-actions { display: flex; gap: 8px; margin-top: 8px; }
         .btn-post-action { width: auto; background: none; border: 1px solid #475569; color: #94a3b8; padding: 3px 8px; font-size: 0.75rem; border-radius: 4px; }
@@ -393,80 +119,28 @@
         .btn-post-action.danger-text:hover { border-color: #ef4444; color: #ef4444; background: transparent; }
         .no-posts { text-align: center; color: #64748b; padding: 24px; font-style: italic; }
 
-        /* Clickable Usernames & Public Profile Card */
-        .clickable-username {
-            cursor: pointer;
-            text-decoration: underline;
-            text-decoration-style: dotted;
-            text-underline-offset: 2px;
-            transition: color 0.15s;
-        }
+        .clickable-username { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; transition: color 0.15s; }
         .clickable-username:hover { color: #7dd3fc !important; }
 
-        .profile-card-header {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-        }
-        .profile-card-pfp {
-            width: 86px;
-            height: 86px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 3px solid #38bdf8;
-            background-color: #0f172a;
-        }
+        .profile-card-header { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .profile-card-pfp { width: 86px; height: 86px; border-radius: 50%; object-fit: cover; border: 3px solid #38bdf8; background-color: #0f172a; }
         .profile-card-user { font-size: 1.3rem; font-weight: 700; color: #f8fafc; }
-        .profile-score-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-weight: 700;
-            font-size: 0.95rem;
-            background: #0f172a;
-            border: 1px solid #334155;
-            color: #38bdf8;
-        }
+        .profile-score-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.95rem; background: #0f172a; border: 1px solid #334155; color: #38bdf8; }
 
         .profile-btn-row { display: flex; gap: 8px; width: 100%; }
-        button.btn-friend-state {
-            display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; flex: 1;
-        }
-        button.btn-friend-added {
-            background-color: #1e293b !important; border: 1px solid #22c55e !important; color: #22c55e !important;
-        }
-        button.btn-friend-added:hover {
-            background-color: #0f172a !important; border-color: #ef4444 !important; color: #ef4444 !important;
-        }
+        button.btn-friend-state { display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s; flex: 1; }
+        button.btn-friend-added { background-color: #1e293b !important; border: 1px solid #22c55e !important; color: #22c55e !important; }
+        button.btn-friend-added:hover { background-color: #0f172a !important; border-color: #ef4444 !important; color: #ef4444 !important; }
 
-        .unadd-confirm-box {
-            display: flex; align-items: center; justify-content: space-between;
-            background-color: #0f172a; border: 1px solid #ef4444; border-radius: 8px;
-            padding: 8px 12px; margin-top: 8px; font-size: 0.85rem;
-        }
+        .unadd-confirm-box { display: flex; align-items: center; justify-content: space-between; background-color: #0f172a; border: 1px solid #ef4444; border-radius: 8px; padding: 8px 12px; margin-top: 8px; font-size: 0.85rem; }
         .unadd-actions { display: flex; gap: 6px; }
-        .btn-unadd-action {
-            width: auto !important; padding: 3px 8px !important; font-size: 0.8rem !important; border-radius: 4px !important;
-        }
+        .btn-unadd-action { width: auto !important; padding: 3px 8px !important; font-size: 0.8rem !important; border-radius: 4px !important; }
 
-        /* Post Comments Section */
         .post-comments-container { margin-top: 14px; border-top: 1px solid #1e293b; padding-top: 12px; width: 100%; }
         .comments-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; width: 100%; }
-        .comment-item {
-            background-color: #1e293b; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #475569;
-            font-size: 0.88rem; display: flex; gap: 10px; align-items: flex-start; width: 100%; box-sizing: border-box;
-        }
-        .comment-vote-box {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: #0f172a; padding: 3px; border-radius: 6px; width: 30px; min-width: 30px; flex-shrink: 0;
-        }
-        .comment-vote-btn {
-            background: none; border: none; color: #94a3b8; font-size: 0.8rem; cursor: pointer; padding: 0; line-height: 1; width: 100%;
-        }
+        .comment-item { background-color: #1e293b; padding: 10px 12px; border-radius: 8px; border-left: 3px solid #475569; font-size: 0.88rem; display: flex; gap: 10px; align-items: flex-start; width: 100%; box-sizing: border-box; }
+        .comment-vote-box { display: flex; flex-direction: column; align-items: center; justify-content: center; background: #0f172a; padding: 3px; border-radius: 6px; width: 30px; min-width: 30px; flex-shrink: 0; }
+        .comment-vote-btn { background: none; border: none; color: #94a3b8; font-size: 0.8rem; cursor: pointer; padding: 0; line-height: 1; width: 100%; }
         .comment-vote-btn:hover { color: #38bdf8; }
         .comment-vote-btn.upvoted { color: #22c55e !important; }
         .comment-vote-btn.downvoted { color: #ef4444 !important; }
@@ -478,40 +152,19 @@
         .comment-form { display: flex; gap: 8px; margin-top: 8px; }
         .comment-form input { margin-bottom: 0 !important; padding: 8px 12px; font-size: 0.88rem; height: 38px; }
         .comment-form button { width: auto; padding: 0 14px; font-size: 0.85rem; height: 38px; white-space: nowrap; }
-        .btn-toggle-comments {
-            background: none; border: none; color: #38bdf8; font-size: 0.8rem; font-weight: 600;
-            cursor: pointer; padding: 0; margin-top: 8px; display: inline-flex; align-items: center; gap: 4px; width: auto;
-        }
+        .btn-toggle-comments { background: none; border: none; color: #38bdf8; font-size: 0.8rem; font-weight: 600; cursor: pointer; padding: 0; margin-top: 8px; display: inline-flex; align-items: center; gap: 4px; width: auto; }
         .btn-toggle-comments:hover { color: #7dd3fc; }
 
-        /* Notifications Activity List */
-        .notif-item {
-            background-color: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px;
-            font-size: 0.88rem; display: flex; align-items: center; justify-content: space-between; gap: 10px;
-        }
+        .notif-item { background-color: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px; font-size: 0.88rem; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .notif-item.unread { border-left: 4px solid #38bdf8; background-color: #172554; }
         .notif-text { color: #e2e8f0; line-height: 1.4; }
         .notif-time { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
 
-        /* COMPACT FLOATING TELEMETRY HUD */
-        .floating-telemetry-hud {
-            position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end;
-        }
-        .telemetry-pill {
-            background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 6px 16px rgba(0,0,0,0.45);
-            color: #f8fafc; padding: 6px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600;
-            display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(8px);
-        }
+        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; }
+        .telemetry-pill { background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 6px 16px rgba(0,0,0,0.45); color: #f8fafc; padding: 6px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(8px); }
         .telemetry-pill:hover { transform: translateY(-2px); background: #0f172a; border-color: #7dd3fc; }
-        .telemetry-drawer {
-            background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px;
-            width: 230px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); margin-bottom: 6px; backdrop-filter: blur(10px);
-            display: flex; flex-direction: column; gap: 6px;
-        }
-        .telemetry-drawer-header {
-            display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem;
-            font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 4px;
-        }
+        .telemetry-drawer { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; width: 230px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); margin-bottom: 6px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
+        .telemetry-drawer-header { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 4px; }
         .btn-hud-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; width: auto; }
         .hud-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
 
@@ -522,47 +175,28 @@
         .badge-yellow { background-color: #ca8a04; color: #ffffff; }
         .badge-blue { background-color: #0284c7; color: #ffffff; }
 
-        /* Pending Approval Message Styling */
-        .msg-pending-banner {
-            background-color: rgba(234, 179, 8, 0.15); border: 1px dashed #eab308; color: #fde047;
-            padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; text-align: center;
-        }
+        .msg-pending-banner { background-color: rgba(234, 179, 8, 0.15); border: 1px dashed #eab308; color: #fde047; padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 10px; text-align: center; }
         .msg-bubble.pending-approval { border: 1px dashed #eab308; opacity: 0.88; }
         .pending-tag { display: block; font-size: 0.7rem; color: #fef08a; margin-top: 4px; font-style: italic; }
 
-        /* CAPTCHA SUSPENSION MODAL */
         .captcha-box { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
         .captcha-canvas-wrap { position: relative; margin: 10px 0; border-radius: 8px; overflow: hidden; border: 2px solid #38bdf8; }
         #captchaCanvas { background-color: #0f172a; display: block; }
         .captcha-input-group { display: flex; gap: 8px; width: 100%; max-width: 320px; }
 
-        /* Modals & Layered Stacking */
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(6px);
-            display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px;
-        }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px; }
         #user-profile-modal { z-index: 105 !important; }
-
-        .modal-box {
-            background-color: #1e293b; border: 1px solid #334155; border-radius: 14px;
-            width: 100%; max-width: 860px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
-            display: flex; flex-direction: column; max-height: 92vh; height: 600px;
-        }
+        .modal-box { background-color: #1e293b; border: 1px solid #334155; border-radius: 14px; width: 100%; max-width: 860px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 92vh; height: 600px; }
         .modal-box-small { max-width: 520px; height: auto; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
         .close-btn { background: transparent; border: none; font-size: 1.5rem; color: #94a3b8; cursor: pointer; width: auto; padding: 0 8px; }
         .close-btn:hover { color: #ffffff; }
 
-        /* Permissions Manager List */
-        .perm-user-row {
-            display: flex; justify-content: space-between; align-items: center; padding: 8px 12px;
-            background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; margin-bottom: 8px; font-size: 0.85rem;
-        }
+        .perm-user-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; margin-bottom: 8px; font-size: 0.85rem; }
         .perm-user-name { font-weight: 600; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
         .perm-user-buttons { display: flex; gap: 6px; }
         .btn-perm { width: auto; padding: 4px 8px; font-size: 0.72rem; }
 
-        /* DM and Group Chats Layout */
         .dm-layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; min-height: 0; flex: 1; overflow: hidden; }
         .sidebar-pane { display: flex; flex-direction: column; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; overflow-y: auto; }
         .sidebar-header-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 4px 6px; }
@@ -575,32 +209,16 @@
         .conv-item:hover { background-color: #1e293b; }
         .conv-item.active { background-color: #0369a1; color: #ffffff; font-weight: 600; }
         .conv-item-label { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
         .back-btn { background: transparent; border: none; color: #38bdf8; font-weight: 600; font-size: 0.95rem; cursor: pointer; padding: 0 6px 0 0; width: auto; display: none; }
 
-        @media (max-width: 768px) {
-            .modal-overlay {
-                padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(66px + env(safe-area-inset-bottom, 0px));
-            }
-            .modal-box {
-                height: 100% !important;
-                max-height: 100% !important;
-                border-radius: 12px;
-            }
-            .dm-layout { grid-template-columns: 1fr; position: relative; }
-            .sidebar-pane.mobile-hidden { display: none !important; }
-            .chat-pane.mobile-hidden { display: none !important; }
-            .back-btn { display: inline-block !important; }
-        }
+        @media (max-width: 768px) { .modal-overlay { padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(66px + env(safe-area-inset-bottom, 0px)); } .modal-box { height: 100% !important; max-height: 100% !important; border-radius: 12px; } .dm-layout { grid-template-columns: 1fr; position: relative; } .sidebar-pane.mobile-hidden { display: none !important; } .chat-pane.mobile-hidden { display: none !important; } .back-btn { display: inline-block !important; } }
 
         .chat-pane { display: flex; flex-direction: column; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; height: 100%; min-height: 0; }
         .chat-history { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; padding-right: 5px; scroll-behavior: smooth; }
-        
         .msg-row { display: flex; gap: 8px; width: 100%; align-items: flex-end; }
         .msg-row.mine { justify-content: flex-end; }
         .msg-row.theirs { justify-content: flex-start; }
         .msg-avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background-color: #334155; flex-shrink: 0; border: 1px solid #475569; cursor: pointer; }
-        
         .msg-bubble { padding: 8px 12px; border-radius: 8px; max-width: 80%; font-size: 0.92rem; overflow-wrap: break-word; }
         .msg-mine { background-color: #0284c7; color: #fff; }
         .msg-theirs { background-color: #334155; color: #e2e8f0; }
@@ -610,26 +228,19 @@
         .dm-form { display: flex; gap: 8px; align-items: center; }
         .dm-form input[type="text"] { margin-bottom: 0; flex: 1; }
         .dm-form button { width: auto; white-space: nowrap; padding: 0 16px; height: 46px; }
-        .upload-photo-label {
-            background-color: #1e293b; border: 1px solid #475569; border-radius: 8px;
-            height: 46px; width: 46px; display: flex; align-items: center; justify-content: center;
-            cursor: pointer; font-size: 1.2rem; flex-shrink: 0; margin-bottom: 0; transition: border-color 0.2s;
-        }
+        .upload-photo-label { background-color: #1e293b; border: 1px solid #475569; border-radius: 8px; height: 46px; width: 46px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.2rem; flex-shrink: 0; margin-bottom: 0; transition: border-color 0.2s; }
         .upload-photo-label:hover { border-color: #38bdf8; }
         #dm-image-input { display: none; }
 
-        /* Profile Modal */
         .profile-preview-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 20px; }
         .profile-avatar-preview { width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 3px solid #38bdf8; background-color: #0f172a; }
         .profile-section { border-top: 1px solid #334155; padding-top: 16px; margin-top: 16px; }
-
         .hidden { display: none !important; }
         .hidden-honeypot { display: none !important; visibility: hidden !important; }
     </style>
 </head>
 <body>
 
-    <!-- PINNED UPDATES SCROLLING TICKER -->
     <div class="ticker-wrap" title="Click to view recent updates">
         <div id="ticker-badge" class="ticker-badge">📢 Updates</div>
         <div id="ticker-content" class="ticker-content">
@@ -637,7 +248,6 @@
         </div>
     </div>
 
-    <!-- TOP HEADER BANNER -->
     <header class="top-banner">
         <div class="brand-container">
             <div class="brand-logo-wrap" title="Human-Only Verified">
@@ -691,7 +301,6 @@
             <div class="brand-title">Turing's <span>Gate</span></div>
         </div>
 
-        <!-- Desktop Navigation Actions -->
         <div class="desktop-nav-actions">
             <div class="btn-badge-wrap">
                 <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
@@ -710,10 +319,7 @@
         </div>
     </header>
 
-    <!-- PRIMARY WORKSPACE GRID: MY THREADS (SIDEBAR) & FEED / POSTS -->
     <div class="workspace-grid">
-        
-        <!-- LEFT COLUMN: MY THREADS LIST -->
         <aside class="threads-sidebar">
             <div class="sidebar-title-bar">
                 <span class="sidebar-heading">📌 Joined Threads</span>
@@ -724,13 +330,11 @@
             </div>
         </aside>
 
-        <!-- RIGHT COLUMN: MAIN FORUM FEED, SEARCH & EXPLORER -->
         <section class="main-feed-column">
             <main class="feed-card">
-                <!-- Search, Sort & Trending Filter Toolbar -->
                 <div class="feed-toolbar">
                     <div class="toolbar-top">
-                        <input type="text" id="thread-search-input" class="toolbar-search" placeholder="🔍 Search or join threads (fuzzy match)..." autocomplete="off">
+                        <input type="text" id="thread-search-input" class="toolbar-search" placeholder="🔍 Search or join threads..." autocomplete="off">
                         <select id="post-sort-select" class="toolbar-sort">
                             <option value="top">🔥 Most Liked (All-Time)</option>
                             <option value="trending">⚡ Trending (Last 7 Days)</option>
@@ -740,11 +344,9 @@
                         <button type="button" id="trigger-create-thread-btn" class="toolbar-btn">+ Thread</button>
                     </div>
 
-                    <!-- Fuzzy Search Discovery Box (Appears when searching) -->
                     <div id="thread-discovery-box" class="discovery-results-box hidden"></div>
                 </div>
 
-                <!-- Current Thread Header & Active Member Role -->
                 <div class="thread-header-bar">
                     <div class="thread-badge-wrap">
                         <h2 style="margin-bottom: 0; font-size: 1.25rem;">📜 <span id="current-thread-title">Welcome & Security</span></h2>
@@ -762,7 +364,6 @@
                 </div>
             </main>
 
-            <!-- POST CREATOR CARD -->
             <div class="post-composer-wrap">
                 <div class="card">
                     <div id="auth-panel">
@@ -832,7 +433,7 @@
         </section>
     </div>
 
-    <!-- COMPACT FLOATING TELEMETRY HUD -->
+    <!-- HUD, MODALS & CHAT REMAINS UNCHANGED STRUCTURALLY -->
     <div id="floating-telemetry" class="floating-telemetry-hud">
         <div id="telemetry-drawer" class="telemetry-drawer hidden">
             <div class="telemetry-drawer-header">
@@ -863,40 +464,19 @@
         </div>
     </div>
 
-    <!-- MOBILE BOTTOM NAVIGATION BAR -->
     <nav id="mobile-tab-bar" class="mobile-tab-bar">
-        <button type="button" class="tab-btn active" id="tab-nav-feed">
-            <span class="tab-icon">📜</span>
-            <span>Feed</span>
-        </button>
-        <button type="button" class="tab-btn" id="tab-nav-messages">
-            <span class="tab-icon">✉️</span>
-            <span>Messages</span>
-            <span id="mobile-msg-badge" class="tab-badge hidden">0</span>
-        </button>
-        <button type="button" class="tab-btn" id="tab-nav-notifs">
-            <span class="tab-icon">🔔</span>
-            <span>Notifs</span>
-            <span id="mobile-activity-badge" class="tab-badge hidden">0</span>
-        </button>
-        <button type="button" class="tab-btn" id="tab-nav-profile">
-            <span id="tab-avatar-fallback" class="tab-icon">👤</span>
-            <img id="tab-avatar-img" class="tab-avatar hidden" alt="Profile">
-            <span>Profile</span>
-        </button>
+        <button type="button" class="tab-btn active" id="tab-nav-feed"><span class="tab-icon">📜</span><span>Feed</span></button>
+        <button type="button" class="tab-btn" id="tab-nav-messages"><span class="tab-icon">✉️</span><span>Messages</span><span id="mobile-msg-badge" class="tab-badge hidden">0</span></button>
+        <button type="button" class="tab-btn" id="tab-nav-notifs"><span class="tab-icon">🔔</span><span>Notifs</span><span id="mobile-activity-badge" class="tab-badge hidden">0</span></button>
+        <button type="button" class="tab-btn" id="tab-nav-profile"><span id="tab-avatar-fallback" class="tab-icon">👤</span><img id="tab-avatar-img" class="tab-avatar hidden" alt="Profile"><span>Profile</span></button>
     </nav>
 
-    <!-- MANDATORY CAPTCHA SUSPENSION MODAL -->
     <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
             <div style="font-size: 2.2rem;">🛡️</div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
-            <p style="font-size: 0.88rem; color: #cbd5e1; line-height: 1.5;">
-                Our security telemetry noted automated cadence or rapid posting behavior. To verify you are human, please solve the security code below to restore your account.
-            </p>
-            <div class="captcha-canvas-wrap">
-                <canvas id="captchaCanvas" width="220" height="70"></canvas>
-            </div>
+            <p style="font-size: 0.88rem; color: #cbd5e1; line-height: 1.5;">Our security telemetry noted automated cadence or rapid posting behavior. To verify you are human, please solve the security code below to restore your account.</p>
+            <div class="captcha-canvas-wrap"><canvas id="captchaCanvas" width="220" height="70"></canvas></div>
             <button type="button" id="refresh-captcha-btn" class="secondary" style="width: auto; padding: 4px 10px; font-size: 0.8rem; margin-top: 0;">↻ New Code</button>
             <div class="captcha-input-group">
                 <input type="text" id="captcha-input" placeholder="Enter characters" autocomplete="off" style="margin-bottom: 0; text-transform: uppercase;">
@@ -906,7 +486,6 @@
         </div>
     </div>
 
-    <!-- NOTIFICATIONS MODAL -->
     <div id="notifications-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
@@ -922,7 +501,6 @@
         </div>
     </div>
 
-    <!-- PUBLIC USER PROFILE CARD MODAL -->
     <div id="user-profile-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
@@ -932,17 +510,13 @@
             <div class="profile-card-header">
                 <img id="user-card-pfp" class="profile-card-pfp" src="" alt="Avatar">
                 <div id="user-card-username" class="profile-card-user">@username</div>
-                <div class="profile-score-badge">
-                    <span>⚡ Human Score:</span>
-                    <strong id="user-card-score">0</strong>
-                </div>
+                <div class="profile-score-badge"><span>⚡ Human Score:</span><strong id="user-card-score">0</strong></div>
             </div>
             <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 10px;">
                 <div class="profile-btn-row">
                     <button type="button" id="user-card-msg-btn" style="flex: 1; background-color: #0284c7;">💬 Send Message</button>
                     <button type="button" id="user-card-add-friend-btn" class="btn-friend-state">➕ Add Friend</button>
                 </div>
-                
                 <div id="unadd-confirm-box" class="unadd-confirm-box hidden">
                     <span style="color: #ef4444; font-weight: 600;">Unadd friend?</span>
                     <div class="unadd-actions">
@@ -954,7 +528,6 @@
         </div>
     </div>
 
-    <!-- SAFE LINK INSERTION MODAL -->
     <div id="link-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
@@ -964,29 +537,23 @@
             <form id="insertLinkForm">
                 <label for="link-url-input">URL Link (You can safely paste here)</label>
                 <input type="text" id="link-url-input" placeholder="https://example.com" required autocomplete="off">
-                
                 <label for="link-text-input">Display Text (Optional)</label>
                 <input type="text" id="link-text-input" placeholder="e.g. Read full paper here" autocomplete="off">
-                
                 <button type="submit">Insert Into Post</button>
             </form>
         </div>
     </div>
 
-    <!-- PINNED UPDATES EXPANDED DRAWER MODAL -->
     <div id="updates-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>📢 Recent Updates (Last 3)</h2>
                 <button id="close-updates-modal-btn" class="close-btn">&times;</button>
             </div>
-            <div id="updates-modal-feed" style="overflow-y: auto; max-height: 480px; display: flex; flex-direction: column; gap: 12px;">
-                <div class="no-posts">Loading updates...</div>
-            </div>
+            <div id="updates-modal-feed" style="overflow-y: auto; max-height: 480px; display: flex; flex-direction: column; gap: 12px;"></div>
         </div>
     </div>
 
-    <!-- CREATE THREAD MODAL -->
     <div id="thread-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
@@ -1001,16 +568,13 @@
         </div>
     </div>
 
-    <!-- THREAD PERMISSION MANAGEMENT MODAL -->
     <div id="perms-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>🛡️ Thread Members & Permissions</h2>
                 <button id="close-perms-modal-btn" class="close-btn">&times;</button>
             </div>
-            <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;">
-                Manage thread privileges for <strong id="perms-thread-name" style="color: #38bdf8;"></strong>:
-            </p>
+            <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;">Manage privileges for <strong id="perms-thread-name" style="color: #38bdf8;"></strong>:</p>
             <div style="display: flex; gap: 8px; margin-bottom: 14px;">
                 <input type="text" id="perm-user-lookup" placeholder="Target @username" style="margin-bottom: 0; flex: 1;">
                 <button type="button" id="perm-user-add-btn" style="width: auto; padding: 0 14px;">Add to Thread</button>
@@ -1019,19 +583,14 @@
         </div>
     </div>
 
-    <!-- THREAD DELETE CONFIRMATION MODAL -->
     <div id="thread-delete-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small" style="border-color: #ef4444;">
             <div class="modal-header">
                 <h2 style="color: #ef4444;">⚠️ Delete Entire Thread?</h2>
                 <button id="close-thread-delete-modal-btn" class="close-btn">&times;</button>
             </div>
-            <p style="font-size: 0.95rem; color: #f8fafc; margin-bottom: 12px; line-height: 1.5;">
-                This will permanently delete the thread and remove all posts inside it. This action cannot be undone.
-            </p>
-            <label style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 6px;">
-                Type the exact thread name <strong id="delete-thread-target-name" style="color: #f87171;">Thread Name</strong> to confirm:
-            </label>
+            <p style="font-size: 0.95rem; color: #f8fafc; margin-bottom: 12px; line-height: 1.5;">This will permanently delete the thread and remove all posts inside it.</p>
+            <label style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 6px;">Type exact thread name <strong id="delete-thread-target-name" style="color: #f87171;"></strong> to confirm:</label>
             <input type="text" id="delete-thread-confirm-input" placeholder="Enter thread name to confirm" autocomplete="off">
             <div style="display: flex; gap: 8px; margin-top: 6px;">
                 <button id="final-delete-thread-btn" class="danger" style="flex: 1;">Confirm Delete</button>
@@ -1040,77 +599,50 @@
         </div>
     </div>
 
-    <!-- MESSAGING & GROUP CHATS MODAL -->
     <div id="dm-modal" class="modal-overlay hidden">
         <div class="modal-box">
             <div class="modal-header">
                 <h2>💬 Messages & Groups</h2>
                 <button id="close-dm-btn" class="close-btn">&times;</button>
             </div>
-            
             <div id="top-modal-bar" style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
                 <input type="text" id="add-friend-input" placeholder="Add friend by @username" style="margin-bottom: 0; flex: 1; min-width: 170px;">
                 <button id="add-friend-btn" style="width: auto; white-space: nowrap; padding: 0 16px;">Add Friend</button>
                 <button id="toggle-group-create-btn" class="secondary" style="width: auto; margin-top: 0; padding: 0 14px;">+ Group</button>
             </div>
-
             <div id="group-creator-box" class="group-creator hidden">
                 <label>Create Group Chat</label>
-                <input type="text" id="group-name-input" placeholder="Group Name (e.g. Secret Council)" style="margin-bottom: 8px;">
+                <input type="text" id="group-name-input" placeholder="Group Name" style="margin-bottom: 8px;">
                 <label style="font-size: 0.8rem;">Select Friends to Invite:</label>
-                <div id="group-friends-checklist" class="friend-checkbox-list">
-                    <div style="color: #64748b; font-size: 0.8rem;">No friends available to add.</div>
-                </div>
+                <div id="group-friends-checklist" class="friend-checkbox-list"></div>
                 <div style="display: flex; gap: 8px; margin-top: 8px;">
                     <button id="create-group-confirm-btn" style="padding: 8px;">Create Group</button>
                     <button id="cancel-group-btn" class="secondary" style="margin-top: 0; padding: 8px;">Cancel</button>
                 </div>
             </div>
-
             <div class="dm-layout">
                 <div id="sidebar-pane" class="sidebar-pane">
-                    <div class="sidebar-header-row">
-                        <span class="sidebar-section-title">Messages & Chats</span>
-                        <button id="clear-all-notifs-btn" class="clear-notifs-btn">Clear All</button>
-                    </div>
-
+                    <div class="sidebar-header-row"><span class="sidebar-section-title">Messages</span><button id="clear-all-notifs-btn" class="clear-notifs-btn">Clear All</button></div>
                     <div id="requests-header" class="sidebar-section-title hidden" style="margin-top: 6px;">📬 Friend Requests</div>
                     <div id="requests-container" class="conv-list"></div>
-
-                    <div class="sidebar-section-title" style="margin-top: 8px;">👥 Group Chats</div>
-                    <div id="groups-container" class="conv-list" style="max-height: 120px;">
-                        <div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>
-                    </div>
-
-                    <div class="sidebar-section-title" style="margin-top: 8px;">👤 Direct Messages</div>
-                    <div id="friends-container" class="conv-list">
-                        <div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No friends yet</div>
-                    </div>
+                    <div class="sidebar-section-title" style="margin-top: 8px;">👥 Groups</div>
+                    <div id="groups-container" class="conv-list" style="max-height: 120px;"></div>
+                    <div class="sidebar-section-title" style="margin-top: 8px;">👤 Direct</div>
+                    <div id="friends-container" class="conv-list"></div>
                 </div>
-
                 <div id="chat-pane" class="chat-pane mobile-hidden">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px; gap: 8px;">
                         <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
                             <button id="back-to-list-btn" class="back-btn">← Back</button>
-                            <div id="chat-header" style="font-weight: 600; color: #38bdf8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                Select a friend or group
-                            </div>
+                            <div id="chat-header" style="font-weight: 600; color: #38bdf8;">Select chat</div>
                         </div>
                         <button type="button" id="chat-close-btn" class="close-btn" title="Close Messages">&times;</button>
                     </div>
-
-                    <div id="chat-pending-banner" class="msg-pending-banner hidden">
-                        🔒 You and this user are not yet accepted friends. Messages you send will remain <strong>pending</strong> and hidden until they accept your friend request.
-                    </div>
-
-                    <div id="chat-messages" class="chat-history">
-                        <div class="no-posts">No active conversation selected.</div>
-                    </div>
-
+                    <div id="chat-pending-banner" class="msg-pending-banner hidden">🔒 Messages are pending until friend request accepted.</div>
+                    <div id="chat-messages" class="chat-history"></div>
                     <form id="dm-form" class="dm-form">
                         <label for="dm-image-input" class="upload-photo-label" title="Attach Photo">📷</label>
                         <input type="file" id="dm-image-input" accept="image/*" disabled>
-                        
                         <input type="text" id="dm-text" placeholder="Type a message..." disabled autocomplete="off">
                         <button type="submit" id="dm-send-btn" disabled>Send</button>
                     </form>
@@ -1119,30 +651,24 @@
         </div>
     </div>
 
-    <!-- PROFILE SETTINGS MODAL -->
     <div id="profile-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>⚙️ Profile Settings</h2>
                 <button id="close-profile-btn" class="close-btn">&times;</button>
             </div>
-
             <div class="profile-preview-wrap">
-                <img id="profile-preview-avatar" class="profile-avatar-preview" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>" alt="Preview Avatar">
-                <label for="profile-avatar-file" style="cursor: pointer; color: #38bdf8; font-weight: 600; font-size: 0.9rem;">
-                    Upload New Avatar
-                </label>
+                <img id="profile-preview-avatar" class="profile-avatar-preview" src="" alt="Preview Avatar">
+                <label for="profile-avatar-file" style="cursor: pointer; color: #38bdf8; font-weight: 600; font-size: 0.9rem;">Upload New Avatar</label>
                 <input type="file" id="profile-avatar-file" accept="image/*" style="display: none;">
             </div>
-
             <div class="profile-section">
                 <label style="color: #f8fafc; font-weight: 600;">Change Password</label>
-                <input type="password" id="current-password-input" placeholder="Current Password" autocomplete="current-password">
-                <input type="password" id="new-password-input" placeholder="New Password (min 6 characters)" autocomplete="new-password">
-                <input type="password" id="confirm-password-input" placeholder="Confirm New Password" autocomplete="new-password">
+                <input type="password" id="current-password-input" placeholder="Current Password">
+                <input type="password" id="new-password-input" placeholder="New Password">
+                <input type="password" id="confirm-password-input" placeholder="Confirm New Password">
                 <button id="update-password-btn" class="secondary" style="margin-top: 0;">Update Password</button>
             </div>
-
             <div class="profile-section">
                 <label style="color: #ef4444; font-weight: 600;">Danger Zone</label>
                 <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Deleting your profile removes your username, messages, and friendship records permanently.</p>
@@ -1151,19 +677,14 @@
         </div>
     </div>
 
-    <!-- DEDICATED DELETE USER ACCOUNT MODAL -->
     <div id="delete-confirm-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small" style="border-color: #ef4444;">
             <div class="modal-header">
                 <h2 style="color: #ef4444;">⚠️ Delete Account</h2>
                 <button id="close-delete-modal-btn" class="close-btn">&times;</button>
             </div>
-            <p style="font-size: 0.95rem; color: #f8fafc; margin-bottom: 12px; line-height: 1.5;">
-                Are you absolutely sure? This action is permanent and cannot be reversed.
-            </p>
-            <label style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 6px;">
-                Type your username <strong id="delete-confirm-user-tag" style="color: #f87171;">@username</strong> to confirm:
-            </label>
+            <p style="font-size: 0.95rem; color: #f8fafc; margin-bottom: 12px; line-height: 1.5;">Are you sure? This action is permanent.</p>
+            <label style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 6px;">Type your username <strong id="delete-confirm-user-tag" style="color: #f87171;">@username</strong> to confirm:</label>
             <input type="text" id="delete-username-input" placeholder="Enter username here" autocomplete="off">
             <div style="display: flex; gap: 8px; margin-top: 6px;">
                 <button id="final-delete-btn" class="danger" style="flex: 1;">Yes, Delete Everything</button>
