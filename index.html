@@ -563,6 +563,14 @@
             <form id="createThreadForm">
                 <label for="new-thread-title">Thread Title</label>
                 <input type="text" id="new-thread-title" placeholder="e.g. Philosophical Musings, Web3 Debates" required>
+                <input type="text" id="new-thread-title" placeholder="e.g. Philosophical Musings, Web3 Debates" required>
+                <!-- ADD THIS NEW LABEL BLOCK -->
+                <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px; cursor: pointer;">
+                    <input type="checkbox" id="new-thread-private-chk" style="width: auto; margin: 0;">
+                    Private Community (Requires Approval)
+                </label>
+                <!-- END NEW LABEL BLOCK -->
+                <button type="submit" id="create-thread-submit-btn">Create & Join Thread</button>
                 <button type="submit" id="create-thread-submit-btn">Create & Join Thread</button>
             </form>
         </div>
@@ -575,11 +583,26 @@
                 <button id="close-perms-modal-btn" class="close-btn">&times;</button>
             </div>
             <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;">Manage privileges for <strong id="perms-thread-name" style="color: #38bdf8;"></strong>:</p>
+            
+            <!-- ADD THIS: PRIVACY TOGGLE -->
+            <div id="private-thread-toggle-wrap" class="hidden" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155;">
+                <span style="font-size: 0.85rem; font-weight: 600;">🔒 Private Community</span>
+                <button id="toggle-privacy-btn" class="btn-perm secondary">Make Public</button>
+            </div>
+            <!-- END PRIVACY TOGGLE -->
+
             <div style="display: flex; gap: 8px; margin-bottom: 14px;">
                 <input type="text" id="perm-user-lookup" placeholder="Target @username" style="margin-bottom: 0; flex: 1;">
                 <button type="button" id="perm-user-add-btn" style="width: auto; padding: 0 14px;">Add to Thread</button>
             </div>
             <div id="perms-user-list" style="display: flex; flex-direction: column; max-height: 280px; overflow-y: auto;"></div>
+
+            <!-- ADD THIS: PENDING REQUESTS QUEUE -->
+            <div id="thread-requests-section" class="hidden">
+                <h3 style="font-size: 0.85rem; margin: 14px 0 8px; color: #38bdf8; border-top: 1px solid #334155; padding-top: 14px;">Pending Join Requests</h3>
+                <div id="thread-requests-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            </div>
+            <!-- END PENDING REQUESTS QUEUE -->
         </div>
     </div>
 
