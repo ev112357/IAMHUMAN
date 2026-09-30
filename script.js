@@ -32,7 +32,7 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
-// DOM Elements - Header Nav & Profile Bar
+// DOM Elements - Header Nav & Profile Bar (Desktop)
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
@@ -45,6 +45,17 @@ const notificationsModal = document.getElementById('notifications-modal');
 const closeNotificationsBtn = document.getElementById('close-notifications-btn');
 const clearActivityNotifsBtn = document.getElementById('clear-activity-notifs-btn');
 const notificationsList = document.getElementById('notifications-list');
+
+// Mobile Bottom Navigation Elements
+const mobileTabBar = document.getElementById('mobile-tab-bar');
+const tabNavFeed = document.getElementById('tab-nav-feed');
+const tabNavMessages = document.getElementById('tab-nav-messages');
+const tabNavNotifs = document.getElementById('tab-nav-notifs');
+const tabNavProfile = document.getElementById('tab-nav-profile');
+const tabAvatarImg = document.getElementById('tab-avatar-img');
+const tabAvatarFallback = document.getElementById('tab-avatar-fallback');
+const mobileMsgBadge = document.getElementById('mobile-msg-badge');
+const mobileActivityBadge = document.getElementById('mobile-activity-badge');
 
 // Pinned Updates Ticker & Modal
 const tickerBadge = document.getElementById('ticker-badge');
@@ -203,8 +214,8 @@ let currentAvatarUrl = null;
 let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
-let activeConversationPartnerId = null; // for direct 1-on-1 approval check
-let activeConversationIsFriend = false; // are we accepted friends?
+let activeConversationPartnerId = null;
+let activeConversationIsFriend = false;
 let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
@@ -242,6 +253,57 @@ let isTimerRunning = false;
 let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
+
+// --- MOBILE NAVIGATION BAR ROUTING ---
+
+function setMobileTabActive(tabName) {
+    [tabNavFeed, tabNavMessages, tabNavNotifs, tabNavProfile].forEach(btn => btn.classList.remove('active'));
+    if (tabName === 'feed') tabNavFeed.classList.add('active');
+    else if (tabName === 'messages') tabNavMessages.classList.add('active');
+    else if (tabName === 'notifs') tabNavNotifs.classList.add('active');
+    else if (tabName === 'profile') tabNavProfile.classList.add('active');
+}
+
+tabNavFeed.addEventListener('click', () => {
+    dmModal.classList.add('hidden');
+    notificationsModal.classList.add('hidden');
+    profileModal.classList.add('hidden');
+    userProfileModal.classList.add('hidden');
+    setMobileTabActive('feed');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+tabNavMessages.addEventListener('click', () => {
+    if (!currentUser) { alert("Please log in to view messages."); return; }
+    notificationsModal.classList.add('hidden');
+    profileModal.classList.add('hidden');
+    setMobileTabActive('messages');
+    openDmBtn.click();
+});
+
+tabNavNotifs.addEventListener('click', () => {
+    if (!currentUser) { alert("Please log in to view notifications."); return; }
+    dmModal.classList.add('hidden');
+    profileModal.classList.add('hidden');
+    setMobileTabActive('notifs');
+    openNotifBtn.click();
+});
+
+tabNavProfile.addEventListener('click', () => {
+    if (!currentUser) {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        return;
+    }
+    dmModal.classList.add('hidden');
+    notificationsModal.classList.add('hidden');
+    setMobileTabActive('profile');
+    openProfileBtn.click();
+});
+
+// Update active tab when modals are closed
+[closeDmBtn, closeNotificationsBtn, closeProfileBtn].forEach(btn => {
+    btn.addEventListener('click', () => setMobileTabActive('feed'));
+});
 
 // --- FLOATING HUD TOGGLES ---
 
@@ -441,15 +503,20 @@ async function loadUserNotifications() {
         if (error || !notifs || notifs.length === 0) {
             notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
             activityNotifBadge.classList.add('hidden');
+            mobileActivityBadge.classList.add('hidden');
             return;
         }
 
         const unreadCount = notifs.filter(n => !n.is_read).length;
         if (unreadCount > 0) {
-            activityNotifBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+            const badgeText = unreadCount > 99 ? '99+' : unreadCount;
+            activityNotifBadge.textContent = badgeText;
             activityNotifBadge.classList.remove('hidden');
+            mobileActivityBadge.textContent = badgeText;
+            mobileActivityBadge.classList.remove('hidden');
         } else {
             activityNotifBadge.classList.add('hidden');
+            mobileActivityBadge.classList.add('hidden');
         }
 
         notificationsList.innerHTML = '';
@@ -490,6 +557,7 @@ openNotifBtn.addEventListener('click', () => {
             .eq('is_read', false)
             .then(() => {
                 activityNotifBadge.classList.add('hidden');
+                mobileActivityBadge.classList.add('hidden');
             });
     }
 });
@@ -504,6 +572,7 @@ clearActivityNotifsBtn.addEventListener('click', async () => {
     await db.from('user_notifications').delete().eq('user_id', currentUser.id);
     notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
     activityNotifBadge.classList.add('hidden');
+    mobileActivityBadge.classList.add('hidden');
 });
 
 // --- USER SCORE & PUBLIC PROFILE LOGIC ---
@@ -630,6 +699,7 @@ userCardMsgBtn.addEventListener('click', async () => {
 
     userProfileModal.classList.add('hidden');
     dmModal.classList.remove('hidden');
+    setMobileTabActive('messages');
 
     await startOrOpenDirectChat({
         id: targetProfileId,
@@ -768,6 +838,8 @@ async function syncUserState(user) {
         openProfileBtn.classList.add('hidden');
         notifBadge.classList.add('hidden');
         activityNotifBadge.classList.add('hidden');
+        mobileMsgBadge.classList.add('hidden');
+        mobileActivityBadge.classList.add('hidden');
         dmModal.classList.add('hidden');
         notificationsModal.classList.add('hidden');
         profileModal.classList.add('hidden');
@@ -794,11 +866,17 @@ function renderUserAvatar(url) {
         postBarAvatar.src = url;
         postBarAvatar.classList.remove('hidden');
 
+        tabAvatarImg.src = url;
+        tabAvatarImg.classList.remove('hidden');
+        tabAvatarFallback.classList.add('hidden');
+
         profilePreviewAvatar.src = url;
     } else {
         headerAvatarImg.classList.add('hidden');
         headerAvatarFallback.classList.remove('hidden');
         postBarAvatar.classList.add('hidden');
+        tabAvatarImg.classList.add('hidden');
+        tabAvatarFallback.classList.remove('hidden');
         profilePreviewAvatar.src = DEFAULT_AVATAR;
     }
 }
@@ -878,6 +956,7 @@ authForm.addEventListener('submit', async (e) => {
 
 logoutBtn.addEventListener('click', async () => {
     await db.auth.signOut();
+    setMobileTabActive('feed');
 });
 
 // --- PROFILE SETTINGS CUSTOMIZATION ---
@@ -1870,16 +1949,18 @@ async function loadForumPosts() {
     renderCurrentFeed();
 }
 
-// --- PINNED UPDATES TICKER & MODAL ---
+// --- PINNED UPDATES TICKER (STRICTLY 3 MOST RECENT) ---
 
 async function loadProminentUpdates() {
     if (!db) return;
 
+    // Fetch ONLY the 3 most recent updates
     const { data: updates, error } = await db
         .from('Posts')
         .select('*')
         .eq('thread', 'Update Thread')
-        .order('id', { ascending: false });
+        .order('id', { ascending: false })
+        .limit(3);
 
     if (error || !updates || updates.length === 0) {
         tickerContent.innerHTML = `<span class="ticker-item">No official updates posted yet.</span>`;
@@ -1888,6 +1969,7 @@ async function loadProminentUpdates() {
 
     cachedUpdates = updates;
 
+    // Duplicate string items so marquee performs seamless continuous scroll
     const items = updates.map(u => {
         const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
         return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
@@ -1902,7 +1984,7 @@ async function loadProminentUpdates() {
 function openUpdatesDrawer() {
     updatesModalFeed.innerHTML = '';
     if (cachedUpdates.length === 0) {
-        updatesModalFeed.innerHTML = '<div class="no-posts">No pinned updates yet.</div>';
+        updatesModalFeed.innerHTML = '<div class="no-posts">No recent updates.</div>';
     } else {
         cachedUpdates.forEach(update => {
             updatesModalFeed.appendChild(createPostCardElement(update));
@@ -1914,7 +1996,7 @@ function openUpdatesDrawer() {
 closeUpdatesModalBtn.addEventListener('click', () => updatesModal.classList.add('hidden'));
 updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) updatesModal.classList.add('hidden'); });
 
-// --- NOTIFICATION ENGINE (Direct Messages) ---
+// --- NOTIFICATION ENGINE (Messages & Mobile Badges) ---
 
 async function checkNotifications() {
     if (!currentUser || !db) return;
@@ -1955,10 +2037,14 @@ async function checkNotifications() {
 
         const total = (pendingReqs || 0) + unreadTotal;
         if (total > 0) {
-            notifBadge.textContent = total > 99 ? '99+' : total;
+            const badgeText = total > 99 ? '99+' : total;
+            notifBadge.textContent = badgeText;
             notifBadge.classList.remove('hidden');
+            mobileMsgBadge.textContent = badgeText;
+            mobileMsgBadge.classList.remove('hidden');
         } else {
             notifBadge.classList.add('hidden');
+            mobileMsgBadge.classList.add('hidden');
         }
 
         if (!dmModal.classList.contains('hidden')) {
@@ -2006,6 +2092,7 @@ clearAllNotifsBtn.addEventListener('click', async () => {
 
     unreadCountsByConv.clear();
     notifBadge.classList.add('hidden');
+    mobileMsgBadge.classList.add('hidden');
     updateSidebarBadges();
 });
 
@@ -2118,7 +2205,6 @@ async function handleRequest(requestId, accept) {
         if (error) {
             alert(`Error accepting request: ${error.message}`);
         } else if (updatedReq) {
-            // Unlock any pending direct messages between these two users
             await db
                 .from('chat_messages')
                 .update({ pending_approval: false })
@@ -2364,7 +2450,6 @@ async function startOrOpenDirectChat(friend) {
         if (convMatches) existing1on1Id = convMatches.id;
     }
 
-    // Check friendship status between the two
     const { data: friendship } = await db
         .from('friendships')
         .select('status')
@@ -2459,7 +2544,6 @@ function selectConversation(conversationId, title, partnerId = null, isFriend = 
     dmImageInput.disabled = false;
     dmSendBtn.disabled = false;
 
-    // Show warning banner if messages will be pending
     if (!isFriend && partnerId) {
         chatPendingBanner.classList.remove('hidden');
     } else {
@@ -2522,10 +2606,9 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
-    // Filter out messages pending approval from others (recipient won't see them until friend request accepted)
     const visibleMessages = (messages || []).filter(msg => {
         if (!msg.pending_approval) return true;
-        return msg.sender_id === currentUser.id; // Only sender sees their own pending message
+        return msg.sender_id === currentUser.id;
     });
 
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
@@ -2645,7 +2728,6 @@ dmForm.addEventListener('submit', async (e) => {
         uploadedImageUrl = publicUrlData.publicUrl;
     }
 
-    // Determine if message is pending approval (only in 1-on-1 chats where not yet friends)
     const isPendingApproval = Boolean(activeConversationPartnerId && !activeConversationIsFriend);
 
     const { error } = await db
@@ -2667,7 +2749,6 @@ dmForm.addEventListener('submit', async (e) => {
         return;
     }
 
-    // Auto-send friend request if messaging someone not yet added
     if (isPendingApproval && activeConversationPartnerId) {
         await db.from('friendships').insert([{
             user_id: currentUser.id,
