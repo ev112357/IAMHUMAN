@@ -17,8 +17,6 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
-
-// Mandatory default threads that all users are enrolled in
 const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
 
 // DOM Elements - Auth & Nav
@@ -233,11 +231,14 @@ let dmInterval = null;
 let notifPollInterval = null;
 
 // Thread State (Synced to Cloud)
-let allCloudThreads = []; // Array of { name, owner_username }
+let allCloudThreads = []; 
 let myJoinedThreadNames = new Set(MANDATORY_THREADS);
 let activeThread = "Welcome & Security";
+let currentFetchId = 0; // Epoch counter to eliminate async race condition overwrites
 
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
+if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
 // Voting and score cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
@@ -369,211 +370,6 @@ telemetryPill.addEventListener('click', () => {
 closeHudBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     telemetryDrawer.classList.add('hidden');
-});
-
-// --- CLOUD THREADS & MEMBERSHIP SYNC ---
-
-async function syncCloudThreads() {
-    if (!db) return;
-
-    // 1. Fetch all system & user-created threads from Supabase
-    const { data: threads, error: threadErr } = await db
-        .from('forum_threads')
-        .select('*')
-        .order('id', { ascending: true });
-
-    if (!threadErr && threads && threads.length > 0) {
-        allCloudThreads = threads;
-    } else {
-        // Fallback default threads if table was just created
-        allCloudThreads = [
-            { name: "Welcome & Security", owner_username: "gemini" },
-            { name: "Update Thread", owner_username: "gemini" },
-            { name: "Text Thread #2", owner_username: "gemini" },
-            { name: "Text Thread #3", owner_username: "gemini" }
-        ];
-    }
-
-    // 2. Fetch current user's joined threads from Supabase
-    myJoinedThreadNames = new Set(MANDATORY_THREADS);
-
-    if (currentUser) {
-        const { data: memberships } = await db
-            .from('forum_thread_members')
-            .select('thread_name')
-            .eq('user_id', currentUser.id);
-
-        (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
-    } else {
-        // For guest mode, include initial text threads
-        myJoinedThreadNames.add("Text Thread #2");
-        myJoinedThreadNames.add("Text Thread #3");
-    }
-
-    renderJoinedThreadsSidebar();
-    syncTopicDropdown();
-    updateThreadControlsUI();
-}
-
-function renderJoinedThreadsSidebar() {
-    joinedThreadsContainer.innerHTML = '';
-
-    const joinedList = Array.from(myJoinedThreadNames);
-    if (joinedList.length === 0) {
-        joinedThreadsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No threads joined.</div>';
-        return;
-    }
-
-    joinedList.forEach(tName => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
-        
-        const isMandatory = MANDATORY_THREADS.includes(tName);
-        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : "💬");
-
-        btn.innerHTML = `
-            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>
-            ${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7;">Default</span>' : ''}
-        `;
-
-        btn.addEventListener('click', () => {
-            activeThread = tName;
-            renderJoinedThreadsSidebar();
-            updateThreadControlsUI();
-            loadForumPosts();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        });
-
-        joinedThreadsContainer.appendChild(btn);
-    });
-}
-
-function syncTopicDropdown() {
-    topicSelect.innerHTML = '';
-    
-    // Users can post into threads they have joined (excluding Update Thread unless Admin)
-    Array.from(myJoinedThreadNames).forEach(tName => {
-        if (tName === "Update Thread" && !isSiteAdmin()) return;
-
-        const opt = document.createElement('option');
-        opt.value = tName;
-        opt.textContent = tName;
-        topicSelect.appendChild(opt);
-    });
-
-    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
-        topicSelect.value = activeThread;
-    } else if (topicSelect.options.length > 0) {
-        topicSelect.selectedIndex = 0;
-    }
-}
-
-// --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
-
-function fuzzyMatch(str, pattern) {
-    const s = str.toLowerCase();
-    const p = pattern.toLowerCase().trim();
-    if (!p) return true;
-    if (s.includes(p)) return true;
-
-    // Fuzzy subsequence search (e.g. "wlc" matches "Welcome & Security")
-    let pIdx = 0;
-    for (let char of s) {
-        if (char === p[pIdx]) pIdx++;
-        if (pIdx === p.length) return true;
-    }
-    return false;
-}
-
-threadSearchInput.addEventListener('input', () => {
-    const q = threadSearchInput.value.trim();
-    if (!q) {
-        threadDiscoveryBox.classList.add('hidden');
-        threadDiscoveryBox.innerHTML = '';
-        return;
-    }
-
-    const matches = allCloudThreads.filter(t => fuzzyMatch(t.name, q));
-    threadDiscoveryBox.innerHTML = '';
-
-    if (matches.length === 0) {
-        threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ Thread" to create it!</div>`;
-        threadDiscoveryBox.classList.remove('hidden');
-        return;
-    }
-
-    matches.forEach(t => {
-        const isJoined = myJoinedThreadNames.has(t.name);
-        const isMandatory = MANDATORY_THREADS.includes(t.name);
-
-        const row = document.createElement('div');
-        row.className = 'discovery-item';
-
-        const label = document.createElement('span');
-        label.style.fontWeight = '600';
-        label.style.color = '#e2e8f0';
-        label.textContent = t.name;
-
-        const actionBtn = document.createElement('button');
-        actionBtn.type = 'button';
-        actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
-        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
-        actionBtn.disabled = isMandatory;
-
-        actionBtn.addEventListener('click', async () => {
-            if (!currentUser) {
-                alert("Please log in to join or leave threads.");
-                return;
-            }
-            await toggleThreadMembership(t.name);
-        });
-
-        row.appendChild(label);
-        row.appendChild(actionBtn);
-        threadDiscoveryBox.appendChild(row);
-    });
-
-    threadDiscoveryBox.classList.remove('hidden');
-});
-
-async function toggleThreadMembership(tName) {
-    if (!currentUser || !db) return;
-    if (MANDATORY_THREADS.includes(tName)) return;
-
-    if (myJoinedThreadNames.has(tName)) {
-        // Leave
-        await db.from('forum_thread_members')
-            .delete()
-            .eq('user_id', currentUser.id)
-            .eq('thread_name', tName);
-
-        myJoinedThreadNames.delete(tName);
-        if (activeThread === tName) activeThread = "Welcome & Security";
-    } else {
-        // Join
-        await db.from('forum_thread_members')
-            .insert([{ user_id: currentUser.id, thread_name: tName }]);
-
-        myJoinedThreadNames.add(tName);
-        activeThread = tName;
-    }
-
-    renderJoinedThreadsSidebar();
-    syncTopicDropdown();
-    updateThreadControlsUI();
-    loadForumPosts();
-
-    // Refresh discovery view
-    threadSearchInput.dispatchEvent(new Event('input'));
-}
-
-joinLeaveActiveThreadBtn.addEventListener('click', async () => {
-    if (!currentUser) {
-        alert("Please log in to manage your threads.");
-        return;
-    }
-    await toggleThreadMembership(activeThread);
 });
 
 // --- CAPTCHA GENERATOR & ESCALATION GATE ---
@@ -1026,7 +822,7 @@ cancelUnaddBtn.addEventListener('click', () => {
     unaddConfirmBox.classList.add('hidden');
 });
 
-// --- SESSION & AUTHENTICATION ---
+// --- SESSION & AUTHENTICATION (FAIL-SAFE LOGIN) ---
 
 async function syncUserState(user) {
     if (user) {
@@ -1115,7 +911,7 @@ async function syncUserState(user) {
     }
 
     updateThreadControlsUI();
-    renderCurrentFeed();
+    loadForumPosts();
 }
 
 function renderUserAvatar(url) {
@@ -1350,6 +1146,214 @@ finalDeleteBtn.addEventListener('click', async () => {
     alert("Your account has been deleted.");
 });
 
+// --- CLOUD THREADS & MEMBERSHIP SYNC ---
+
+async function syncCloudThreads() {
+    if (!db) return;
+
+    const { data: threads, error: threadErr } = await db
+        .from('forum_threads')
+        .select('*')
+        .order('id', { ascending: true });
+
+    if (!threadErr && threads && threads.length > 0) {
+        allCloudThreads = threads;
+    } else {
+        allCloudThreads = [
+            { name: "Welcome & Security", owner_username: "gemini" },
+            { name: "Update Thread", owner_username: "gemini" },
+            { name: "Text Thread #2", owner_username: "gemini" },
+            { name: "Text Thread #3", owner_username: "gemini" }
+        ];
+    }
+
+    myJoinedThreadNames = new Set(MANDATORY_THREADS);
+
+    if (currentUser) {
+        const { data: memberships } = await db
+            .from('forum_thread_members')
+            .select('thread_name')
+            .eq('user_id', currentUser.id);
+
+        (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
+    } else {
+        myJoinedThreadNames.add("Text Thread #2");
+        myJoinedThreadNames.add("Text Thread #3");
+    }
+
+    renderJoinedThreadsSidebar();
+    syncTopicDropdown();
+    updateThreadControlsUI();
+}
+
+function renderJoinedThreadsSidebar() {
+    joinedThreadsContainer.innerHTML = '';
+
+    const joinedList = Array.from(myJoinedThreadNames);
+    if (joinedList.length === 0) {
+        joinedThreadsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No threads joined.</div>';
+        return;
+    }
+
+    joinedList.forEach(tName => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
+        
+        const isMandatory = MANDATORY_THREADS.includes(tName);
+        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : "💬");
+
+        btn.innerHTML = `
+            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>
+            ${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7;">Default</span>' : ''}
+        `;
+
+        btn.addEventListener('click', async () => {
+            if (activeThread === tName) return;
+            activeThread = tName;
+            
+            // Hard reset feed state to eliminate cross-thread lingering
+            cachedPosts = [];
+            postCacheMap.clear();
+            forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
+            renderJoinedThreadsSidebar();
+            syncTopicDropdown();
+            updateThreadControlsUI();
+            
+            await loadForumPosts();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        joinedThreadsContainer.appendChild(btn);
+    });
+}
+
+function syncTopicDropdown() {
+    topicSelect.innerHTML = '';
+    
+    Array.from(myJoinedThreadNames).forEach(tName => {
+        if (tName === "Update Thread" && !isSiteAdmin()) return;
+
+        const opt = document.createElement('option');
+        opt.value = tName;
+        opt.textContent = tName;
+        topicSelect.appendChild(opt);
+    });
+
+    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
+        topicSelect.value = activeThread;
+    } else if (topicSelect.options.length > 0) {
+        topicSelect.selectedIndex = 0;
+    }
+}
+
+// --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
+
+function fuzzyMatch(str, pattern) {
+    const s = str.toLowerCase();
+    const p = pattern.toLowerCase().trim();
+    if (!p) return true;
+    if (s.includes(p)) return true;
+
+    let pIdx = 0;
+    for (let char of s) {
+        if (char === p[pIdx]) pIdx++;
+        if (pIdx === p.length) return true;
+    }
+    return false;
+}
+
+threadSearchInput.addEventListener('input', () => {
+    const q = threadSearchInput.value.trim();
+    if (!q) {
+        threadDiscoveryBox.classList.add('hidden');
+        threadDiscoveryBox.innerHTML = '';
+        return;
+    }
+
+    const matches = allCloudThreads.filter(t => fuzzyMatch(t.name, q));
+    threadDiscoveryBox.innerHTML = '';
+
+    if (matches.length === 0) {
+        threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ Thread" to create it!</div>`;
+        threadDiscoveryBox.classList.remove('hidden');
+        return;
+    }
+
+    matches.forEach(t => {
+        const isJoined = myJoinedThreadNames.has(t.name);
+        const isMandatory = MANDATORY_THREADS.includes(t.name);
+
+        const row = document.createElement('div');
+        row.className = 'discovery-item';
+
+        const label = document.createElement('span');
+        label.style.fontWeight = '600';
+        label.style.color = '#e2e8f0';
+        label.textContent = t.name;
+
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
+        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
+        actionBtn.disabled = isMandatory;
+
+        actionBtn.addEventListener('click', async () => {
+            if (!currentUser) {
+                alert("Please log in to join or leave threads.");
+                return;
+            }
+            await toggleThreadMembership(t.name);
+        });
+
+        row.appendChild(label);
+        row.appendChild(actionBtn);
+        threadDiscoveryBox.appendChild(row);
+    });
+
+    threadDiscoveryBox.classList.remove('hidden');
+});
+
+async function toggleThreadMembership(tName) {
+    if (!currentUser || !db) return;
+    if (MANDATORY_THREADS.includes(tName)) return;
+
+    if (myJoinedThreadNames.has(tName)) {
+        await db.from('forum_thread_members')
+            .delete()
+            .eq('user_id', currentUser.id)
+            .eq('thread_name', tName);
+
+        myJoinedThreadNames.delete(tName);
+        if (activeThread === tName) activeThread = "Welcome & Security";
+    } else {
+        await db.from('forum_thread_members')
+            .insert([{ user_id: currentUser.id, thread_name: tName }]);
+
+        myJoinedThreadNames.add(tName);
+        activeThread = tName;
+    }
+
+    cachedPosts = [];
+    postCacheMap.clear();
+    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
+    renderJoinedThreadsSidebar();
+    syncTopicDropdown();
+    updateThreadControlsUI();
+    await loadForumPosts();
+    threadSearchInput.dispatchEvent(new Event('input'));
+}
+
+joinLeaveActiveThreadBtn.addEventListener('click', async () => {
+    if (!currentUser) {
+        alert("Please log in to manage your threads.");
+        return;
+    }
+    await toggleThreadMembership(activeThread);
+});
+
 // --- THREAD CREATION & SYNC (PERSISTED IN SUPABASE) ---
 
 function openCreateThreadModal() {
@@ -1382,7 +1386,6 @@ createThreadForm.addEventListener('submit', async (e) => {
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating...';
 
-    // 1. Insert into Supabase forum_threads table
     const { data: created, error } = await db
         .from('forum_threads')
         .insert([{
@@ -1401,7 +1404,6 @@ createThreadForm.addEventListener('submit', async (e) => {
         return;
     }
 
-    // 2. Automatically enroll creator in the new thread
     await db.from('forum_thread_members').insert([{
         user_id: currentUser.id,
         thread_name: newName
@@ -1419,20 +1421,28 @@ createThreadForm.addEventListener('submit', async (e) => {
 
     await syncCloudThreads();
     activeThread = newName;
+
+    cachedPosts = [];
+    postCacheMap.clear();
+    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
-    loadForumPosts();
+    await loadForumPosts();
 });
 
-topicSelect.addEventListener('change', () => {
+topicSelect.addEventListener('change', async () => {
     activeThread = topicSelect.value;
+    cachedPosts = [];
+    postCacheMap.clear();
+    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
-    loadForumPosts();
+    await loadForumPosts();
 });
 
 postSortSelect.addEventListener('change', () => {
-    loadForumPosts();
+    renderCurrentFeed();
 });
 
 function updateThreadControlsUI() {
@@ -1514,8 +1524,11 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     alert(`Thread "${inputVal}" has been permanently removed.`);
 
     activeThread = "Welcome & Security";
+    cachedPosts = [];
+    postCacheMap.clear();
+    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
     await syncCloudThreads();
-    loadForumPosts();
+    await loadForumPosts();
 });
 
 // --- PERMISSIONS MANAGEMENT UI ---
@@ -1843,10 +1856,9 @@ function sortPosts(posts) {
 
     let filtered = [...posts];
 
-    // Trending filter: Only posts created in the last 7 days
     if (sortMode === 'trending') {
         filtered = filtered.filter(p => {
-            if (p.is_pinned) return true; // keep pinned guides visible
+            if (p.is_pinned) return true;
             if (!p.created_at) return true;
             const postAge = now - new Date(p.created_at).getTime();
             return postAge <= sevenDaysMs;
@@ -1893,6 +1905,42 @@ async function ensureAuthorAvatarsCached(authors) {
     } catch (e) {
         console.warn("Avatar batch fetch err:", e);
     }
+}
+
+function getWelcomeSecurityPost() {
+    return {
+        id: 'welcome-seed',
+        is_pinned: true,
+        author: 'gemini',
+        thread: 'Welcome & Security',
+        created_at: new Date().toISOString(),
+        likes: 0,
+        dislikes: 0,
+        content: `### Welcome to Turing's Gate: The Verified Human Community
+
+Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client telemetry.
+
+<div class="welcome-diagram">
+    <div class="diagram-step">
+        <span class="diagram-badge">1. Telemetry Cadence</span>
+        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
+        <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">3. Verification Escrow</span>
+        <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">4. Verified Direct Messaging</span>
+        <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
+    </div>
+</div>
+
+Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
+    };
 }
 
 // --- POST CREATION & MODERATION UI ---
@@ -2193,16 +2241,30 @@ function renderCurrentFeed() {
     });
 }
 
-// --- FORUM RETRIEVAL ---
+// --- FORUM RETRIEVAL WITH ASYNC RACE CONDITION GUARD ---
 
 async function loadForumPosts() {
     updateThreadControlsUI();
     if (!db) return;
 
+    // Track this specific fetch invocation
+    const thisFetchId = ++currentFetchId;
+    const requestedThread = activeThread;
+
+    // Immediate DOM and cache wipe
+    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    cachedPosts = [];
+    postCacheMap.clear();
+
     const { data: posts, error } = await db
         .from('Posts')
         .select('*')
-        .eq('thread', activeThread);
+        .eq('thread', requestedThread);
+
+    // If another thread was clicked while this query was in flight, discard this result immediately
+    if (thisFetchId !== currentFetchId || activeThread !== requestedThread) {
+        return;
+    }
 
     if (error) {
         console.warn("Cloud Retrieval Error:", error);
@@ -2210,7 +2272,7 @@ async function loadForumPosts() {
         return;
     }
 
-    if (activeThread === "Welcome & Security") {
+    if (requestedThread === "Welcome & Security") {
         const welcomePost = getWelcomeSecurityPost();
         cachedPosts = posts && posts.length > 0 ? [welcomePost, ...posts] : [welcomePost];
     } else {
@@ -2222,7 +2284,10 @@ async function loadForumPosts() {
     const postAuthors = cachedPosts.map(p => p.author).filter(Boolean);
     await ensureAuthorAvatarsCached(postAuthors);
 
-    renderCurrentFeed();
+    // Final confirmation before rendering to the DOM
+    if (thisFetchId === currentFetchId && activeThread === requestedThread) {
+        renderCurrentFeed();
+    }
 }
 
 // --- PINNED UPDATES TICKER (STRICTLY 3 MOST RECENT) ---
