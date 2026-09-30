@@ -215,7 +215,7 @@ let isSignUpMode = false;
 let myFriendsList = [];
 let activeConversationId = null;
 let activeConversationPartnerId = null;
-let activeConversationPartnerUsername = null; // Stored to allow header click to open profile
+let activeConversationPartnerUsername = null;
 let activeConversationIsFriend = false;
 let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
@@ -223,12 +223,13 @@ let usernameAvatarMap = new Map();
 let dmInterval = null;
 let notifPollInterval = null;
 
-// Thread & Permissions State
-const DEFAULT_THREADS = ["Update Thread", "Text Thread #2", "Text Thread #3"];
+// Thread & Permissions State: "Welcome & Security" is now the Default Thread
+const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Text Thread #2", "Text Thread #3"];
 let availableThreads = [...DEFAULT_THREADS];
-let activeThread = "Text Thread #2";
+let activeThread = "Welcome & Security";
 
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
+if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Text Thread #2"]) threadMetaMap["Text Thread #2"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Text Thread #3"]) threadMetaMap["Text Thread #3"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
@@ -305,7 +306,7 @@ tabNavProfile.addEventListener('click', () => {
     btn.addEventListener('click', () => setMobileTabActive('feed'));
 });
 
-// --- CHAT HEADER CLICK (OPENS PARTNER'S PROFILE CARD) ---
+// Chat Header Click (Opens recipient's profile without closing chat)
 chatHeader.addEventListener('click', () => {
     if (activeConversationPartnerUsername) {
         window.openUserProfileCard(activeConversationPartnerUsername);
@@ -449,13 +450,14 @@ function canDeletePost(post) {
 
 function canDeleteThread(threadName = activeThread) {
     if (!currentUsername) return false;
-    if (threadName === "Update Thread") return isSiteAdmin();
+    if (threadName === "Update Thread" || threadName === "Welcome & Security") return false;
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner";
 }
 
 function canManagePermissions(threadName = activeThread) {
     if (!currentUsername) return false;
+    if (threadName === "Welcome & Security") return isSiteAdmin();
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner";
 }
@@ -1170,7 +1172,7 @@ function updateThreadControlsUI() {
         managePermsBtn.classList.add('hidden');
     }
 
-    if (canDeleteThread(activeThread) && activeThread !== "Update Thread") {
+    if (canDeleteThread(activeThread)) {
         deleteThreadBtn.classList.remove('hidden');
     } else {
         deleteThreadBtn.classList.add('hidden');
@@ -1288,7 +1290,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
 
     alert(`Thread "${inputVal}" has been permanently removed.`);
 
-    activeThread = "Text Thread #2";
+    activeThread = "Welcome & Security";
     syncThreadDropdown();
     renderThreadChips();
     updateThreadControlsUI();
@@ -1609,6 +1611,10 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
 function sortPosts(posts) {
     const sortMode = postSortSelect.value;
     return [...posts].sort((a, b) => {
+        // Keep pinned posts anchored to the very top
+        if (a.is_pinned && !b.is_pinned) return -1;
+        if (!a.is_pinned && b.is_pinned) return 1;
+
         const scoreA = getPostScore(a);
         const scoreB = getPostScore(b);
 
@@ -1647,11 +1653,48 @@ async function ensureAuthorAvatarsCached(authors) {
     }
 }
 
+// Built-in welcome explanation card generator (fallback if DB empty for default thread)
+function getWelcomeSecurityPost() {
+    return {
+        id: 'welcome-seed',
+        is_pinned: true,
+        author: 'gemini',
+        thread: 'Welcome & Security',
+        created_at: new Date().toISOString(),
+        likes: 42,
+        dislikes: 0,
+        content: `### Welcome to Turing's Gate: The Verified Human Community
+
+Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client telemetry.
+
+<div class="welcome-diagram">
+    <div class="diagram-step">
+        <span class="diagram-badge">1. Telemetry Cadence</span>
+        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
+        <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">3. Verification Escrow</span>
+        <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">4. Verified Direct Messaging</span>
+        <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
+    </div>
+</div>
+
+Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
+    };
+}
+
 // --- POST CREATION & MODERATION UI ---
 
 function createPostCardElement(post) {
     const item = document.createElement('div');
-    item.className = 'post-item';
+    item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
     
     const dateFormatted = post.created_at ? new Date(post.created_at).toLocaleString() : 'Just now';
     const score = getPostScore(post);
@@ -1659,12 +1702,13 @@ function createPostCardElement(post) {
     const postAuthorRole = getThreadRole(post.thread, post.author);
 
     let roleBadge = '';
-    if (postAuthorRole === 'Site Admin') roleBadge = `<span class="badge badge-purple" style="font-size:0.65rem;">ADMIN</span>`;
+    if (post.is_pinned) roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">PINNED GUIDE</span>`;
+    else if (postAuthorRole === 'Site Admin') roleBadge = `<span class="badge badge-purple" style="font-size:0.65rem;">ADMIN</span>`;
     else if (postAuthorRole === 'Owner') roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">OWNER</span>`;
     else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
 
-    const userCanDelete = canDeletePost(post);
-    const userCanRevoke = canRevokePosting(post.thread) && postAuthorRole !== 'Owner' && postAuthorRole !== 'Site Admin';
+    const userCanDelete = canDeletePost(post) && !post.is_pinned;
+    const userCanRevoke = canRevokePosting(post.thread) && postAuthorRole !== 'Owner' && postAuthorRole !== 'Site Admin' && !post.is_pinned;
 
     let actionButtonsHtml = '';
     if (userCanDelete || userCanRevoke) {
@@ -1683,6 +1727,9 @@ function createPostCardElement(post) {
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
 
+    // Rich HTML formatting for the guide post vs standard escaped text
+    const renderedBody = post.is_pinned ? post.content : renderFormattedContent(post.content || '');
+
     item.innerHTML = `
         <div class="vote-box">
             <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
@@ -1698,7 +1745,7 @@ function createPostCardElement(post) {
                 </div>
                 <span>${dateFormatted}</span>
             </div>
-            <div class="post-content">${renderFormattedContent(post.content || '')}</div>
+            <div class="post-content">${renderedBody}</div>
             ${photoHtml}
             ${actionButtonsHtml}
 
@@ -1762,6 +1809,13 @@ function createPostCardElement(post) {
         const text = input.value.trim();
         if (!text) return;
 
+        // If commenting on seed post, provide mock success if DB foreign key would reject
+        if (String(post.id) === 'welcome-seed') {
+            alert("Thank you for reading the guide! Join other threads to post discussions.");
+            input.value = '';
+            return;
+        }
+
         const { error } = await db.from('post_comments').insert([{
             post_id: post.id,
             author: currentUsername,
@@ -1822,7 +1876,7 @@ function createPostCardElement(post) {
 }
 
 async function fetchCommentCount(postId, countElement) {
-    if (!db || !countElement) return;
+    if (!db || !countElement || String(postId) === 'welcome-seed') return;
     try {
         const { count } = await db
             .from('post_comments')
@@ -1838,6 +1892,11 @@ async function fetchCommentCount(postId, countElement) {
 async function loadPostComments(postId, post) {
     const listEl = document.getElementById(`comments-list-${postId}`);
     if (!listEl || !db) return;
+
+    if (String(postId) === 'welcome-seed') {
+        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">Comments are reserved for open discussion threads.</div>';
+        return;
+    }
 
     try {
         const { data: comments, error } = await db
@@ -1947,7 +2006,14 @@ async function loadForumPosts() {
         return;
     }
 
-    cachedPosts = posts || [];
+    // If default Welcome & Security thread is active, anchor the official pinned orientation post
+    if (activeThread === "Welcome & Security") {
+        const welcomePost = getWelcomeSecurityPost();
+        cachedPosts = posts && posts.length > 0 ? [welcomePost, ...posts] : [welcomePost];
+    } else {
+        cachedPosts = posts || [];
+    }
+
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
 
     const postAuthors = cachedPosts.map(p => p.author).filter(Boolean);
@@ -2294,7 +2360,6 @@ async function loadFriends() {
         const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
         const badgeHidden = unreadCount === 0 ? 'hidden' : '';
 
-        // Entire row opens conversation (no propagation stopping or opening profile here)
         div.innerHTML = `
             <div class="conv-item-label">
                 <span>@${escapeHTML(friend.username)}</span>
@@ -2872,8 +2937,8 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    if (targetThread === "Update Thread" && !isSiteAdmin()) {
-        alert("Permission Denied: Only @gemini can publish to the Official Updates section.");
+    if ((targetThread === "Update Thread" || targetThread === "Welcome & Security") && !isSiteAdmin()) {
+        alert(`Permission Denied: Only @gemini can publish to the official "${targetThread}" section.`);
         return;
     }
 
