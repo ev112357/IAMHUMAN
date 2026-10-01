@@ -303,6 +303,7 @@
         .link-url { color: #94a3b8; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
         /* Lock Viewport & Eliminate Horizontal Scroll */
 /* Lock Viewport, Prevent Horizontal Scroll & Respect Safe Area (Notch / Home Indicator) */
+/* Lock Viewport, Eliminate Horizontal Scroll & Respect Notch */
 html {
     width: 100%;
     max-width: 100%;
@@ -317,7 +318,7 @@ body {
     overflow-x: hidden !important;
     position: relative;
     margin: 0;
-    /* Pushes content down below the notch and above the home indicator */
+    /* Pushes entire page below the notch and above the home indicator */
     padding-top: env(safe-area-inset-top, 0px) !important;
     padding-bottom: env(safe-area-inset-bottom, 0px) !important;
     padding-left: env(safe-area-inset-left, 0px) !important;
@@ -325,16 +326,17 @@ body {
     box-sizing: border-box;
 }
 
-/* Ensure sticky/fixed headers or top tickers don't collide with the notch */
-header, .top-modal-bar, .ticker-wrap, #ticker-container {
-    padding-top: max(0px, env(safe-area-inset-top, 0px));
-}
-
 *, *::before, *::after {
     box-sizing: border-box;
 }
 
-/* Ensure action bars wrap instead of pushing screen wider */
+/* Reset internal padding on the ticker so text height is never clipped */
+#ticker-container, .ticker-wrap, .ticker-content, .ticker-item {
+    padding-top: 0 !important;
+    box-sizing: border-box;
+}
+
+/* Ensure flex action bars wrap on smaller screens */
 .thread-actions-bar,
 .post-author-wrap,
 .profile-btn-row {
@@ -342,7 +344,7 @@ header, .top-modal-bar, .ticker-wrap, #ticker-container {
     max-width: 100%;
 }
 
-/* Fit link previews and media to screen width */
+/* Constrain link cards and embeds to screen boundaries */
 .link-preview-card {
     width: 100% !important;
     max-width: 100% !important;
