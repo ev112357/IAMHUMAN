@@ -699,27 +699,41 @@ safeAddListener(refreshCaptchaBtn, 'click', () => {
 
 safeAddListener(submitCaptchaBtn, 'click', async () => {
     const entered = (captchaInput ? captchaInput.value : "").trim().toUpperCase();
-    if (entered === currentCaptchaSecret) {
+    
+    if (entered === currentCaptchaSecret && currentCaptchaSecret !== "") {
         submitCaptchaBtn.disabled = true;
-        submitCaptchaBtn.textContent = "...";
+        submitCaptchaBtn.textContent = "Verifying...";
 
-        isSuspended = false;
-        suspicionScore = 0;
-        updateSuspicionUI();
+        try {
+            isSuspended = false;
+            suspicionScore = 0;
+            updateSuspicionUI();
 
-        if (currentUser && db) {
-            await db.from('profiles').update({ 
-                is_suspended: false, 
-                suspicion_score: 0 
-            }).eq('id', currentUser.id).catch(err => console.warn("Unsuspend update notice:", err));
+            if (currentUser && db) {
+                await db.from('profiles').update({ 
+                    is_suspended: false, 
+                    suspicion_score: 0 
+                }).eq('id', currentUser.id);
+            }
+
+            if (captchaSuspensionModal) {
+                captchaSuspensionModal.classList.add('hidden');
+                captchaSuspensionModal.style.display = "none";
+            }
+            
+            resetTelemetryConsole();
+            alert("Verification successful! Your account is restored.");
+        } catch (err) {
+            console.warn("Notice updating profile on verify:", err);
+            // Even if the DB write takes time or warns, unblock the user locally
+            if (captchaSuspensionModal) {
+                captchaSuspensionModal.classList.add('hidden');
+                captchaSuspensionModal.style.display = "none";
+            }
+        } finally {
+            submitCaptchaBtn.disabled = false;
+            submitCaptchaBtn.textContent = "Verify";
         }
-
-        submitCaptchaBtn.disabled = false;
-        submitCaptchaBtn.textContent = "Verify";
-
-        if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
-        resetTelemetryConsole();
-        alert("Verification successful! Your human standing is restored and suspension is lifted.");
     } else {
         if (captchaStatusMsg) captchaStatusMsg.textContent = "Incorrect code. Please try again.";
         currentCaptchaSecret = generateCaptchaCode();
@@ -1969,15 +1983,25 @@ safeAddListener(removePostPhotoBtn, 'click', () => {
 // --- MESSAGING & CHATS HUB ---
 
 function showSidebarViewOnMobile() {
-    if (sidebarPane) sidebarPane.classList.remove('mobile-hidden');
-    if (chatPane) chatPane.classList.add('mobile-hidden');
+    if (window.innerWidth <= 768) {
+        if (sidebarPane) sidebarPane.classList.remove('mobile-hidden');
+        if (chatPane) chatPane.classList.add('mobile-hidden');
+    } else {
+        if (sidebarPane) sidebarPane.classList.remove('mobile-hidden');
+        if (chatPane) chatPane.classList.remove('mobile-hidden');
+    }
     if (topModalBar) topModalBar.classList.remove('hidden');
 }
 
 function showChatViewOnMobile() {
-    if (sidebarPane) sidebarPane.classList.add('mobile-hidden');
-    if (chatPane) chatPane.classList.remove('mobile-hidden');
-    if (topModalBar) topModalBar.classList.remove('hidden'); // Always keep modal header visible
+    if (window.innerWidth <= 768) {
+        if (sidebarPane) sidebarPane.classList.add('mobile-hidden');
+        if (chatPane) chatPane.classList.remove('mobile-hidden');
+    } else {
+        if (sidebarPane) sidebarPane.classList.remove('mobile-hidden');
+        if (chatPane) chatPane.classList.remove('mobile-hidden');
+    }
+    if (topModalBar) topModalBar.classList.remove('hidden');
 }
 
 safeAddListener(backToListBtn, 'click', () => {
@@ -3252,53 +3276,49 @@ safeAddListener(forumForm, 'submit', async (event) => {
         return;
     }
 
-    // --- TELEMETRY EVALUATION & RISK SCORING ---
+    // Capture post content before any resets or state updates
+    const postContent = textBox.value.trim();
+
+    if (postContent.length < 2 && !selectedPostPhotoFile) {
+        alert("Please enter a message or attach a photo.");
+        return;
+    }
+
+    // --- TELEMETRY EVALUATION ---
     let behaviorPoints = 0;
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
 
-    // 1. Bot Trap / Hidden honeypot field filled
+    // 1. Bot Trap (Honeypot) - Immediate suspension
     if (honeypotField && honeypotField.value.trim() !== "") {
         behaviorPoints += 5;
     }
 
-    // 2. Clipboard Paste Detection (+1 Risk)
+    // 2. Clipboard Paste Detection (+1 point only)
     if (textWasPasted) {
         behaviorPoints += 1;
     }
 
-    // 3. Superhuman speed: long message submitted almost instantly
-    if (totalTimeElapsed < 2.0 && textBox.value.length > 40) {
-        behaviorPoints += 2;
+    // 3. Superhuman instant posting (>60 chars in under 0.8s)
+    if (totalTimeElapsed < 0.8 && postContent.length > 60) {
+        behaviorPoints += 1;
     }
 
-    // 4. Zero Mouse/Touch Interaction (headless scripts don't trigger mousemove/touchstart)
-    if (mouseMovementsRecorded === 0 && textBox.value.length > 30) {
-        behaviorPoints += 2;
-    }
-
-    // 5. Rapid burst posting (less than 12 seconds between forum submissions)
+    // 4. Rapid burst posting (less than 8 seconds between posts)
     const now = Date.now();
-    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 12000) {
-        behaviorPoints += 2;
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 8000) {
+        behaviorPoints += 1;
     }
 
-    // 6. Cadence evaluation: mechanical, zero-variance intervals
-    if (keystrokeGaps.length > 6) {
-        let identicalGaps = 0;
-        for (let i = 1; i < keystrokeGaps.length; i++) {
-            if (Math.abs(keystrokeGaps[i] - keystrokeGaps[i - 1]) <= 2) identicalGaps++;
-        }
-        const roboticRatio = identicalGaps / (keystrokeGaps.length - 1);
-        if (roboticRatio > 0.5) behaviorPoints += 2;
-    }
-
-    // Escalate risk score and check suspension threshold (3/3)
+    // Record suspicion points to UI and database
     if (behaviorPoints > 0) {
         suspicionScore += behaviorPoints;
         updateSuspicionUI();
+
         if (currentUser && db) {
             db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
         }
+
+        // Only lock and abort if the cumulative score hits 5 or higher
         if (suspicionScore >= 5) {
             triggerSuspensionGate();
             return;
