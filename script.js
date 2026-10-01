@@ -296,6 +296,48 @@ let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
 
+// IMAGE COMPRESSION MODULE
+// --- GLOBAL IMAGE COMPRESSION UTILITY ---
+async function compressImage(file, maxWidth = 1200, quality = 0.75) {
+    // Exempt GIFs to preserve animation
+    if (file.type === 'image/gif') return file;
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                canvas.toBlob((blob) => {
+                    if (!blob) { reject(new Error('Canvas empty')); return; }
+                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpeg", {
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                    });
+                    resolve(compressedFile);
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+}
+
 // Setup Tab Text
 if (openSettingsBtn) {
     openSettingsBtn.title = "Settings";
@@ -1470,8 +1512,11 @@ safeAddListener(logoutBtn, 'click', async () => {
 // --- PROFILE SETTINGS PASSWORD & AVATAR LOGIC ---
 
 safeAddListener(profileAvatarFile, 'change', async () => {
-    const file = profileAvatarFile.files[0];
-    if (!file || !currentUser) return;
+    const rawFile = profileAvatarFile.files[0];
+    if (!rawFile || !currentUser) return;
+    
+    // Compress avatars heavily (max width 400px, 80% quality)
+    const file = await compressImage(rawFile, 400, 0.8);
 
     const fileExt = file.name.split('.').pop();
     const filePath = `${currentUser.id}/avatar_${Date.now()}.${fileExt}`;
@@ -1873,7 +1918,23 @@ function updateThreadControlsUI() {
     // Community Flair Button (Database Synced)
     let flairBtn = document.getElementById('set-flair-btn');
     const actionsBar = document.querySelector('.thread-actions-bar');
-
+    // Community Banner Logic
+    let bannerBtn = document.getElementById('set-banner-btn');
+    if (!currentUser) {
+        if (bannerBtn) bannerBtn.remove();
+    } else if (actionsBar && (role === 'Owner' || role === 'Moderator' || role === 'Site Admin')) {
+        if (!bannerBtn) {
+            bannerBtn = document.createElement('button');
+            bannerBtn.id = 'set-banner-btn';
+            bannerBtn.type = 'button';
+            bannerBtn.className = 'secondary btn-thread-action';
+            bannerBtn.textContent = '🖼️ Set Banner';
+            bannerBtn.onclick = () => document.getElementById('banner-upload-input').click();
+            actionsBar.prepend(bannerBtn);
+        }
+    } else if (bannerBtn) {
+        bannerBtn.remove();
+    }
     if (!currentUser) {
         if (flairBtn) flairBtn.remove();
     } else if (actionsBar) {
@@ -2959,7 +3020,8 @@ safeAddListener(dmForm, 'submit', async (e) => {
     }
 
     const content = dmText.value.trim();
-    const file = dmImageInput.files[0];
+    const rawFile = dmImageInput.files[0];
+    const file = rawFile ? await compressImage(rawFile, 1200, 0.75) : null;
 
     if (!content && !file) return;
     if (!activeConversationId) return;
@@ -3626,7 +3688,8 @@ async function loadForumPosts() {
     (flairs || []).forEach(f => {
         threadFlairMap.set(f.username.toLowerCase(), f.flair);
     });
-
+    
+    renderThreadBanner();
     renderCurrentFeed();
 }
 
@@ -4003,9 +4066,10 @@ safeAddListener(forumForm, 'submit', async (event) => {
     let postImageUrl = null;
     try {
         if (selectedPostPhotoFile) {
-            const fileExt = selectedPostPhotoFile.name.split('.').pop();
+            const compressedPhoto = await compressImage(selectedPostPhotoFile, 1200, 0.75);
+            const fileExt = compressedPhoto.name.split('.').pop() || (compressedPhoto.type === 'image/gif' ? 'gif' : 'jpeg');
             const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
-            const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, selectedPostPhotoFile);
+            const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, compressedPhoto);
 
             if (!uploadError) {
                 const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
@@ -4050,7 +4114,67 @@ safeAddListener(forumForm, 'submit', async (event) => {
         }
     }
 });
+// --- THREAD BANNER LOGIC ---
+function renderThreadBanner() {
+    const container = document.getElementById('thread-banner-container');
+    const img = document.getElementById('thread-banner-img');
+    if (!container || !img) return;
 
+    const threadData = allCloudThreads.find(t => t.name === activeThread);
+    if (threadData && threadData.banner_url) {
+        img.src = threadData.banner_url;
+        container.style.display = 'block';
+    } else {
+        container.style.display = 'none';
+        img.src = '';
+    }
+}
+
+safeAddListener(document.getElementById('banner-upload-input'), 'change', async (e) => {
+    const rawFile = e.target.files[0];
+    if (!rawFile || !currentUser) return;
+
+    const bannerBtn = document.getElementById('set-banner-btn');
+    if (bannerBtn) { bannerBtn.disabled = true; bannerBtn.textContent = '⏳ Uploading...'; }
+
+    try {
+        // Compress banner (Max width 1920 for high-res screens, 80% quality), skips if GIF
+        const file = await compressImage(rawFile, 1920, 0.80);
+        
+        const fileExt = file.name.split('.').pop() || (file.type === 'image/gif' ? 'gif' : 'jpeg');
+        const safeThreadName = activeThread.replace(/[^a-zA-Z0-9]/g, '_');
+        const filePath = `banners/${safeThreadName}_${Date.now()}.${fileExt}`;
+
+        // Reusing 'chat-images' bucket so you don't have to create and configure a new one
+        const { error: uploadError } = await db.storage
+            .from('chat-images')
+            .upload(filePath, file, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
+        const bannerUrl = publicUrlData.publicUrl;
+
+        const { error: updateError } = await db
+            .from('forum_threads')
+            .update({ banner_url: bannerUrl })
+            .eq('name', activeThread);
+
+        if (updateError) throw updateError;
+
+        alert('Community banner updated successfully!');
+        
+        // Refresh local cloud threads cache so the banner renders immediately
+        await syncCloudThreads(); 
+        renderThreadBanner();
+
+    } catch (err) {
+        alert(`Error uploading banner: ${err.message}`);
+    } finally {
+        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️️ Set Banner'; }
+        e.target.value = '';
+    }
+});
 // Boot Application
 syncCloudThreads();
 loadProminentUpdates();
