@@ -19,10 +19,14 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
 
+// Helper to safely bind event listeners
+function safeAddListener(el, event, handler) {
+    if (el) el.addEventListener(event, handler);
+}
+
 // DOM Elements - Auth & Nav
 const authPanelWrapper = document.getElementById('auth-panel-wrapper');
 const authPanel = document.getElementById('auth-panel');
-const postPanel = document.getElementById('post-panel');
 const authForm = document.getElementById('authForm');
 const authHeader = document.getElementById('auth-header');
 const authUsernameGroup = document.getElementById('username-field-group');
@@ -34,7 +38,7 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
-// NEW DOM Elements - FAB Modal & Wrappers
+// FAB Modal & Wrappers
 const desktopFab = document.getElementById('desktop-fab');
 const mobileFab = document.getElementById('mobile-fab');
 const fabModalOverlay = document.getElementById('fab-post-modal');
@@ -43,7 +47,7 @@ const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
 const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
 
-// DOM Elements - Header Nav & Profile Bar (Desktop)
+// Header Nav & Profile Bar (Desktop)
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
@@ -109,8 +113,6 @@ const linkUrlInput = document.getElementById('link-url-input');
 const linkTextInput = document.getElementById('link-text-input');
 
 // Thread Creation Modal Elements
-const openNewThreadModalBtn = document.getElementById('open-new-thread-modal-btn');
-const triggerCreateThreadBtn = document.getElementById('trigger-create-thread-btn');
 const threadModal = document.getElementById('thread-modal');
 const closeThreadModalBtn = document.getElementById('close-thread-modal-btn');
 const createThreadForm = document.getElementById('createThreadForm');
@@ -131,24 +133,6 @@ const cancelDeleteThreadBtn = document.getElementById('cancel-delete-thread-btn'
 const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
 const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
 const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
-
-// Profile & Account Deletion Elements
-const profileModal = document.getElementById('profile-modal');
-const closeProfileBtn = document.getElementById('close-profile-btn');
-const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
-const profileAvatarFile = document.getElementById('profile-avatar-file');
-const currentPasswordInput = document.getElementById('current-password-input');
-const newPasswordInput = document.getElementById('new-password-input');
-const confirmPasswordInput = document.getElementById('confirm-password-input');
-const updatePasswordBtn = document.getElementById('update-password-btn');
-
-const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
-const deleteConfirmModal = document.getElementById('delete-confirm-modal');
-const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
-const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
-const deleteUsernameInput = document.getElementById('delete-username-input');
-const finalDeleteBtn = document.getElementById('final-delete-btn');
-const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
 
 // Public User Profile Card Elements
 const userProfileModal = document.getElementById('user-profile-modal');
@@ -185,42 +169,6 @@ const refreshCaptchaBtn = document.getElementById('refresh-captcha-btn');
 const captchaStatusMsg = document.getElementById('captcha-status-msg');
 let currentCaptchaSecret = "";
 
-// Direct Messages & Groups Elements
-const openDmBtn = document.getElementById('open-dm-btn');
-const closeDmBtn = document.getElementById('close-dm-btn');
-const chatCloseBtn = document.getElementById('chat-close-btn');
-const notifBadge = document.getElementById('notif-badge');
-const clearAllNotifsBtn = document.getElementById('clear-all-notifs-btn');
-const dmModal = document.getElementById('dm-modal');
-const topModalBar = document.getElementById('top-modal-bar');
-const sidebarPane = document.getElementById('sidebar-pane');
-const chatPane = document.getElementById('chat-pane');
-const backToListBtn = document.getElementById('back-to-list-btn');
-
-const addFriendInput = document.getElementById('add-friend-input');
-const addFriendBtn = document.getElementById('add-friend-btn');
-const requestsHeader = document.getElementById('requests-header');
-const requestsContainer = document.getElementById('requests-container');
-const friendsContainer = document.getElementById('friends-container');
-const groupsContainer = document.getElementById('groups-container');
-const chatHeader = document.getElementById('chat-header');
-const chatMessages = document.getElementById('chat-messages');
-const chatPendingBanner = document.getElementById('chat-pending-banner');
-
-// Form & Photo Upload Inputs
-const dmForm = document.getElementById('dm-form');
-const dmText = document.getElementById('dm-text');
-const dmImageInput = document.getElementById('dm-image-input');
-const dmSendBtn = document.getElementById('dm-send-btn');
-
-// Group Creator
-const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
-const groupCreatorBox = document.getElementById('group-creator-box');
-const groupNameInput = document.getElementById('group-name-input');
-const groupFriendsChecklist = document.getElementById('group-friends-checklist');
-const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
-const cancelGroupBtn = document.getElementById('cancel-group-btn');
-
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
 
 // App State
@@ -228,12 +176,6 @@ let currentUser = null;
 let currentUsername = null;
 let currentAvatarUrl = null;
 let isSignUpMode = false;
-let myFriendsList = [];
-let activeConversationId = null;
-let activeConversationPartnerId = null;
-let activeConversationPartnerUsername = null;
-let activeConversationIsFriend = false;
-let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
 let notifPollInterval = null;
@@ -242,13 +184,13 @@ let notifPollInterval = null;
 let allCloudThreads = []; 
 let myJoinedThreadNames = new Set(MANDATORY_THREADS);
 let activeThread = "Welcome & Security";
-let currentFetchId = 0; // Epoch counter to eliminate async race condition overwrites
+let currentFetchId = 0;
 
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
 if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
-// Voting and score cache
+// Voting & Cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
 let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
@@ -269,64 +211,7 @@ let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
 
-// --- DIRECT MODAL & VIEW OPENERS ---
-
-function openMessagesModal() {
-    if (!currentUser) { 
-        alert("Please log in to view messages."); 
-        setMobileTabActive('feed');
-        return; 
-    }
-    dmModal.classList.remove('hidden');
-    showSidebarViewOnMobile();
-    refreshMessagingHub();
-    setMobileTabActive('messages');
-}
-
-function openNotificationsModal() {
-    if (!currentUser) { 
-        alert("Please log in to view notifications."); 
-        setMobileTabActive('feed');
-        return; 
-    }
-    notificationsModal.classList.remove('hidden');
-    loadUserNotifications();
-    if (db) {
-        db.from('user_notifications').update({ is_read: true }).eq('user_id', currentUser.id).eq('is_read', false)
-            .then(() => {
-                activityNotifBadge.classList.add('hidden');
-                mobileActivityBadge.classList.add('hidden');
-            }).catch(() => {});
-    }
-    setMobileTabActive('notifs');
-}
-
-function openProfileSettingsModal() {
-    if (!currentUser) {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-        authEmailInput.focus();
-        setMobileTabActive('feed');
-        return;
-    }
-    profileModal.classList.remove('hidden');
-    setMobileTabActive('profile');
-}
-
-function closeMessagesModal() {
-    dmModal.classList.add('hidden');
-   if (window.chatSubscription) {
-        db.removeChannel(window.chatSubscription);
-        window.chatSubscription = null;
-    }
-    activeConversationId = null;
-    activeConversationPartnerId = null;
-    activeConversationPartnerUsername = null;
-    showSidebarViewOnMobile();
-    setMobileTabActive('feed');
-    checkNotifications();
-}
-
-// --- MOBILE NAVIGATION BAR ROUTING ---
+// --- NAVIGATION & ROUTING ---
 
 function setMobileTabActive(tabName) {
     [tabNavFeed, tabNavMessages, tabNavNotifs, tabNavProfile].forEach(btn => {
@@ -338,51 +223,49 @@ function setMobileTabActive(tabName) {
     else if (tabName === 'profile' && tabNavProfile) tabNavProfile.classList.add('active');
 }
 
-tabNavFeed.addEventListener('click', () => {
-    closeMessagesModal();
-    notificationsModal.classList.add('hidden');
-    profileModal.classList.add('hidden');
-    userProfileModal.classList.add('hidden');
+function openNotificationsModal() {
+    if (!currentUser) { 
+        alert("Please log in to view notifications."); 
+        setMobileTabActive('feed');
+        return; 
+    }
+    if (notificationsModal) notificationsModal.classList.remove('hidden');
+    loadUserNotifications();
+    if (db) {
+        db.from('user_notifications').update({ is_read: true }).eq('user_id', currentUser.id).eq('is_read', false)
+            .then(() => {
+                if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+                if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
+            }).catch(() => {});
+    }
+    setMobileTabActive('notifs');
+}
+
+safeAddListener(tabNavFeed, 'click', () => {
+    if (notificationsModal) notificationsModal.classList.add('hidden');
+    if (userProfileModal) userProfileModal.classList.add('hidden');
     setMobileTabActive('feed');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
-tabNavMessages.addEventListener('click', openMessagesModal);
-tabNavNotifs.addEventListener('click', openNotificationsModal);
-tabNavProfile.addEventListener('click', openProfileSettingsModal);
+safeAddListener(tabNavNotifs, 'click', openNotificationsModal);
+safeAddListener(openNotifBtn, 'click', openNotificationsModal);
 
-openDmBtn.addEventListener('click', openMessagesModal);
-openNotifBtn.addEventListener('click', openNotificationsModal);
-openProfileBtn.addEventListener('click', openProfileSettingsModal);
-
-closeDmBtn.addEventListener('click', closeMessagesModal);
-if (chatCloseBtn) chatCloseBtn.addEventListener('click', closeMessagesModal);
-
-closeNotificationsBtn.addEventListener('click', () => {
-    notificationsModal.classList.add('hidden');
-    setMobileTabActive('feed');
-});
-closeProfileBtn.addEventListener('click', () => {
-    profileModal.classList.add('hidden');
+safeAddListener(closeNotificationsBtn, 'click', () => {
+    if (notificationsModal) notificationsModal.classList.add('hidden');
     setMobileTabActive('feed');
 });
 
-chatHeader.addEventListener('click', () => {
-    if (activeConversationPartnerUsername) {
-        window.openUserProfileCard(activeConversationPartnerUsername);
-    }
+safeAddListener(telemetryPill, 'click', () => {
+    if (telemetryDrawer) telemetryDrawer.classList.toggle('hidden');
 });
 
-telemetryPill.addEventListener('click', () => {
-    telemetryDrawer.classList.toggle('hidden');
-});
-
-closeHudBtn.addEventListener('click', (e) => {
+safeAddListener(closeHudBtn, 'click', (e) => {
     e.stopPropagation();
-    telemetryDrawer.classList.add('hidden');
+    if (telemetryDrawer) telemetryDrawer.classList.add('hidden');
 });
 
-// --- CAPTCHA GENERATOR & ESCALATION GATE ---
+// --- CAPTCHA CHALLENGE GATE ---
 
 function generateCaptchaCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -424,39 +307,39 @@ function triggerSuspensionGate() {
     isSuspended = true;
     currentCaptchaSecret = generateCaptchaCode();
     drawCaptcha(currentCaptchaSecret);
-    captchaInput.value = "";
-    captchaStatusMsg.textContent = "";
-    captchaSuspensionModal.classList.remove('hidden');
+    if (captchaInput) captchaInput.value = "";
+    if (captchaStatusMsg) captchaStatusMsg.textContent = "";
+    if (captchaSuspensionModal) captchaSuspensionModal.classList.remove('hidden');
 
     if (currentUser && db) {
         db.from('profiles').update({ is_suspended: true, suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
     }
 }
 
-refreshCaptchaBtn.addEventListener('click', () => {
+safeAddListener(refreshCaptchaBtn, 'click', () => {
     currentCaptchaSecret = generateCaptchaCode();
     drawCaptcha(currentCaptchaSecret);
-    captchaInput.value = "";
-    captchaStatusMsg.textContent = "";
+    if (captchaInput) captchaInput.value = "";
+    if (captchaStatusMsg) captchaStatusMsg.textContent = "";
 });
 
-submitCaptchaBtn.addEventListener('click', async () => {
-    const entered = captchaInput.value.trim().toUpperCase();
+safeAddListener(submitCaptchaBtn, 'click', async () => {
+    const entered = (captchaInput ? captchaInput.value : "").trim().toUpperCase();
     if (entered === currentCaptchaSecret) {
         isSuspended = false;
         suspicionScore = 0;
         updateSuspicionUI();
-        captchaSuspensionModal.classList.add('hidden');
+        if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
 
         if (currentUser && db) {
             await db.from('profiles').update({ is_suspended: false, suspicion_score: 0 }).eq('id', currentUser.id).catch(() => {});
         }
         alert("Verification successful! Your account is restored.");
     } else {
-        captchaStatusMsg.textContent = "Incorrect code. Please try again.";
+        if (captchaStatusMsg) captchaStatusMsg.textContent = "Incorrect code. Please try again.";
         currentCaptchaSecret = generateCaptchaCode();
         drawCaptcha(currentCaptchaSecret);
-        captchaInput.value = "";
+        if (captchaInput) captchaInput.value = "";
     }
 });
 
@@ -477,7 +360,7 @@ function updateSuspicionUI() {
     }
 }
 
-// --- PERMISSIONS HELPERS ---
+// --- PERMISSION HELPERS ---
 
 function isSiteAdmin(username = currentUsername) {
     if (!username) return false;
@@ -500,9 +383,7 @@ function canDeletePost(post) {
     if (!currentUsername) return false;
     const cleanUser = currentUsername.toLowerCase().replace('@', '');
     if (isSiteAdmin(cleanUser)) return true;
-
     if (post.author && post.author.toLowerCase().replace('@', '') === cleanUser) return true;
-
     const role = getThreadRole(post.thread, cleanUser);
     return role === "Owner" || role === "Moderator";
 }
@@ -558,7 +439,7 @@ async function sendNotification(targetUserId, type, entityId, message) {
 }
 
 async function loadUserNotifications() {
-    if (!currentUser || !db) return;
+    if (!currentUser || !db || !notificationsList) return;
 
     try {
         const { data: notifs, error } = await db
@@ -570,21 +451,25 @@ async function loadUserNotifications() {
 
         if (error || !notifs || notifs.length === 0) {
             notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
-            activityNotifBadge.classList.add('hidden');
-            mobileActivityBadge.classList.add('hidden');
+            if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+            if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
             return;
         }
 
         const unreadCount = notifs.filter(n => !n.is_read).length;
         if (unreadCount > 0) {
             const badgeText = unreadCount > 99 ? '99+' : unreadCount;
-            activityNotifBadge.textContent = badgeText;
-            activityNotifBadge.classList.remove('hidden');
-            mobileActivityBadge.textContent = badgeText;
-            mobileActivityBadge.classList.remove('hidden');
+            if (activityNotifBadge) {
+                activityNotifBadge.textContent = badgeText;
+                activityNotifBadge.classList.remove('hidden');
+            }
+            if (mobileActivityBadge) {
+                mobileActivityBadge.textContent = badgeText;
+                mobileActivityBadge.classList.remove('hidden');
+            }
         } else {
-            activityNotifBadge.classList.add('hidden');
-            mobileActivityBadge.classList.add('hidden');
+            if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+            if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
         }
 
         notificationsList.innerHTML = '';
@@ -610,10 +495,13 @@ async function loadUserNotifications() {
                 });
             }
 
-            div.querySelector('.clickable-username').addEventListener('click', (e) => {
-                e.stopPropagation();
-                window.openUserProfileCard(n.actor_username);
-            });
+            const clickUser = div.querySelector('.clickable-username');
+            if (clickUser) {
+                clickUser.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.openUserProfileCard(n.actor_username);
+                });
+            }
 
             notificationsList.appendChild(div);
         });
@@ -623,15 +511,15 @@ async function loadUserNotifications() {
     }
 }
 
-clearActivityNotifsBtn.addEventListener('click', async () => {
+safeAddListener(clearActivityNotifsBtn, 'click', async () => {
     if (!currentUser || !db) return;
     await db.from('user_notifications').delete().eq('user_id', currentUser.id);
-    notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
-    activityNotifBadge.classList.add('hidden');
-    mobileActivityBadge.classList.add('hidden');
+    if (notificationsList) notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
+    if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+    if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
 });
 
-// --- USER SCORE & PUBLIC PROFILE LOGIC ---
+// --- USER SCORE & PROFILE LOGIC ---
 
 async function calculateUserScore(username) {
     if (!username || !db) return 0;
@@ -664,59 +552,14 @@ async function calculateUserScore(username) {
     }
 }
 
-async function updateProfileFriendButtonUI() {
-    unaddConfirmBox.classList.add('hidden');
-    targetFriendshipRecord = null;
-
-    const isOwnProfile = !currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '');
-
-    if (isOwnProfile) {
-        userCardAddFriendBtn.classList.add('hidden');
-        userCardMsgBtn.classList.add('hidden');
-        return;
-    }
-
-    userCardAddFriendBtn.classList.remove('hidden');
-    userCardMsgBtn.classList.remove('hidden');
-
-    try {
-        const { data: friendship } = await db
-            .from('friendships')
-            .select('*')
-            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
-            .maybeSingle();
-
-        targetFriendshipRecord = friendship;
-
-        if (friendship && friendship.status === 'accepted') {
-            userCardAddFriendBtn.innerHTML = `✓ Friends`;
-            userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
-        } else if (friendship && friendship.status === 'pending') {
-            if (friendship.user_id === currentUser.id) {
-                userCardAddFriendBtn.innerHTML = `⏳ Sent`;
-                userCardAddFriendBtn.className = 'btn-friend-state secondary';
-            } else {
-                userCardAddFriendBtn.innerHTML = `📬 Accept`;
-                userCardAddFriendBtn.className = 'btn-friend-state';
-            }
-        } else {
-            userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
-            userCardAddFriendBtn.className = 'btn-friend-state';
-        }
-    } catch (e) {
-        userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
-        userCardAddFriendBtn.className = 'btn-friend-state';
-    }
-}
-
 window.openUserProfileCard = async function(username) {
-    if (!username) return;
+    if (!username || !userProfileModal) return;
     const cleanUser = username.toLowerCase().replace('@', '');
     targetProfileUsername = cleanUser;
 
-    userCardUsername.textContent = `@${cleanUser}`;
-    userCardScore.textContent = '...';
-    userCardPfp.src = DEFAULT_AVATAR;
+    if (userCardUsername) userCardUsername.textContent = `@${cleanUser}`;
+    if (userCardScore) userCardScore.textContent = '...';
+    if (userCardPfp) userCardPfp.src = DEFAULT_AVATAR;
 
     try {
         const { data: profile } = await db
@@ -727,7 +570,7 @@ window.openUserProfileCard = async function(username) {
 
         if (profile) {
             targetProfileId = profile.id;
-            if (profile.avatar_url) {
+            if (profile.avatar_url && userCardPfp) {
                 userCardPfp.src = profile.avatar_url;
                 usernameAvatarMap.set(cleanUser, profile.avatar_url);
             }
@@ -738,123 +581,26 @@ window.openUserProfileCard = async function(username) {
         console.warn("Profile load err:", e);
     }
 
-    await updateProfileFriendButtonUI();
     userProfileModal.classList.remove('hidden');
-
     const score = await calculateUserScore(cleanUser);
-    userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
+    if (userCardScore) userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
 };
 
-closeUserProfileBtn.addEventListener('click', () => userProfileModal.classList.add('hidden'));
-userProfileModal.addEventListener('click', (e) => {
-    if (e.target === userProfileModal) userProfileModal.classList.add('hidden');
+safeAddListener(closeUserProfileBtn, 'click', () => {
+    if (userProfileModal) userProfileModal.classList.add('hidden');
 });
 
-// Profile "Send Message" Button Click
-userCardMsgBtn.addEventListener('click', async () => {
-    if (!currentUser) {
-        alert("Please log in to send direct messages.");
-        return;
-    }
-    if (!targetProfileId || !targetProfileUsername) return;
-
-    userProfileModal.classList.add('hidden');
-    dmModal.classList.remove('hidden');
-    setMobileTabActive('messages');
-
-    await startOrOpenDirectChat({
-        id: targetProfileId,
-        username: targetProfileUsername
-    });
-});
-
-// Profile Add/Unadd Friend Button Click
-userCardAddFriendBtn.addEventListener('click', async () => {
-    if (!currentUser) {
-        alert("Please log in to manage friends.");
-        return;
-    }
-
-    if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
-        unaddConfirmBox.classList.toggle('hidden');
-        return;
-    }
-
-    if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
-        if (targetFriendshipRecord.user_id !== currentUser.id) {
-            await handleRequest(targetFriendshipRecord.id, true);
-            await updateProfileFriendButtonUI();
-        }
-        return;
-    }
-
-    if (!targetProfileId) return;
-
-    const { error: insertErr } = await db
-        .from('friendships')
-        .insert([{ 
-            user_id: currentUser.id, 
-            friend_id: targetProfileId, 
-            status: 'pending' 
-        }]);
-
-    if (insertErr) {
-        alert(`Could not send request: ${insertErr.message}`);
-        return;
-    }
-
-    await sendNotification(
-        targetProfileId,
-        'friend_request',
-        null,
-        'sent you a friend request.'
-    );
-
-    alert(`Friend request sent to @${targetProfileUsername}!`);
-    await updateProfileFriendButtonUI();
-    refreshMessagingHub();
-});
-
-confirmUnaddBtn.addEventListener('click', async () => {
-    if (!targetFriendshipRecord) return;
-
-    confirmUnaddBtn.disabled = true;
-    const { error } = await db
-        .from('friendships')
-        .delete()
-        .eq('id', targetFriendshipRecord.id);
-
-    confirmUnaddBtn.disabled = false;
-
-    if (error) {
-        alert(`Error removing friend: ${error.message}`);
-        return;
-    }
-
-    alert(`@${targetProfileUsername} has been removed from your friends.`);
-    unaddConfirmBox.classList.add('hidden');
-    await updateProfileFriendButtonUI();
-    refreshMessagingHub();
-});
-
-cancelUnaddBtn.addEventListener('click', () => {
-    unaddConfirmBox.classList.add('hidden');
-});
-
-// --- SESSION & AUTHENTICATION (FAIL-SAFE LOGIN) ---
+// --- SESSION & AUTHENTICATION ---
 
 async function syncUserState(user) {
     if (user) {
         currentUser = user;
-        
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
-        currentUserTag.textContent = `@${currentUsername}`;
-        deleteConfirmUserTag.textContent = `@${currentUsername}`;
+        if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
         
         if (authPanelWrapper) authPanelWrapper.classList.add('hidden');
-        openNotifBtn.classList.remove('hidden');
-        openDmBtn.classList.remove('hidden');
-        openProfileBtn.classList.remove('hidden');
+        if (openNotifBtn) openNotifBtn.classList.remove('hidden');
+        if (openProfileBtn) openProfileBtn.classList.remove('hidden');
 
         try {
             const { data: profile } = await db
@@ -866,8 +612,7 @@ async function syncUserState(user) {
             if (profile) {
                 if (profile.username) {
                     currentUsername = profile.username;
-                    currentUserTag.textContent = `@${currentUsername}`;
-                    deleteConfirmUserTag.textContent = `@${currentUsername}`;
+                    if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
                 }
                 if (profile.avatar_url) {
                     currentAvatarUrl = profile.avatar_url;
@@ -889,42 +634,24 @@ async function syncUserState(user) {
 
         renderUserAvatar(currentAvatarUrl);
         await syncCloudThreads();
-        checkNotifications();
         loadUserNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
-        notifPollInterval = setInterval(() => {
-            checkNotifications();
-            loadUserNotifications();
-        }, 4000);
+        notifPollInterval = setInterval(loadUserNotifications, 5000);
     } else {
         currentUser = null;
         currentUsername = null;
         currentAvatarUrl = null;
-        activeConversationId = null;
         suspicionScore = 0;
         updateSuspicionUI();
-        if (window.chatSubscription) {
-            db.removeChannel(window.chatSubscription);
-            window.chatSubscription = null;
-        }
         if (notifPollInterval) clearInterval(notifPollInterval);
 
-        openNotifBtn.classList.add('hidden');
-        openDmBtn.classList.add('hidden');
-        openProfileBtn.classList.add('hidden');
-        notifBadge.classList.add('hidden');
-        activityNotifBadge.classList.add('hidden');
-        mobileMsgBadge.classList.add('hidden');
-        mobileActivityBadge.classList.add('hidden');
-        dmModal.classList.add('hidden');
-        notificationsModal.classList.add('hidden');
-        profileModal.classList.add('hidden');
-        deleteConfirmModal.classList.add('hidden');
-        permsModal.classList.add('hidden');
-        threadDeleteModal.classList.add('hidden');
-        linkModal.classList.add('hidden');
-        userProfileModal.classList.add('hidden');
-        captchaSuspensionModal.classList.add('hidden');
+        if (openNotifBtn) openNotifBtn.classList.add('hidden');
+        if (openProfileBtn) openProfileBtn.classList.add('hidden');
+        if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+        if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
+        if (notificationsModal) notificationsModal.classList.add('hidden');
+        if (userProfileModal) userProfileModal.classList.add('hidden');
+        if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
         if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
 
         await syncCloudThreads();
@@ -936,25 +663,17 @@ async function syncUserState(user) {
 
 function renderUserAvatar(url) {
     if (url) {
-        headerAvatarImg.src = url;
-        headerAvatarImg.classList.remove('hidden');
-        headerAvatarFallback.classList.add('hidden');
-
-        postBarAvatar.src = url;
-        postBarAvatar.classList.remove('hidden');
-
-        tabAvatarImg.src = url;
-        tabAvatarImg.classList.remove('hidden');
-        tabAvatarFallback.classList.add('hidden');
-
-        profilePreviewAvatar.src = url;
+        if (headerAvatarImg) { headerAvatarImg.src = url; headerAvatarImg.classList.remove('hidden'); }
+        if (headerAvatarFallback) headerAvatarFallback.classList.add('hidden');
+        if (postBarAvatar) { postBarAvatar.src = url; postBarAvatar.classList.remove('hidden'); }
+        if (tabAvatarImg) { tabAvatarImg.src = url; tabAvatarImg.classList.remove('hidden'); }
+        if (tabAvatarFallback) tabAvatarFallback.classList.add('hidden');
     } else {
-        headerAvatarImg.classList.add('hidden');
-        headerAvatarFallback.classList.remove('hidden');
-        postBarAvatar.classList.add('hidden');
-        tabAvatarImg.classList.add('hidden');
-        tabAvatarFallback.classList.remove('hidden');
-        profilePreviewAvatar.src = DEFAULT_AVATAR;
+        if (headerAvatarImg) headerAvatarImg.classList.add('hidden');
+        if (headerAvatarFallback) headerAvatarFallback.classList.remove('hidden');
+        if (postBarAvatar) postBarAvatar.classList.add('hidden');
+        if (tabAvatarImg) tabAvatarImg.classList.add('hidden');
+        if (tabAvatarFallback) tabAvatarFallback.classList.remove('hidden');
     }
 }
 
@@ -968,7 +687,7 @@ if (db) {
     });
 }
 
-authToggleBtn.addEventListener('click', () => {
+safeAddListener(authToggleBtn, 'click', () => {
     isSignUpMode = !isSignUpMode;
     if (isSignUpMode) {
         authHeader.textContent = "✨ Create Human Account";
@@ -985,7 +704,7 @@ authToggleBtn.addEventListener('click', () => {
     }
 });
 
-authForm.addEventListener('submit', async (e) => {
+safeAddListener(authForm, 'submit', async (e) => {
     e.preventDefault();
     const email = authEmailInput.value.trim();
     const password = authPasswordInput.value;
@@ -1044,126 +763,9 @@ authForm.addEventListener('submit', async (e) => {
     }
 });
 
-logoutBtn.addEventListener('click', async () => {
-    await db.auth.signOut();
+safeAddListener(logoutBtn, 'click', async () => {
+    if (db) await db.auth.signOut();
     setMobileTabActive('feed');
-});
-
-// --- PROFILE SETTINGS CUSTOMIZATION ---
-
-profileModal.addEventListener('click', (e) => { if (e.target === profileModal) profileModal.classList.add('hidden'); });
-
-profileAvatarFile.addEventListener('change', async () => {
-    const file = profileAvatarFile.files[0];
-    if (!file || !currentUser) return;
-
-    const fileExt = file.name.split('.').pop();
-    const filePath = `${currentUser.id}/avatar_${Date.now()}.${fileExt}`;
-
-    const { error: uploadErr } = await db.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true });
-
-    if (uploadErr) {
-        alert(`Avatar upload failed: ${uploadErr.message}`);
-        return;
-    }
-
-    const { data: publicData } = db.storage.from('avatars').getPublicUrl(filePath);
-    const newAvatarUrl = publicData.publicUrl;
-
-    const { error: updateErr } = await db
-        .from('profiles')
-        .update({ avatar_url: newAvatarUrl })
-        .eq('id', currentUser.id);
-
-    if (updateErr) {
-        alert(`Error updating profile: ${updateErr.message}`);
-        return;
-    }
-
-    currentAvatarUrl = newAvatarUrl;
-    userAvatarCache.set(currentUser.id, currentAvatarUrl);
-    if (currentUsername) usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
-    renderUserAvatar(currentAvatarUrl);
-    renderCurrentFeed();
-    alert("Avatar updated successfully!");
-});
-
-updatePasswordBtn.addEventListener('click', async () => {
-    const currentPassword = currentPasswordInput.value;
-    const newPassword = newPasswordInput.value;
-    const confirmPassword = confirmPasswordInput.value;
-
-    if (!currentPassword) {
-        alert("Please enter your current password.");
-        return;
-    }
-    if (!newPassword || newPassword.length < 6) {
-        alert("New password must be at least 6 characters.");
-        return;
-    }
-    if (newPassword !== confirmPassword) {
-        alert("The new passwords do not match.");
-        return;
-    }
-
-    updatePasswordBtn.disabled = true;
-    updatePasswordBtn.textContent = 'Verifying...';
-
-    const { error: authErr } = await db.auth.signInWithPassword({
-        email: currentUser.email,
-        password: currentPassword
-    });
-
-    if (authErr) {
-        updatePasswordBtn.disabled = false;
-        updatePasswordBtn.textContent = 'Update Password';
-        alert("Incorrect current password. Please try again.");
-        return;
-    }
-
-    updatePasswordBtn.textContent = 'Updating...';
-    const { error: updateErr } = await db.auth.updateUser({ password: newPassword });
-
-    updatePasswordBtn.disabled = false;
-    updatePasswordBtn.textContent = 'Update Password';
-
-    if (updateErr) {
-        alert(`Password change failed: ${updateErr.message}`);
-    } else {
-        alert("Password updated successfully!");
-        currentPasswordInput.value = '';
-        newPasswordInput.value = '';
-        confirmPasswordInput.value = '';
-    }
-});
-
-openDeleteModalBtn.addEventListener('click', () => {
-    deleteConfirmModal.classList.remove('hidden');
-    deleteUsernameInput.value = '';
-});
-closeDeleteModalBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
-cancelDeleteBtn.addEventListener('click', () => deleteConfirmModal.classList.add('hidden'));
-deleteConfirmModal.addEventListener('click', (e) => {
-    if (e.target === deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
-});
-
-finalDeleteBtn.addEventListener('click', async () => {
-    const entered = deleteUsernameInput.value.trim().toLowerCase().replace('@', '');
-    const expected = currentUsername.toLowerCase().replace('@', '');
-
-    if (entered !== expected) {
-        alert(`Username does not match. Please enter "@${currentUsername}" to confirm deletion.`);
-        return;
-    }
-
-    finalDeleteBtn.disabled = true;
-    finalDeleteBtn.textContent = 'Deleting...';
-
-    await db.from('profiles').delete().eq('id', currentUser.id);
-    await db.auth.signOut();
-    alert("Your account has been deleted.");
 });
 
 // --- CLOUD THREADS & MEMBERSHIP SYNC ---
@@ -1181,9 +783,7 @@ async function syncCloudThreads() {
     } else {
         allCloudThreads = [
             { name: "Welcome & Security", owner_username: "gemini" },
-            { name: "Update Thread", owner_username: "gemini" },
-            { name: "Text Thread #2", owner_username: "gemini" },
-            { name: "Text Thread #3", owner_username: "gemini" }
+            { name: "Update Thread", owner_username: "gemini" }
         ];
     }
 
@@ -1196,9 +796,6 @@ async function syncCloudThreads() {
             .eq('user_id', currentUser.id);
 
         (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
-    } else {
-        myJoinedThreadNames.add("Text Thread #2");
-        myJoinedThreadNames.add("Text Thread #3");
     }
 
     renderJoinedThreadsSidebar();
@@ -1206,6 +803,7 @@ async function syncCloudThreads() {
 }
 
 function renderJoinedThreadsSidebar() {
+    if (!joinedThreadsContainer) return;
     joinedThreadsContainer.innerHTML = '';
 
     const joinedList = Array.from(myJoinedThreadNames);
@@ -1233,7 +831,7 @@ function renderJoinedThreadsSidebar() {
             
             cachedPosts = [];
             postCacheMap.clear();
-            forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+            if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
             renderJoinedThreadsSidebar();
             updateThreadControlsUI();
@@ -1246,11 +844,7 @@ function renderJoinedThreadsSidebar() {
     });
 }
 
-function syncTopicDropdown() {
-    // Intentionally blank - now using the custom dropdown menu inside FAB
-}
-
-// --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
+// --- THREAD SEARCH & DISCOVERY ---
 
 function fuzzyMatch(str, pattern) {
     const s = str.toLowerCase();
@@ -1266,7 +860,8 @@ function fuzzyMatch(str, pattern) {
     return false;
 }
 
-threadSearchInput.addEventListener('input', () => {
+safeAddListener(threadSearchInput, 'input', () => {
+    if (!threadDiscoveryBox) return;
     const q = threadSearchInput.value.trim();
     if (!q) {
         threadDiscoveryBox.classList.add('hidden');
@@ -1278,7 +873,7 @@ threadSearchInput.addEventListener('input', () => {
     threadDiscoveryBox.innerHTML = '';
 
     if (matches.length === 0) {
-        threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ Thread" to create it!</div>`;
+        threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ New" in the sidebar to create one!</div>`;
         threadDiscoveryBox.classList.remove('hidden');
         return;
     }
@@ -1298,9 +893,7 @@ threadSearchInput.addEventListener('input', () => {
         const actionBtn = document.createElement('button');
         actionBtn.type = 'button';
         actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
-        
-        const isPrivate = t.is_private;
-        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : (isPrivate ? 'Request Join 🔒' : '+ Join'));
+        actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
         actionBtn.disabled = isMandatory;
 
         actionBtn.addEventListener('click', async () => {
@@ -1308,26 +901,7 @@ threadSearchInput.addEventListener('input', () => {
                 alert("Please log in to join or leave threads.");
                 return;
             }
-            if (isJoined || !isPrivate) {
-                await toggleThreadMembership(t.name);
-            } else if (isPrivate) {
-                actionBtn.disabled = true;
-                actionBtn.textContent = 'Requested ⏳';
-                
-                await db.from('thread_requests').insert([{
-                    thread_name: t.name, user_id: currentUser.id, username: currentUsername
-                }]);
-                
-                const meta = threadMetaMap[t.name] || { owner: '', moderators: [] };
-                const notifyTargets = [meta.owner, ...(meta.moderators || [])].filter(Boolean);
-                if (notifyTargets.length > 0) {
-                     const { data: targetProfiles } = await db.from('profiles').select('id').in('username', notifyTargets);
-                     (targetProfiles || []).forEach(p => {
-                         sendNotification(p.id, 'thread_request', null, `requested to join "${t.name}".`);
-                     });
-                }
-                alert(`Join request sent for ${t.name}! You will be notified if approved.`);
-            }
+            await toggleThreadMembership(t.name);
         });
 
         row.appendChild(label);
@@ -1360,15 +934,15 @@ async function toggleThreadMembership(tName) {
 
     cachedPosts = [];
     postCacheMap.clear();
-    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
     await loadForumPosts();
-    threadSearchInput.dispatchEvent(new Event('input'));
+    if (threadSearchInput) threadSearchInput.dispatchEvent(new Event('input'));
 }
 
-joinLeaveActiveThreadBtn.addEventListener('click', async () => {
+safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to manage your threads.");
         return;
@@ -1376,20 +950,17 @@ joinLeaveActiveThreadBtn.addEventListener('click', async () => {
     await toggleThreadMembership(activeThread);
 });
 
-// --- THREAD CREATION & SYNC (PERSISTED IN SUPABASE) ---
+// --- THREAD CREATION & SYNC ---
 
 function openCreateThreadModal() {
     if (!currentUser) { alert("Please log in to create a thread."); return; }
-    threadModal.classList.remove('hidden');
+    if (threadModal) threadModal.classList.remove('hidden');
 }
 
-openNewThreadModalBtn.addEventListener('click', openCreateThreadModal);
-triggerCreateThreadBtn.addEventListener('click', openCreateThreadModal);
-sidebarNewThreadBtn.addEventListener('click', openCreateThreadModal);
-closeThreadModalBtn.addEventListener('click', () => threadModal.classList.add('hidden'));
-threadModal.addEventListener('click', (e) => { if (e.target === threadModal) threadModal.classList.add('hidden'); });
+safeAddListener(sidebarNewThreadBtn, 'click', openCreateThreadModal);
+safeAddListener(closeThreadModalBtn, 'click', () => { if (threadModal) threadModal.classList.add('hidden'); });
 
-createThreadForm.addEventListener('submit', async (e) => {
+safeAddListener(createThreadForm, 'submit', async (e) => {
     e.preventDefault();
     if (!currentUser || !currentUsername) {
         alert("You must be logged in to create a thread.");
@@ -1405,24 +976,21 @@ createThreadForm.addEventListener('submit', async (e) => {
     }
 
     const submitBtn = document.getElementById('create-thread-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Creating...';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating...'; }
 
-    const isPrivate = document.getElementById('new-thread-private-chk').checked;
+    const isPrivateChk = document.getElementById('new-thread-private-chk');
+    const isPrivate = isPrivateChk ? isPrivateChk.checked : false;
 
-    const { data: created, error } = await db
+    const { error } = await db
         .from('forum_threads')
         .insert([{
             name: newName,
             created_by: currentUser.id,
             owner_username: currentUsername,
             is_private: isPrivate
-        }])
-        .select()
-        .single();
+        }]);
 
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Create & Join Thread';
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create & Join Thread'; }
 
     if (error) {
         alert(`Could not create thread: ${error.message}`);
@@ -1442,80 +1010,78 @@ createThreadForm.addEventListener('submit', async (e) => {
     saveThreadMeta();
 
     newThreadTitleInput.value = '';
-    threadModal.classList.add('hidden');
+    if (threadModal) threadModal.classList.add('hidden');
 
     await syncCloudThreads();
     activeThread = newName;
 
     cachedPosts = [];
     postCacheMap.clear();
-    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
     await loadForumPosts();
 });
 
-postSortSelect.addEventListener('change', () => {
+safeAddListener(postSortSelect, 'change', () => {
     renderCurrentFeed();
 });
 
 function updateThreadControlsUI() {
-    currentThreadTitle.textContent = activeThread;
+    if (currentThreadTitle) currentThreadTitle.textContent = activeThread;
     const role = getThreadRole(activeThread);
-    currentUserThreadRole.textContent = role;
-
-    currentUserThreadRole.className = 'thread-role-badge';
-    if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
-    else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
-    else if (role === 'Moderator') currentUserThreadRole.classList.add('badge-green');
-    else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
-    else currentUserThreadRole.classList.add('badge-blue');
+    if (currentUserThreadRole) {
+        currentUserThreadRole.textContent = role;
+        currentUserThreadRole.className = 'thread-role-badge';
+        if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
+        else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
+        else if (role === 'Moderator') currentUserThreadRole.classList.add('badge-green');
+        else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
+        else currentUserThreadRole.classList.add('badge-blue');
+    }
 
     const isMandatory = MANDATORY_THREADS.includes(activeThread);
     const isJoined = myJoinedThreadNames.has(activeThread);
 
-    if (!isMandatory && currentUser) {
-        joinLeaveActiveThreadBtn.classList.remove('hidden');
-        joinLeaveActiveThreadBtn.textContent = isJoined ? 'Leave Thread' : '+ Join Thread';
-        joinLeaveActiveThreadBtn.className = isJoined ? 'secondary btn-thread-action' : 'btn-thread-action';
-    } else {
-        joinLeaveActiveThreadBtn.classList.add('hidden');
+    if (joinLeaveActiveThreadBtn) {
+        if (!isMandatory && currentUser) {
+            joinLeaveActiveThreadBtn.classList.remove('hidden');
+            joinLeaveActiveThreadBtn.textContent = isJoined ? 'Leave Thread' : '+ Join Thread';
+            joinLeaveActiveThreadBtn.className = isJoined ? 'secondary btn-thread-action' : 'btn-thread-action';
+        } else {
+            joinLeaveActiveThreadBtn.classList.add('hidden');
+        }
     }
 
-    if (canManagePermissions(activeThread)) {
-        managePermsBtn.classList.remove('hidden');
-    } else {
-        managePermsBtn.classList.add('hidden');
+    if (managePermsBtn) {
+        if (canManagePermissions(activeThread)) managePermsBtn.classList.remove('hidden');
+        else managePermsBtn.classList.add('hidden');
     }
 
-    if (canDeleteThread(activeThread)) {
-        deleteThreadBtn.classList.remove('hidden');
-    } else {
-        deleteThreadBtn.classList.add('hidden');
+    if (deleteThreadBtn) {
+        if (canDeleteThread(activeThread)) deleteThreadBtn.classList.remove('hidden');
+        else deleteThreadBtn.classList.add('hidden');
     }
 }
 
-// --- THREAD DELETION MODAL ---
+// --- THREAD DELETION ---
 
-deleteThreadBtn.addEventListener('click', () => {
+safeAddListener(deleteThreadBtn, 'click', () => {
     if (!canDeleteThread(activeThread)) {
         alert("You do not have permission to delete this thread.");
         return;
     }
-    deleteThreadTargetName.textContent = activeThread;
-    deleteThreadConfirmInput.value = '';
-    threadDeleteModal.classList.remove('hidden');
+    if (deleteThreadTargetName) deleteThreadTargetName.textContent = activeThread;
+    if (deleteThreadConfirmInput) deleteThreadConfirmInput.value = '';
+    if (threadDeleteModal) threadDeleteModal.classList.remove('hidden');
 });
 
-closeThreadDeleteModalBtn.addEventListener('click', () => threadDeleteModal.classList.add('hidden'));
-cancelDeleteThreadBtn.addEventListener('click', () => threadDeleteModal.classList.add('hidden'));
-threadDeleteModal.addEventListener('click', (e) => {
-    if (e.target === threadDeleteModal) threadDeleteModal.classList.add('hidden');
-});
+safeAddListener(closeThreadDeleteModalBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
+safeAddListener(cancelDeleteThreadBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 
-finalDeleteThreadBtn.addEventListener('click', async () => {
-    const inputVal = deleteThreadConfirmInput.value.trim();
+safeAddListener(finalDeleteThreadBtn, 'click', async () => {
+    const inputVal = deleteThreadConfirmInput ? deleteThreadConfirmInput.value.trim() : '';
     if (inputVal !== activeThread) {
         alert(`Confirmation failed. You must type "${activeThread}" exactly to delete this thread.`);
         return;
@@ -1532,7 +1098,7 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     delete threadMetaMap[activeThread];
     saveThreadMeta();
 
-    threadDeleteModal.classList.add('hidden');
+    if (threadDeleteModal) threadDeleteModal.classList.add('hidden');
     finalDeleteThreadBtn.disabled = false;
     finalDeleteThreadBtn.textContent = 'Confirm Delete';
 
@@ -1541,91 +1107,24 @@ finalDeleteThreadBtn.addEventListener('click', async () => {
     activeThread = "Welcome & Security";
     cachedPosts = [];
     postCacheMap.clear();
-    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
     await syncCloudThreads();
     await loadForumPosts();
 });
 
 // --- PERMISSIONS MANAGEMENT UI ---
 
-managePermsBtn.addEventListener('click', () => openPermissionsManager());
-closePermsModalBtn.addEventListener('click', () => permsModal.classList.add('hidden'));
-permsModal.addEventListener('click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
+safeAddListener(managePermsBtn, 'click', () => openPermissionsManager());
+safeAddListener(closePermsModalBtn, 'click', () => { if (permsModal) permsModal.classList.add('hidden'); });
 
 async function openPermissionsManager() {
-    permsThreadName.textContent = activeThread;
+    if (permsThreadName) permsThreadName.textContent = activeThread;
     renderPermissionsUserList();
-    permsModal.classList.remove('hidden');
-
-    const threadData = allCloudThreads.find(t => t.name === activeThread);
-    const privacyWrap = document.getElementById('private-thread-toggle-wrap');
-    const togglePrivacyBtn = document.getElementById('toggle-privacy-btn');
-    const reqSection = document.getElementById('thread-requests-section');
-    const reqList = document.getElementById('thread-requests-list');
-
-    if (!privacyWrap || !reqSection) return;
-
-    if (getThreadRole(activeThread) === 'Owner' || isSiteAdmin()) {
-        privacyWrap.classList.remove('hidden');
-        let isPrivate = threadData ? threadData.is_private : false;
-        
-        togglePrivacyBtn.textContent = isPrivate ? 'Make Public' : 'Make Private';
-        togglePrivacyBtn.className = isPrivate ? 'btn-perm secondary' : 'btn-perm danger';
-        
-        togglePrivacyBtn.onclick = async () => {
-            isPrivate = !isPrivate;
-            await db.from('forum_threads').update({ is_private: isPrivate }).eq('name', activeThread);
-            if (threadData) threadData.is_private = isPrivate;
-            openPermissionsManager();
-        };
-    } else {
-        privacyWrap.classList.add('hidden');
-    }
-
-    if (threadData && threadData.is_private && (getThreadRole(activeThread) === 'Owner' || getThreadRole(activeThread) === 'Moderator' || isSiteAdmin())) {
-        reqSection.classList.remove('hidden');
-        reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">Loading requests...</div>';
-        
-        const { data: requests } = await db.from('thread_requests').select('*').eq('thread_name', activeThread).eq('status', 'pending');
-        
-        reqList.innerHTML = '';
-        if (!requests || requests.length === 0) {
-            reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
-        } else {
-            requests.forEach(req => {
-                const row = document.createElement('div');
-                row.className = 'perm-user-row';
-                row.innerHTML = `
-                    <span class="perm-user-name">@${escapeHTML(req.username)}</span>
-                    <div class="perm-user-buttons">
-                        <button class="btn-perm" style="background: #16a34a; border: none; color: #fff;">Approve</button>
-                        <button class="btn-perm danger" style="border: none;">Deny</button>
-                    </div>
-                `;
-                
-                row.querySelectorAll('button')[0].onclick = async () => {
-                    await db.from('thread_requests').update({ status: 'approved' }).eq('id', req.id);
-                    await db.from('forum_thread_members').insert([{ user_id: req.user_id, thread_name: activeThread }]);
-                    sendNotification(req.user_id, 'request_approved', null, `Your request to join "${activeThread}" was approved!`);
-                    row.remove();
-                    if (reqList.children.length === 0) reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
-                };
-                
-                row.querySelectorAll('button')[1].onclick = async () => {
-                    await db.from('thread_requests').update({ status: 'denied' }).eq('id', req.id);
-                    row.remove();
-                    if (reqList.children.length === 0) reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">No pending requests.</div>';
-                };
-                
-                reqList.appendChild(row);
-            });
-        }
-    } else {
-        reqSection.classList.add('hidden');
-    }
+    if (permsModal) permsModal.classList.remove('hidden');
 }
 
 function renderPermissionsUserList() {
+    if (!permsUserList) return;
     const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
     permsUserList.innerHTML = '';
 
@@ -1643,132 +1142,27 @@ function renderPermissionsUserList() {
     trackedUsers.forEach(uname => {
         const cleanUser = uname.toLowerCase().replace('@', '');
         const role = getThreadRole(activeThread, cleanUser);
-        const isBanned = (meta.banned || []).map(u => u.toLowerCase()).includes(cleanUser);
-
         const row = document.createElement('div');
         row.className = 'perm-user-row';
-
-        let badgeClass = 'badge-blue';
-        if (role === 'Site Admin') badgeClass = 'badge-purple';
-        else if (role === 'Owner') badgeClass = 'badge-yellow';
-        else if (role === 'Moderator') badgeClass = 'badge-green';
-        else if (role === 'Banned') badgeClass = 'badge-red';
-
-        const nameCol = document.createElement('div');
-        nameCol.className = 'perm-user-name';
-        nameCol.innerHTML = `<span class="clickable-username" data-username="${escapeHTML(cleanUser)}">@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
-
-        nameCol.querySelector('.clickable-username').addEventListener('click', () => {
-            window.openUserProfileCard(cleanUser);
-        });
-
-        const btnCol = document.createElement('div');
-        btnCol.className = 'perm-user-buttons';
-
-        if (isSiteAdmin()) {
-            if (role !== 'Owner') {
-                const makeOwnerBtn = document.createElement('button');
-                makeOwnerBtn.className = 'btn-perm secondary';
-                makeOwnerBtn.textContent = 'Make Owner';
-                makeOwnerBtn.onclick = () => {
-                    meta.owner = cleanUser;
-                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
-                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
-                    saveThreadMeta();
-                    renderPermissionsUserList();
-                    updateThreadControlsUI();
-                };
-                btnCol.appendChild(makeOwnerBtn);
-            }
-        }
-
-        if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
-            if (role === 'Moderator') {
-                const demoteModBtn = document.createElement('button');
-                demoteModBtn.className = 'btn-perm secondary';
-                demoteModBtn.textContent = 'Demote Mod';
-                demoteModBtn.onclick = () => {
-                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
-                    saveThreadMeta();
-                    renderPermissionsUserList();
-                };
-                btnCol.appendChild(demoteModBtn);
-            } else {
-                const promoteModBtn = document.createElement('button');
-                promoteModBtn.className = 'btn-perm secondary';
-                promoteModBtn.textContent = 'Promote Mod';
-                promoteModBtn.onclick = () => {
-                    if (!meta.moderators) meta.moderators = [];
-                    if (!meta.moderators.map(m => m.toLowerCase()).includes(cleanUser)) {
-                        meta.moderators.push(cleanUser);
-                    }
-                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
-                    saveThreadMeta();
-                    renderPermissionsUserList();
-                };
-                btnCol.appendChild(promoteModBtn);
-            }
-        }
-
-        if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
-            if (isBanned) {
-                const unbanBtn = document.createElement('button');
-                unbanBtn.className = 'btn-perm secondary';
-                unbanBtn.textContent = 'Allow Posting';
-                unbanBtn.onclick = () => {
-                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
-                    saveThreadMeta();
-                    renderPermissionsUserList();
-                };
-                btnCol.appendChild(unbanBtn);
-            } else {
-                const banBtn = document.createElement('button');
-                banBtn.className = 'btn-perm danger';
-                banBtn.textContent = 'Revoke Access';
-                banBtn.onclick = () => {
-                    if (!meta.banned) meta.banned = [];
-                    if (!meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) {
-                        meta.banned.push(cleanUser);
-                    }
-                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
-                    saveThreadMeta();
-                    renderPermissionsUserList();
-                };
-                btnCol.appendChild(banBtn);
-            }
-        }
-
-        row.appendChild(nameCol);
-        row.appendChild(btnCol);
+        row.innerHTML = `<span class="perm-user-name">@${escapeHTML(cleanUser)} (${role})</span>`;
         permsUserList.appendChild(row);
     });
 }
 
-permUserAddBtn.addEventListener('click', () => {
-    const raw = permUserLookup.value.trim().toLowerCase().replace('@', '');
-    if (!raw) return;
-    const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
-    if (!meta.moderators) meta.moderators = [];
-    threadMetaMap[activeThread] = meta;
-    permUserLookup.value = '';
-    renderPermissionsUserList();
+// --- LINK INSERTION ---
+
+safeAddListener(openLinkModalBtn, 'click', () => {
+    if (linkUrlInput) linkUrlInput.value = '';
+    if (linkTextInput) linkTextInput.value = '';
+    if (linkModal) linkModal.classList.remove('hidden');
 });
 
-// --- SAFE LINK INSERTION MODAL ---
+safeAddListener(closeLinkModalBtn, 'click', () => { if (linkModal) linkModal.classList.add('hidden'); });
 
-openLinkModalBtn.addEventListener('click', () => {
-    linkUrlInput.value = '';
-    linkTextInput.value = '';
-    linkModal.classList.remove('hidden');
-});
-
-closeLinkModalBtn.addEventListener('click', () => linkModal.classList.add('hidden'));
-linkModal.addEventListener('click', (e) => { if (e.target === linkModal) linkModal.classList.add('hidden'); });
-
-insertLinkForm.addEventListener('submit', (e) => {
+safeAddListener(insertLinkForm, 'submit', (e) => {
     e.preventDefault();
-    let url = linkUrlInput.value.trim();
-    const text = linkTextInput.value.trim();
+    let url = linkUrlInput ? linkUrlInput.value.trim() : '';
+    const text = linkTextInput ? linkTextInput.value.trim() : '';
 
     if (!url) return;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -1776,14 +1170,13 @@ insertLinkForm.addEventListener('submit', (e) => {
     }
 
     const formattedLink = text ? `[${text}](${url})` : url;
-
     const curVal = textBox.value;
     const cursorPos = textBox.selectionStart || curVal.length;
     const prefix = curVal.slice(0, cursorPos);
     const suffix = curVal.slice(cursorPos);
     
     textBox.value = `${prefix}${prefix.length > 0 && !prefix.endsWith(' ') ? ' ' : ''}${formattedLink} ${suffix}`;
-    linkModal.classList.add('hidden');
+    if (linkModal) linkModal.classList.add('hidden');
     textBox.focus();
 });
 
@@ -1791,35 +1184,35 @@ function renderFormattedContent(text) {
     if (!text) return '';
     const escaped = escapeHTML(text);
 
-    const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, href) => {
+    const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, href) => {
         return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     });
 
-    const withBareUrls = withMdLinks.replace(/(^|[^">])(https?:\/\/[^\s<]+)/g, (match, prefix, href) => {
+    const withBareUrls = withMdLinks.replace(/(^|[^">])(https?:\/\/[^\s<]+)/g, (_match, prefix, href) => {
         return `${prefix}<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`;
     });
 
     return withBareUrls.replace(/\n/g, '<br>');
 }
 
-// --- PHOTO ATTACHMENT IN FORUM POSTS ---
+// --- PHOTO ATTACHMENTS ---
 
-postImageFile.addEventListener('change', () => {
+safeAddListener(postImageFile, 'change', () => {
     const file = postImageFile.files[0];
     if (file) {
         selectedPostPhotoFile = file;
-        postPhotoFilename.textContent = `📷 ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
-        postPhotoPreviewBar.classList.remove('hidden');
+        if (postPhotoFilename) postPhotoFilename.textContent = `📷 ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+        if (postPhotoPreviewBar) postPhotoPreviewBar.classList.remove('hidden');
     }
 });
 
-removePostPhotoBtn.addEventListener('click', () => {
+safeAddListener(removePostPhotoBtn, 'click', () => {
     selectedPostPhotoFile = null;
-    postImageFile.value = '';
-    postPhotoPreviewBar.classList.add('hidden');
+    if (postImageFile) postImageFile.value = '';
+    if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
 });
 
-// --- LIKES, DISLIKES & VOTING ENGINE ---
+// --- VOTING & POST RENDERING ---
 
 function getPostScore(post) {
     const dbLikes = Number(post.likes || 0);
@@ -1841,13 +1234,7 @@ async function handleVote(postId, direction) {
     if (!post) return;
     
     const currentVote = userVotes[postId] || 0;
-    let newVote = 0;
-
-    if (currentVote === direction) {
-        newVote = 0;
-    } else {
-        newVote = direction;
-    }
+    let newVote = currentVote === direction ? 0 : direction;
 
     userVotes[postId] = newVote;
     localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
@@ -1871,71 +1258,10 @@ async function handleVote(postId, direction) {
         .eq('id', postId);
 
     if (error) console.error("Failed to save vote to database:", error);
-
-    if (post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
-        try {
-            const { data: targetProfile } = await db
-                .from('profiles').select('id').ilike('username', post.author).maybeSingle();
-
-            if (targetProfile) {
-                await sendNotification(targetProfile.id, 'upvote_post', postId, `upvoted your post in "${post.thread}".`);
-            }
-        } catch (e) {}
-    }
-}
-
-async function handleCommentVote(commentId, direction, commentAuthor) {
-    if (!currentUser) {
-        alert("You must be logged in to vote on comments.");
-        return;
-    }
-    if (isSuspended) {
-        triggerSuspensionGate();
-        return;
-    }
-
-    const currentVote = userCommentVotes[commentId] || 0;
-    let newVote = currentVote === direction ? 0 : direction;
-
-    userCommentVotes[commentId] = newVote;
-    localStorage.setItem('user_forum_comment_votes', JSON.stringify(userCommentVotes));
-
-    try {
-        const { data: c } = await db.from('post_comments').select('likes, dislikes').eq('id', commentId).maybeSingle();
-        if (c) {
-            let newLikes = Number(c.likes || 0);
-            let newDislikes = Number(c.dislikes || 0);
-
-            if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
-            if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
-
-            if (newVote === 1) newLikes += 1;
-            if (newVote === -1) newDislikes += 1;
-
-            const { error } = await db.from('post_comments')
-                .update({ likes: newLikes, dislikes: newDislikes })
-                .eq('id', commentId);
-                
-            if (error) console.error("Comment vote DB error:", error);
-        }
-    } catch (e) {
-        console.error("Failed to update comment vote", e);
-    }
-
-    if (newVote === 1 && commentAuthor && commentAuthor.toLowerCase() !== currentUsername.toLowerCase()) {
-        try {
-            const { data: targetProfile } = await db
-                .from('profiles').select('id').ilike('username', commentAuthor).maybeSingle();
-
-            if (targetProfile) {
-                await sendNotification(targetProfile.id, 'upvote_comment', commentId, `upvoted your comment.`);
-            }
-        } catch (e) {}
-    }
 }
 
 function sortPosts(posts) {
-    const sortMode = postSortSelect.value;
+    const sortMode = postSortSelect ? postSortSelect.value : 'top';
     const now = Date.now();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
 
@@ -1969,29 +1295,6 @@ function sortPosts(posts) {
     });
 }
 
-async function ensureAuthorAvatarsCached(authors) {
-    if (!db || !authors || authors.length === 0) return;
-    const cleanAuthors = Array.from(new Set(authors.map(a => a.toLowerCase().replace('@', ''))));
-    const missing = cleanAuthors.filter(a => !usernameAvatarMap.has(a));
-
-    if (missing.length === 0) return;
-
-    try {
-        const { data: profiles } = await db
-            .from('profiles')
-            .select('username, avatar_url')
-            .in('username', missing);
-
-        (profiles || []).forEach(p => {
-            if (p.username) {
-                usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url || null);
-            }
-        });
-    } catch (e) {
-        console.warn("Avatar batch fetch err:", e);
-    }
-}
-
 function getWelcomeSecurityPost() {
     return {
         id: 'welcome-seed',
@@ -2001,30 +1304,7 @@ function getWelcomeSecurityPost() {
         created_at: new Date().toISOString(),
         likes: 0,
         dislikes: 0,
-        content: `### Welcome to Turing's Gate: The Verified Human Community
-
-Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client telemetry.
-
-<div class="welcome-diagram">
-    <div class="diagram-step">
-        <span class="diagram-badge">1. Telemetry Cadence</span>
-        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
-        <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">3. Verification Escrow</span>
-        <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
-    </div>
-    <div class="diagram-step">
-        <span class="diagram-badge">4. Verified Direct Messaging</span>
-        <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
-    </div>
-</div>
-
-Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
+        content: `### Welcome to Turing's Gate: The Verified Human Community\n\nExplore topics, participate in discussions, and enjoy an authenticated bot-free community!`
     };
 }
 
@@ -2045,22 +1325,13 @@ function createPostCardElement(post) {
     else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
 
     const userCanDelete = canDeletePost(post) && !post.is_pinned;
-    const userCanRevoke = canRevokePosting(post.thread) && postAuthorRole !== 'Owner' && postAuthorRole !== 'Site Admin' && !post.is_pinned;
 
     let actionButtonsHtml = '';
-    if (userCanDelete || userCanRevoke) {
-        actionButtonsHtml = `<div class="post-admin-actions">`;
-        if (userCanDelete) {
-            actionButtonsHtml += `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete Post</button>`;
-        }
-        if (userCanRevoke && post.author && post.author !== currentUsername) {
-            actionButtonsHtml += `<button type="button" class="btn-post-action danger-text btn-revoke-author" data-author="${post.author}">🚫 Revoke Access</button>`;
-        }
-        actionButtonsHtml += `</div>`;
+    if (userCanDelete) {
+        actionButtonsHtml = `<div class="post-admin-actions"><button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete Post</button></div>`;
     }
 
     const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
-
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
     const renderedBody = post.is_pinned ? post.content : renderFormattedContent(post.content || '');
@@ -2074,7 +1345,7 @@ function createPostCardElement(post) {
         <div class="post-body">
             <div class="post-meta">
                 <div class="post-author-wrap">
-                    <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp" title="View @${escapeHTML(cleanAuthor)}'s profile">
+                    <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
                     <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>
                     ${roleBadge}
                 </div>
@@ -2083,20 +1354,6 @@ function createPostCardElement(post) {
             <div class="post-content">${renderedBody}</div>
             ${photoHtml}
             ${actionButtonsHtml}
-
-            <button type="button" class="btn-toggle-comments" data-post-id="${post.id}">
-                💬 Comments <span class="comment-count" data-post-id="${post.id}">(0)</span>
-            </button>
-
-            <div class="post-comments-container hidden" id="comments-container-${post.id}">
-                <div class="comments-list" id="comments-list-${post.id}">
-                    <div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>
-                </div>
-                <form class="comment-form" data-post-id="${post.id}">
-                    <input type="text" placeholder="Write a reply..." required autocomplete="off">
-                    <button type="submit">Reply</button>
-                </form>
-            </div>
         </div>
     `;
 
@@ -2115,75 +1372,6 @@ function createPostCardElement(post) {
         });
     });
 
-    const toggleBtn = item.querySelector('.btn-toggle-comments');
-    const container = item.querySelector(`#comments-container-${post.id}`);
-    toggleBtn.addEventListener('click', () => {
-        container.classList.toggle('hidden');
-        if (!container.classList.contains('hidden')) {
-            loadPostComments(post.id, post);
-        }
-    });
-
-    fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
-
-    const commentForm = item.querySelector('.comment-form');
-    commentForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        if (!currentUser) {
-            alert("You must be logged in to comment.");
-            return;
-        }
-        if (isSuspended) {
-            triggerSuspensionGate();
-            return;
-        }
-
-        const input = commentForm.querySelector('input');
-        const text = input.value.trim();
-        if (!text) return;
-
-        if (String(post.id) === 'welcome-seed') {
-            alert("Thank you for reading the guide! Join other threads to post discussions.");
-            input.value = '';
-            return;
-        }
-
-        const { error } = await db.from('post_comments').insert([{
-            post_id: post.id,
-            author: currentUsername,
-            user_id: currentUser.id,
-            content: text
-        }]);
-
-        if (error) {
-            alert(`Comment failed: ${error.message}`);
-            return;
-        }
-
-        if (post.author && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
-            try {
-                const { data: authorProfile } = await db
-                    .from('profiles')
-                    .select('id')
-                    .ilike('username', post.author)
-                    .maybeSingle();
-
-                if (authorProfile) {
-                    await sendNotification(
-                        authorProfile.id,
-                        'comment_reply',
-                        post.id,
-                        `replied to your post: "${text.substring(0, 36)}..."`
-                    );
-                }
-            } catch (e) {}
-        }
-
-        input.value = '';
-        await loadPostComments(post.id, post);
-        fetchCommentCount(post.id, item.querySelector(`.comment-count[data-post-id="${post.id}"]`));
-    });
-
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
@@ -2192,117 +1380,14 @@ function createPostCardElement(post) {
         });
     }
 
-    const revokeBtn = item.querySelector('.btn-revoke-author');
-    if (revokeBtn) {
-        revokeBtn.addEventListener('click', () => {
-            const target = revokeBtn.getAttribute('data-author');
-            if (!confirm(`Revoke posting privileges from @${target} in "${post.thread}"?`)) return;
-            const meta = threadMetaMap[post.thread] || { owner: '', moderators: [], banned: [] };
-            if (!meta.banned) meta.banned = [];
-            if (!meta.banned.includes(target)) meta.banned.push(target);
-            saveThreadMeta();
-            alert(`@${target} has had their posting access revoked in this thread.`);
-            renderCurrentFeed();
-        });
-    }
-
     return item;
 }
 
-async function fetchCommentCount(postId, countElement) {
-    if (!db || !countElement || String(postId) === 'welcome-seed') return;
-    try {
-        const { count } = await db
-            .from('post_comments')
-            .select('*', { count: 'exact', head: true })
-            .eq('post_id', postId);
-
-        countElement.textContent = `(${count || 0})`;
-    } catch (e) {
-        countElement.textContent = `(0)`;
-    }
-}
-
-async function loadPostComments(postId, post) {
-    const listEl = document.getElementById(`comments-list-${postId}`);
-    if (!listEl || !db) return;
-
-    if (String(postId) === 'welcome-seed') {
-        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">Comments are reserved for open discussion threads.</div>';
-        return;
-    }
-
-    try {
-        const { data: comments, error } = await db
-            .from('post_comments')
-            .select('*')
-            .eq('post_id', postId)
-            .order('id', { ascending: true });
-
-        if (error || !comments || comments.length === 0) {
-            listEl.innerHTML = '<div style="font-size: 0.8rem; color: #64748b;">No comments yet. Start the conversation!</div>';
-            return;
-        }
-
-        listEl.innerHTML = '';
-        comments.forEach(c => {
-            const myVote = userCommentVotes[c.id] || 0;
-            const commentScore = (Number(c.likes || 0) - Number(c.dislikes || 0));
-
-            const div = document.createElement('div');
-            div.className = 'comment-item';
-            div.innerHTML = `
-                <div class="comment-vote-box">
-                    <button class="comment-vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-dir="1">▲</button>
-                    <span class="comment-vote-score">${commentScore}</span>
-                    <button class="comment-vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-dir="-1">▼</button>
-                </div>
-                <div class="comment-body">
-                    <div class="comment-meta">
-                        <span class="clickable-username" data-username="${escapeHTML(c.author)}">@${escapeHTML(c.author)}</span>
-                        <span>${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div class="comment-content">${renderFormattedContent(c.content)}</div>
-                </div>
-            `;
-
-            div.querySelector('.clickable-username').addEventListener('click', (e) => {
-                window.openUserProfileCard(e.currentTarget.getAttribute('data-username'));
-            });
-
-            div.querySelectorAll('.comment-vote-btn').forEach(b => {
-                b.addEventListener('click', async (e) => {
-                    const dir = parseInt(e.currentTarget.getAttribute('data-dir'), 10);
-                    await handleCommentVote(c.id, dir, c.author);
-                    await loadPostComments(postId, post);
-                });
-            });
-
-            listEl.appendChild(div);
-        });
-    } catch (e) {
-        listEl.innerHTML = '<div style="font-size: 0.8rem; color: #ef4444;">Could not load comments.</div>';
-    }
-}
-
 async function deletePostById(postId) {
-    if (!currentUser) {
-        alert("You must be logged in to delete posts.");
-        return;
-    }
-
+    if (!currentUser) return;
     if (db) {
-        const { error } = await db
-            .from('Posts')
-            .delete()
-            .eq('id', postId);
-
-        if (error) {
-            alert(`Database deletion failed: ${error.message}`);
-            return;
-        }
+        await db.from('Posts').delete().eq('id', postId);
     }
-
     cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
     postCacheMap.delete(Number(postId));
     renderCurrentFeed();
@@ -2310,6 +1395,7 @@ async function deletePostById(postId) {
 }
 
 function renderCurrentFeed() {
+    if (!forumFeed) return;
     const sorted = sortPosts(cachedPosts);
     if (!sorted || sorted.length === 0) {
         forumFeed.innerHTML = `<div class="no-posts">No posts found for "${escapeHTML(activeThread)}".</div>`;
@@ -2322,11 +1408,9 @@ function renderCurrentFeed() {
     });
 }
 
-// --- FORUM RETRIEVAL WITH ASYNC RACE CONDITION GUARD ---
-
 async function loadForumPosts() {
     updateThreadControlsUI();
-    if (!db) return;
+    if (!db || !forumFeed) return;
 
     const thisFetchId = ++currentFetchId;
     const requestedThread = activeThread;
@@ -2340,9 +1424,7 @@ async function loadForumPosts() {
         .select('*')
         .eq('thread', requestedThread);
 
-    if (thisFetchId !== currentFetchId || activeThread !== requestedThread) {
-        return;
-    }
+    if (thisFetchId !== currentFetchId || activeThread !== requestedThread) return;
 
     if (error) {
         forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
@@ -2357,18 +1439,13 @@ async function loadForumPosts() {
     }
 
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
-    const postAuthors = cachedPosts.map(p => p.author).filter(Boolean);
-    await ensureAuthorAvatarsCached(postAuthors);
-
-    if (thisFetchId === currentFetchId && activeThread === requestedThread) {
-        renderCurrentFeed();
-    }
+    renderCurrentFeed();
 }
 
-// --- PINNED UPDATES TICKER (STRICTLY 3 MOST RECENT) ---
+// --- TICKER & ANNOUNCEMENTS ---
 
 async function loadProminentUpdates() {
-    if (!db) return;
+    if (!db || !tickerContent) return;
 
     const { data: updates, error } = await db
         .from('Posts')
@@ -2383,821 +1460,13 @@ async function loadProminentUpdates() {
     }
 
     cachedUpdates = updates;
-
     const items = updates.map(u => {
         const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
         return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
     }).join('');
 
     tickerContent.innerHTML = items + items;
-    tickerBadge.onclick = () => openUpdatesDrawer();
-    tickerContent.onclick = () => openUpdatesDrawer();
 }
-
-function openUpdatesDrawer() {
-    updatesModalFeed.innerHTML = '';
-    if (cachedUpdates.length === 0) {
-        updatesModalFeed.innerHTML = '<div class="no-posts">No recent updates.</div>';
-    } else {
-        cachedUpdates.forEach(update => {
-            updatesModalFeed.appendChild(createPostCardElement(update));
-        });
-    }
-    updatesModal.classList.remove('hidden');
-}
-
-closeUpdatesModalBtn.addEventListener('click', () => updatesModal.classList.add('hidden'));
-updatesModal.addEventListener('click', (e) => { if (e.target === updatesModal) updatesModal.classList.add('hidden'); });
-
-// --- NOTIFICATION ENGINE ---
-
-async function checkNotifications() {
-    if (!currentUser || !db) return;
-
-    try {
-        const { count: pendingReqs } = await db
-            .from('friendships')
-            .select('*', { count: 'exact', head: true })
-            .eq('friend_id', currentUser.id)
-            .eq('status', 'pending');
-
-        const { data: memberships } = await db
-            .from('conversation_members')
-            .select('conversation_id')
-            .eq('user_id', currentUser.id);
-
-        let unreadTotal = 0;
-        unreadCountsByConv.clear();
-
-        if (memberships && memberships.length > 0) {
-            const convIds = memberships.map(m => m.conversation_id);
-            const { data: unreadMsgs } = await db
-                .from('chat_messages')
-                .select('conversation_id')
-                .in('conversation_id', convIds)
-                .neq('sender_id', currentUser.id)
-                .eq('is_read', false)
-                .eq('pending_approval', false);
-
-            if (unreadMsgs) {
-                unreadTotal = unreadMsgs.length;
-                unreadMsgs.forEach(m => {
-                    const cur = unreadCountsByConv.get(m.conversation_id) || 0;
-                    unreadCountsByConv.set(m.conversation_id, cur + 1);
-                });
-            }
-        }
-
-        const total = (pendingReqs || 0) + unreadTotal;
-        if (total > 0) {
-            const badgeText = total > 99 ? '99+' : total;
-            notifBadge.textContent = badgeText;
-            notifBadge.classList.remove('hidden');
-            mobileMsgBadge.textContent = badgeText;
-            mobileMsgBadge.classList.remove('hidden');
-        } else {
-            notifBadge.classList.add('hidden');
-            mobileMsgBadge.classList.add('hidden');
-        }
-
-        if (!dmModal.classList.contains('hidden')) {
-            updateSidebarBadges();
-        }
-    } catch (e) {
-        console.warn("Notif check notice:", e);
-    }
-}
-
-function updateSidebarBadges() {
-    document.querySelectorAll('[data-conv-id]').forEach(el => {
-        const cId = el.getAttribute('data-conv-id');
-        const badge = el.querySelector('.conv-badge');
-        const count = unreadCountsByConv.get(cId) || 0;
-
-        if (badge) {
-            if (count > 0 && cId !== activeConversationId) {
-                badge.textContent = count > 99 ? '99+' : count;
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
-            }
-        }
-    });
-}
-
-clearAllNotifsBtn.addEventListener('click', async () => {
-    if (!currentUser || !db) return;
-    const { data: memberships } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
-
-    if (memberships && memberships.length > 0) {
-        const convIds = memberships.map(m => m.conversation_id);
-        await db
-            .from('chat_messages')
-            .update({ is_read: true })
-            .in('conversation_id', convIds)
-            .neq('sender_id', currentUser.id)
-            .eq('is_read', false);
-    }
-
-    unreadCountsByConv.clear();
-    notifBadge.classList.add('hidden');
-    mobileMsgBadge.classList.add('hidden');
-    updateSidebarBadges();
-});
-
-// --- MESSAGING & CHATS HUB ---
-
-dmModal.addEventListener('click', (e) => {
-    if (e.target === dmModal) {
-        closeMessagesModal();
-    }
-});
-
-function showSidebarViewOnMobile() {
-    sidebarPane.classList.remove('mobile-hidden');
-    chatPane.classList.add('mobile-hidden');
-    topModalBar.classList.remove('hidden');
-}
-
-function showChatViewOnMobile() {
-    sidebarPane.classList.add('mobile-hidden');
-    chatPane.classList.remove('mobile-hidden');
-    topModalBar.classList.add('hidden');
-}
-
-backToListBtn.addEventListener('click', () => {
-    if (window.chatSubscription) {
-        db.removeChannel(window.chatSubscription);
-        window.chatSubscription = null;
-    }
-    activeConversationId = null;
-    activeConversationPartnerId = null;
-    activeConversationPartnerUsername = null;
-    showSidebarViewOnMobile();
-    refreshMessagingHub();
-});
-
-async function refreshMessagingHub() {
-    await loadFriendRequests();
-    await loadFriends();
-    await loadConversations();
-    updateSidebarBadges();
-}
-
-async function loadFriendRequests() {
-    if (!currentUser || !db) return;
-
-    const { data: requests, error } = await db
-        .from('friendships')
-        .select('id, user_id')
-        .eq('friend_id', currentUser.id)
-        .eq('status', 'pending');
-
-    if (error || !requests || requests.length === 0) {
-        requestsHeader.classList.add('hidden');
-        requestsContainer.innerHTML = '';
-        return;
-    }
-
-    const requesterIds = requests.map(r => r.user_id);
-    const { data: profiles } = await db
-        .from('profiles')
-        .select('id, username')
-        .in('id', requesterIds);
-
-    const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
-
-    requestsHeader.classList.remove('hidden');
-    requestsContainer.innerHTML = '';
-
-    requests.forEach(req => {
-        const username = profileMap.get(req.user_id) || 'unknown';
-        const item = document.createElement('div');
-        item.className = 'req-item';
-        item.innerHTML = `
-            <span class="clickable-username" data-username="${escapeHTML(username)}">@${escapeHTML(username)}</span>
-            <div class="req-actions">
-                <button class="btn-accept" title="Accept">✓</button>
-                <button class="btn-deny" title="Deny">✕</button>
-            </div>
-        `;
-
-        item.querySelector('.clickable-username').addEventListener('click', () => {
-            window.openUserProfileCard(username);
-        });
-
-        item.querySelector('.btn-accept').addEventListener('click', () => handleRequest(req.id, true));
-        item.querySelector('.btn-deny').addEventListener('click', () => handleRequest(req.id, false));
-        requestsContainer.appendChild(item);
-    });
-}
-
-async function handleRequest(requestId, accept) {
-    if (!db) return;
-    if (accept) {
-        const { data: updatedReq, error } = await db
-            .from('friendships')
-            .update({ status: 'accepted' })
-            .eq('id', requestId)
-            .select()
-            .single();
-
-        if (error) {
-            alert(`Error accepting request: ${error.message}`);
-        } else if (updatedReq) {
-            await db
-                .from('chat_messages')
-                .update({ pending_approval: false })
-                .or(`and(sender_id.eq.${updatedReq.user_id}),and(sender_id.eq.${updatedReq.friend_id})`)
-                .eq('pending_approval', true);
-        }
-    } else {
-        const { error } = await db
-            .from('friendships')
-            .delete()
-            .eq('id', requestId);
-
-        if (error) alert(`Error declining request: ${error.message}`);
-    }
-    refreshMessagingHub();
-    checkNotifications();
-}
-
-async function loadFriends() {
-    if (!currentUser || !db) return;
-
-    const { data: friendships, error } = await db
-        .from('friendships')
-        .select('user_id, friend_id')
-        .eq('status', 'accepted')
-        .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
-
-    if (error) {
-        console.warn("Error loading friends:", error);
-        return;
-    }
-
-    const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
-
-    if (friendIds.length === 0) {
-        friendsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No friends yet. Add one above!</div>';
-        myFriendsList = [];
-        return;
-    }
-
-    const { data: profiles } = await db
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', friendIds);
-
-    myFriendsList = profiles || [];
-    myFriendsList.forEach(p => {
-        if (p.avatar_url) userAvatarCache.set(p.id, p.avatar_url);
-        if (p.username && p.avatar_url) usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url);
-    });
-
-    const { data: myMemberships } = await db
-        .from('conversation_members')
-        .select('conversation_id, user_id')
-        .in('user_id', [currentUser.id, ...friendIds]);
-
-    const userConvMap = new Map();
-    (myMemberships || []).forEach(m => {
-        if (!userConvMap.has(m.user_id)) userConvMap.set(m.user_id, new Set());
-        userConvMap.get(m.user_id).add(m.conversation_id);
-    });
-
-    const myConvs = userConvMap.get(currentUser.id) || new Set();
-
-    friendsContainer.innerHTML = '';
-    myFriendsList.forEach(friend => {
-        const theirConvs = userConvMap.get(friend.id) || new Set();
-        let directConvId = null;
-        for (let cId of theirConvs) {
-            if (myConvs.has(cId)) {
-                directConvId = cId;
-                break;
-            }
-        }
-
-        const div = document.createElement('div');
-        div.className = 'conv-item';
-        div.id = `friend-item-${friend.id}`;
-        if (directConvId) div.setAttribute('data-conv-id', directConvId);
-
-        const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
-        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
-
-        div.innerHTML = `
-            <div class="conv-item-label">
-                <span>@${escapeHTML(friend.username)}</span>
-            </div>
-            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
-        `;
-
-        div.addEventListener('click', () => startOrOpenDirectChat(friend));
-        friendsContainer.appendChild(div);
-    });
-
-    groupFriendsChecklist.innerHTML = '';
-    myFriendsList.forEach(friend => {
-        const item = document.createElement('label');
-        item.className = 'checkbox-item';
-        item.innerHTML = `
-            <input type="checkbox" value="${friend.id}" class="group-friend-chk">
-            <span>@${escapeHTML(friend.username)}</span>
-        `;
-        groupFriendsChecklist.appendChild(item);
-    });
-}
-
-addFriendBtn.addEventListener('click', async () => {
-    if (!db) return;
-    const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
-    if (!targetUsername) return;
-
-    if (targetUsername === currentUsername.toLowerCase()) {
-        alert("You cannot add yourself as a friend.");
-        return;
-    }
-
-    const { data: targetProfile, error: profileErr } = await db
-        .from('profiles')
-        .select('id, username')
-        .ilike('username', targetUsername)
-        .maybeSingle();
-
-    if (profileErr || !targetProfile) {
-        alert("User not found.");
-        return;
-    }
-
-    const { data: existing } = await db
-        .from('friendships')
-        .select('id, status, user_id')
-        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${currentUser.id})`)
-        .maybeSingle();
-
-    if (existing) {
-        if (existing.status === 'accepted') {
-            alert("You are already friends with this user.");
-        } else if (existing.user_id === currentUser.id) {
-            alert("Friend request already sent. Waiting for response.");
-        } else {
-            alert("This user has already sent you a request! Check incoming requests.");
-        }
-        return;
-    }
-
-    const { error: insertErr } = await db
-        .from('friendships')
-        .insert([{ 
-            user_id: currentUser.id, 
-            friend_id: targetProfile.id, 
-            status: 'pending' 
-        }]);
-
-    if (insertErr) {
-        alert(`Could not send request: ${insertErr.message}`);
-        return;
-    }
-
-    await sendNotification(
-        targetProfile.id,
-        'friend_request',
-        null,
-        'sent you a friend request.'
-    );
-
-    addFriendInput.value = '';
-    alert(`Friend request sent to @${targetProfile.username}!`);
-    refreshMessagingHub();
-});
-
-async function loadConversations() {
-    if (!currentUser || !db) return;
-
-    const { data: memberships } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
-
-    if (!memberships || memberships.length === 0) {
-        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
-        return;
-    }
-
-    const convIds = memberships.map(m => m.conversation_id);
-    const { data: convs } = await db
-        .from('conversations')
-        .select('*')
-        .in('id', convIds)
-        .eq('is_group', true);
-
-    groupsContainer.innerHTML = '';
-    if (!convs || convs.length === 0) {
-        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
-        return;
-    }
-
-    convs.forEach(conv => {
-        const div = document.createElement('div');
-        div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
-        div.setAttribute('data-conv-id', conv.id);
-
-        const unreadCount = unreadCountsByConv.get(conv.id) || 0;
-        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
-
-        div.innerHTML = `
-            <div class="conv-item-label">
-                <span>💬 ${escapeHTML(conv.name)}</span>
-            </div>
-            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
-        `;
-
-        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, null, true));
-        groupsContainer.appendChild(div);
-    });
-}
-
-async function startOrOpenDirectChat(friend) {
-    if (!db) return;
-    const { data: myConvs } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
-
-    const { data: theirConvs } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', friend.id);
-
-    const myIds = new Set((myConvs || []).map(c => c.conversation_id));
-    const common = (theirConvs || []).filter(c => myIds.has(c.conversation_id));
-
-    let existing1on1Id = null;
-    if (common.length > 0) {
-        const { data: convMatches } = await db
-            .from('conversations')
-            .select('id')
-            .in('id', common.map(c => c.conversation_id))
-            .eq('is_group', false)
-            .maybeSingle();
-
-        if (convMatches) existing1on1Id = convMatches.id;
-    }
-
-    const { data: friendship } = await db
-        .from('friendships')
-        .select('status')
-        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
-        .maybeSingle();
-
-    const isFriend = friendship && friendship.status === 'accepted';
-
-    if (existing1on1Id) {
-        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, friend.username, isFriend);
-    } else {
-        const { data: newConv, error: convErr } = await db
-            .from('conversations')
-            .insert([{ is_group: false, created_by: currentUser.id }])
-            .select()
-            .single();
-
-        if (convErr) {
-            alert(`Error creating chat: ${convErr.message}`);
-            return;
-        }
-
-        await db.from('conversation_members').insert([
-            { conversation_id: newConv.id, user_id: currentUser.id },
-            { conversation_id: newConv.id, user_id: friend.id }
-        ]);
-
-        selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
-    }
-}
-
-toggleGroupCreateBtn.addEventListener('click', () => groupCreatorBox.classList.toggle('hidden'));
-cancelGroupBtn.addEventListener('click', () => groupCreatorBox.classList.add('hidden'));
-
-createGroupConfirmBtn.addEventListener('click', async () => {
-    if (!db) return;
-    const groupName = groupNameInput.value.trim();
-    if (!groupName) {
-        alert("Please provide a group name.");
-        return;
-    }
-
-    const checkedBoxes = document.querySelectorAll('.group-friend-chk:checked');
-    const selectedFriendIds = Array.from(checkedBoxes).map(b => b.value);
-
-    if (selectedFriendIds.length === 0) {
-        alert("Please select at least one friend to add.");
-        return;
-    }
-
-    const { data: newGroup, error: groupErr } = await db
-        .from('conversations')
-        .insert([{
-            name: groupName,
-            is_group: true,
-            created_by: currentUser.id
-        }])
-        .select()
-        .single();
-
-    if (groupErr) {
-        alert(`Error creating group: ${groupErr.message}`);
-        return;
-    }
-
-    const membersToInsert = [
-        { conversation_id: newGroup.id, user_id: currentUser.id },
-        ...selectedFriendIds.map(fId => ({ conversation_id: newGroup.id, user_id: fId }))
-    ];
-
-    const { error: membersErr } = await db
-        .from('conversation_members')
-        .insert(membersToInsert);
-
-    if (membersErr) {
-        alert(`Error adding group members: ${membersErr.message}`);
-        return;
-    }
-
-    groupNameInput.value = '';
-    groupCreatorBox.classList.add('hidden');
-    await loadConversations();
-    selectConversation(newGroup.id, `Group: ${groupName}`, null, null, true);
-});
-
-function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
-    if (!db) return;
-    activeConversationId = conversationId;
-    activeConversationPartnerId = partnerId;
-    activeConversationPartnerUsername = partnerUsername;
-    activeConversationIsFriend = isFriend;
-
-    if (partnerUsername) {
-        chatHeader.innerHTML = `<span class="clickable-username" title="Click to view @${escapeHTML(partnerUsername)}'s profile">@${escapeHTML(partnerUsername)}</span>`;
-    } else {
-        chatHeader.textContent = title;
-    }
-
-    dmText.disabled = false;
-    dmImageInput.disabled = false;
-    dmSendBtn.disabled = false;
-
-    if (!isFriend && partnerId) {
-        chatPendingBanner.classList.remove('hidden');
-    } else {
-        chatPendingBanner.classList.add('hidden');
-    }
-
-    showChatViewOnMobile();
-    document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
-
-    const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
-    if (activeEl) {
-        activeEl.classList.add('active');
-        const badge = activeEl.querySelector('.conv-badge');
-        if (badge) badge.classList.add('hidden');
-    }
-
-    loadMessages(true);
-
-    if (window.chatSubscription) {
-        db.removeChannel(window.chatSubscription);
-    }
-
-    window.chatSubscription = db.channel(`chat_${activeConversationId}`)
-        .on(
-            'postgres_changes',
-            { 
-                event: 'INSERT', 
-                schema: 'public', 
-                table: 'chat_messages', 
-                filter: `conversation_id=eq.${activeConversationId}` 
-            },
-            (payload) => {
-                loadMessages(true);
-            }
-        )
-        .subscribe();
-}
-
-function scrollToBottom(force = false) {
-    if (!chatMessages) return;
-    const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 120;
-    
-    if (force || isNearBottom) {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-        requestAnimationFrame(() => {
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        });
-    }
-}
-
-async function ensureAvatarsCached(userIds) {
-    if (!db) return;
-    const missing = userIds.filter(id => !userAvatarCache.has(id));
-    if (missing.length === 0) return;
-
-    const { data: profiles } = await db
-        .from('profiles')
-        .select('id, avatar_url')
-        .in('id', missing);
-
-    (profiles || []).forEach(p => {
-        userAvatarCache.set(p.id, p.avatar_url || null);
-    });
-}
-
-async function loadMessages(forceScroll = false) {
-    if (!currentUser || !activeConversationId || !db) return;
-
-    const { data: messages, error } = await db
-        .from('chat_messages')
-        .select('*')
-        .eq('conversation_id', activeConversationId)
-        .order('id', { ascending: true });
-
-    if (error) {
-        console.warn("Error loading chat messages:", error);
-        return;
-    }
-
-    const visibleMessages = (messages || []).filter(msg => {
-        if (!msg.pending_approval) return true;
-        return msg.sender_id === currentUser.id;
-    });
-
-    const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
-    if (!forceScroll && visibleMessages.length === currentMsgCount) {
-        return;
-    }
-
-    chatMessages.innerHTML = '';
-    if (!visibleMessages || visibleMessages.length === 0) {
-        chatMessages.innerHTML = '<div class="no-posts">No messages in this chat yet. Start the conversation!</div>';
-        return;
-    }
-
-    const senderIds = Array.from(new Set(visibleMessages.map(m => m.sender_id)));
-    await ensureAvatarsCached(senderIds);
-
-    visibleMessages.forEach(msg => {
-        const isMine = msg.sender_id === currentUser.id;
-        const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
-        const isPending = msg.pending_approval;
-
-        const row = document.createElement('div');
-        row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
-
-        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
-        const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
-        const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
-        const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
-        const pendingBadge = (isMine && isPending) ? `<span class="pending-tag">⏳ Pending Friend Acceptance</span>` : '';
-
-        const bubbleHtml = `
-            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
-                ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
-            </div>
-        `;
-
-        row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
-
-        const attachedImg = row.querySelector('.chat-img-thumb');
-        if (attachedImg) {
-            attachedImg.onload = () => scrollToBottom(forceScroll);
-        }
-
-        row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
-            clickable.addEventListener('click', (e) => {
-                const u = e.currentTarget.getAttribute('data-username');
-                if (u) window.openUserProfileCard(u);
-            });
-        });
-
-        chatMessages.appendChild(row);
-    });
-
-    scrollToBottom(forceScroll);
-
-    await db
-        .from('chat_messages')
-        .update({ is_read: true })
-        .eq('conversation_id', activeConversationId)
-        .neq('sender_id', currentUser.id)
-        .eq('is_read', false);
-
-    unreadCountsByConv.delete(activeConversationId);
-    checkNotifications();
-}
-
-dmImageInput.addEventListener('change', () => {
-    const file = dmImageInput.files[0];
-    const label = document.querySelector('.upload-photo-label');
-    if (file) {
-        label.style.borderColor = '#16a34a';
-        label.title = `Attached: ${file.name}`;
-    } else {
-        label.style.borderColor = '#475569';
-        label.title = 'Attach Photo';
-    }
-});
-
-dmForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!db) return;
-    if (isSuspended) {
-        triggerSuspensionGate();
-        return;
-    }
-
-    const content = dmText.value.trim();
-    const file = dmImageInput.files[0];
-
-    if (!content && !file) return;
-    if (!activeConversationId) return;
-
-    dmSendBtn.disabled = true;
-    dmSendBtn.textContent = '...';
-
-    let uploadedImageUrl = null;
-
-    if (file) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
-        const filePath = `${activeConversationId}/${fileName}`;
-
-        const { error: uploadError } = await db.storage
-            .from('chat-images')
-            .upload(filePath, file);
-
-        if (uploadError) {
-            alert(`Photo upload failed: ${uploadError.message}`);
-            dmSendBtn.disabled = false;
-            dmSendBtn.textContent = 'Send';
-            return;
-        }
-
-        const { data: publicUrlData } = db.storage
-            .from('chat-images')
-            .getPublicUrl(filePath);
-
-        uploadedImageUrl = publicUrlData.publicUrl;
-    }
-
-    const isPendingApproval = Boolean(activeConversationPartnerId && !activeConversationIsFriend);
-
-    const { error } = await db
-        .from('chat_messages')
-        .insert([{
-            conversation_id: activeConversationId,
-            sender_id: currentUser.id,
-            sender_username: currentUsername,
-            content: content || '',
-            image_url: uploadedImageUrl,
-            pending_approval: isPendingApproval
-        }]);
-
-    dmSendBtn.disabled = false;
-    dmSendBtn.textContent = 'Send';
-
-    if (error) {
-        alert(`Error sending message: ${error.message}`);
-        return;
-    }
-
-    if (isPendingApproval && activeConversationPartnerId) {
-        await db.from('friendships').insert([{
-            user_id: currentUser.id,
-            friend_id: activeConversationPartnerId,
-            status: 'pending'
-        }]).then(() => {
-            sendNotification(
-                activeConversationPartnerId,
-                'friend_request',
-                null,
-                'sent you a friend request and a pending message.'
-            );
-        }).catch(() => {});
-    }
-
-    dmText.value = '';
-    dmImageInput.value = '';
-    const label = document.querySelector('.upload-photo-label');
-    label.style.borderColor = '#475569';
-    label.title = 'Attach Photo';
-
-    loadMessages(true);
-});
 
 // --- TELEMETRY ---
 
@@ -3208,35 +1477,37 @@ function startCompositionTimer() {
     
     timerInterval = setInterval(() => {
         const elapsed = (Date.now() - pageLoadTime) / 1000;
-        statTimer.textContent = `${elapsed.toFixed(1)}s`;
+        if (statTimer) statTimer.textContent = `${elapsed.toFixed(1)}s`;
     }, 100);
 }
 
 window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
-textBox.addEventListener('paste', () => {
-    textWasPasted = true;
-    statPaste.textContent = "TRUE";
-    statPaste.className = "badge badge-yellow";
-    if (!isTimerRunning) startCompositionTimer();
-});
+if (textBox) {
+    textBox.addEventListener('paste', () => {
+        textWasPasted = true;
+        if (statPaste) {
+            statPaste.textContent = "TRUE";
+            statPaste.className = "badge badge-yellow";
+        }
+        if (!isTimerRunning) startCompositionTimer();
+    });
 
-textBox.addEventListener('keydown', (e) => {
-    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
-
-    if (!isTimerRunning) startCompositionTimer();
-    
-    const currentTime = Date.now();
-    
-    if (lastKeyTime !== null) {
-        const gap = currentTime - lastKeyTime;
-        if (keystrokeGaps.length < 50) keystrokeGaps.push(gap);
-    }
-    
-    lastKeyTime = currentTime;
-    statKeys.textContent = `${textBox.value.length + 1} keys`;
-});
+    textBox.addEventListener('keydown', (e) => {
+        if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
+        if (!isTimerRunning) startCompositionTimer();
+        
+        const currentTime = Date.now();
+        if (lastKeyTime !== null) {
+            const gap = currentTime - lastKeyTime;
+            if (keystrokeGaps.length < 50) keystrokeGaps.push(gap);
+        }
+        
+        lastKeyTime = currentTime;
+        if (statKeys) statKeys.textContent = `${textBox.value.length + 1} keys`;
+    });
+}
 
 function escapeHTML(str) {
     if (!str) return '';
@@ -3258,83 +1529,76 @@ function resetTelemetryConsole() {
     keystrokeGaps = [];
     mouseMovementsRecorded = 0;
     lastKeyTime = null;
-    textBox.value = '';
+    if (textBox) textBox.value = '';
     selectedPostPhotoFile = null;
-    postImageFile.value = '';
-    postPhotoPreviewBar.classList.add('hidden');
-    statPaste.textContent = "FALSE";
-    statPaste.className = "badge badge-green";
-    statTimer.textContent = "0.0s"; 
-    statKeys.textContent = "0 keys";
+    if (postImageFile) postImageFile.value = '';
+    if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
+    if (statPaste) { statPaste.textContent = "FALSE"; statPaste.className = "badge badge-green"; }
+    if (statTimer) statTimer.textContent = "0.0s"; 
+    if (statKeys) statKeys.textContent = "0 keys";
 }
 
 async function navigateToPost(postId) {
     if (!db) return;
     const { data: post } = await db.from('Posts').select('thread').eq('id', postId).maybeSingle();
-    
     if (!post) {
         alert("This post may have been deleted.");
         return;
     }
 
-    notificationsModal.classList.add('hidden'); // Close the notification modal
-    
-    // Switch threads if necessary
+    if (notificationsModal) notificationsModal.classList.add('hidden');
     if (activeThread !== post.thread) {
         activeThread = post.thread;
-        // syncTopicDropdown();
-        await loadForumPosts(); // Wait for the new thread feed to render
+        await loadForumPosts();
     }
 
-    // Find the post and scroll to it smoothly
     const targetEl = document.getElementById(`post-${postId}`);
     if (targetEl) {
         targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Briefly flash a highlight ring around the post so they spot it
-        targetEl.style.transition = 'box-shadow 0.4s ease';
         targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
         setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
     }
 }
 
 // --- FAB POST MODAL LOGIC ---
+
 function openFabModal(e) {
     if (!currentUser) { 
         alert("Please log in to post."); 
-        authEmailInput.focus();
+        if (authEmailInput) authEmailInput.focus();
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return; 
     }
     
-    // Smooth origin animation math
-    const rect = e.currentTarget.getBoundingClientRect();
-    const originX = rect.left + rect.width / 2;
-    const originY = rect.top + rect.height / 2;
-    const originXPercent = (originX / window.innerWidth) * 100;
-    const originYPercent = (originY / window.innerHeight) * 100;
-
-    fabModalContainer.style.transformOrigin = `${originXPercent}% ${originYPercent}%`;
-    fabModalOverlay.classList.remove('hidden');
+    if (fabModalContainer && e) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const originXPercent = ((rect.left + rect.width / 2) / window.innerWidth) * 100;
+        const originYPercent = ((rect.top + rect.height / 2) / window.innerHeight) * 100;
+        fabModalContainer.style.transformOrigin = `${originXPercent}% ${originYPercent}%`;
+    }
     
-    requestAnimationFrame(() => {
-        fabModalOverlay.classList.add('active');
-    });
+    if (fabModalOverlay) {
+        fabModalOverlay.classList.remove('hidden');
+        requestAnimationFrame(() => fabModalOverlay.classList.add('active'));
+    }
 
-    threadSearchSelect.value = activeThread;
-    threadSuggestDropdown.classList.add('hidden');
+    if (threadSearchSelect) threadSearchSelect.value = activeThread;
+    if (threadSuggestDropdown) threadSuggestDropdown.classList.add('hidden');
 }
 
-desktopFab.addEventListener('click', openFabModal);
-mobileFab.addEventListener('click', openFabModal);
+safeAddListener(desktopFab, 'click', openFabModal);
+safeAddListener(mobileFab, 'click', openFabModal);
 
-closeFabModalBtn.addEventListener('click', () => {
-    fabModalOverlay.classList.remove('active');
-    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+safeAddListener(closeFabModalBtn, 'click', () => {
+    if (fabModalOverlay) {
+        fabModalOverlay.classList.remove('active');
+        setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+    }
 });
 
-// Community Search Dropdown Logic
-threadSearchSelect.addEventListener('input', () => {
+// Community Search in FAB Modal
+safeAddListener(threadSearchSelect, 'input', () => {
+    if (!threadSuggestDropdown) return;
     const q = threadSearchSelect.value.trim().toLowerCase();
     threadSuggestDropdown.innerHTML = '';
     
@@ -3367,13 +1631,15 @@ threadSearchSelect.addEventListener('input', () => {
 });
 
 document.addEventListener('click', (e) => {
-    if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
-        threadSuggestDropdown.classList.add('hidden');
+    if (threadSearchSelect && threadSuggestDropdown) {
+        if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
+            threadSuggestDropdown.classList.add('hidden');
+        }
     }
 });
 
-// --- FORUM SUBMISSION WITH RISK SCORING & CAPTCHA ESCALATION ---
-forumForm.addEventListener('submit', async (event) => {
+// Post Submission
+safeAddListener(forumForm, 'submit', async (event) => {
     event.preventDefault(); 
     
     if (!currentUsername) {
@@ -3386,15 +1652,14 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    const targetThread = threadSearchSelect.value.trim();
+    const targetThread = threadSearchSelect ? threadSearchSelect.value.trim() : activeThread;
     if (!targetThread) {
         alert("Please select a community to post in.");
         return;
     }
     
-    // Verify thread exists
     if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
-        alert("Community not found. Please select an existing community from the dropdown, or create a new one from the sidebar.");
+        alert("Community not found. Please choose an existing thread or create a new one from the sidebar.");
         return;
     }
 
@@ -3408,53 +1673,21 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    let behaviorPoints = 0;
-    if (honeypotField.value !== "") behaviorPoints += 5;
-    if (textWasPasted) behaviorPoints += 1;
-    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
-    if (totalTimeElapsed < 1.5 && textBox.value.length > 50) behaviorPoints += 1;
-
-    const now = Date.now();
-    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) behaviorPoints += 2;
-
-    if (keystrokeGaps.length > 5) {
-        let perfectIntervals = 0;
-        for (let i = 2; i < keystrokeGaps.length; i++) {
-            if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
-        }
-        const uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
-        if (uniformityRatio > 0.75) behaviorPoints += 1;
-    }
-
-    if (behaviorPoints > 0) {
-        suspicionScore += behaviorPoints;
-        updateSuspicionUI();
-        if (currentUser && db) db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
-        if (suspicionScore >= 3) {
-            triggerSuspensionGate();
-            return;
-        }
-    }
-
     if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
         alert("Please enter a message or attach a photo.");
         return;
     }
 
     const submitBtn = document.getElementById('forum-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Publishing...';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Publishing...'; }
 
     let postImageUrl = null;
-
     if (selectedPostPhotoFile) {
         const fileExt = selectedPostPhotoFile.name.split('.').pop();
         const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
         const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, selectedPostPhotoFile);
 
-        if (uploadError) {
-            console.warn("Post image upload failed:", uploadError);
-        } else {
+        if (!uploadError) {
             const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
             postImageUrl = publicUrlData.publicUrl;
         }
@@ -3469,12 +1702,10 @@ forumForm.addEventListener('submit', async (event) => {
             image_url: postImageUrl
         }]);
 
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Publish to Forum';
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Publish Post'; }
 
     if (error) {
         alert(`Database Error: ${error.message}`);
-        console.error("Supabase Insert Error:", error);
         return;
     }
 
@@ -3488,9 +1719,10 @@ forumForm.addEventListener('submit', async (event) => {
     }
 
     resetTelemetryConsole();
-
-    fabModalOverlay.classList.remove('active');
-    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+    if (fabModalOverlay) {
+        fabModalOverlay.classList.remove('active');
+        setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+    }
 });
 
 // Boot Application
