@@ -2991,11 +2991,19 @@ window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
 window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
 
 if (textBox) {
+    textBox.addEventListener('focus', () => {
+        if (!isTimerRunning) startCompositionTimer();
+    });
+
     textBox.addEventListener('paste', () => {
         textWasPasted = true;
         if (statPaste) {
             statPaste.textContent = "TRUE";
             statPaste.className = "badge badge-yellow";
+        }
+        if (pillSuspicionTag) {
+            pillSuspicionTag.textContent = `${Math.min(3, suspicionScore + 1)}/3 Risk (Paste Flagged)`;
+            pillSuspicionTag.style.color = "#eab308";
         }
         if (!isTimerRunning) startCompositionTimer();
     });
@@ -3007,7 +3015,7 @@ if (textBox) {
         const currentTime = Date.now();
         if (lastKeyTime !== null) {
             const gap = currentTime - lastKeyTime;
-            if (keystrokeGaps.length < 50) keystrokeGaps.push(gap);
+            if (keystrokeGaps.length < 100) keystrokeGaps.push(gap);
         }
         
         lastKeyTime = currentTime;
@@ -3193,6 +3201,59 @@ safeAddListener(forumForm, 'submit', async (event) => {
     if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
         alert("Please enter a message or attach a photo.");
         return;
+    }
+
+    // --- TELEMETRY EVALUATION & RISK SCORING ---
+    let behaviorPoints = 0;
+    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
+
+    // 1. Bot Trap / Hidden honeypot field filled
+    if (honeypotField && honeypotField.value.trim() !== "") {
+        behaviorPoints += 5;
+    }
+
+    // 2. Clipboard Paste Detection (+1 Risk)
+    if (textWasPasted) {
+        behaviorPoints += 1;
+    }
+
+    // 3. Superhuman speed: long message submitted almost instantly
+    if (totalTimeElapsed < 2.0 && textBox.value.length > 40) {
+        behaviorPoints += 2;
+    }
+
+    // 4. Zero Mouse/Touch Interaction (headless scripts don't trigger mousemove/touchstart)
+    if (mouseMovementsRecorded === 0 && textBox.value.length > 30) {
+        behaviorPoints += 2;
+    }
+
+    // 5. Rapid burst posting (less than 12 seconds between forum submissions)
+    const now = Date.now();
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 12000) {
+        behaviorPoints += 2;
+    }
+
+    // 6. Cadence evaluation: mechanical, zero-variance intervals
+    if (keystrokeGaps.length > 6) {
+        let identicalGaps = 0;
+        for (let i = 1; i < keystrokeGaps.length; i++) {
+            if (Math.abs(keystrokeGaps[i] - keystrokeGaps[i - 1]) <= 2) identicalGaps++;
+        }
+        const roboticRatio = identicalGaps / (keystrokeGaps.length - 1);
+        if (roboticRatio > 0.5) behaviorPoints += 2;
+    }
+
+    // Escalate risk score and check suspension threshold (3/3)
+    if (behaviorPoints > 0) {
+        suspicionScore += behaviorPoints;
+        updateSuspicionUI();
+        if (currentUser && db) {
+            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+        }
+        if (suspicionScore >= 3) {
+            triggerSuspensionGate();
+            return;
+        }
     }
 
     const submitBtn = document.getElementById('forum-submit-btn');
