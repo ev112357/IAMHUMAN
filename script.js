@@ -660,21 +660,26 @@ function drawCaptcha(code) {
 
 function triggerSuspensionGate() {
     isSuspended = true;
-    suspicionScore = Math.max(3, suspicionScore);
-    updateSuspicionUI();
+    suspicionScore = Math.max(5, suspicionScore);
 
-    // 1. Immediately dismiss posting modal so the CAPTCHA is unobstructed
+    // 1. Immediately dismiss posting & messaging modals
     closeFabModal();
+    if (dmModal) dmModal.classList.add('hidden');
 
-    // 2. Generate and display the CAPTCHA challenge
+    // 2. Generate and display the CAPTCHA challenge on top of everything
     currentCaptchaSecret = generateCaptchaCode();
     drawCaptcha(currentCaptchaSecret);
     if (captchaInput) {
         captchaInput.value = "";
-        setTimeout(() => captchaInput.focus(), 100);
+        setTimeout(() => captchaInput.focus(), 150);
     }
-    if (captchaStatusMsg) captchaStatusMsg.textContent = "Your account is temporarily suspended. Solve the code to restore posting.";
-    if (captchaSuspensionModal) captchaSuspensionModal.classList.remove('hidden');
+    if (captchaStatusMsg) {
+        captchaStatusMsg.textContent = "Your account is temporarily suspended (5/5 Risk). Solve the code to restore posting.";
+    }
+    if (captchaSuspensionModal) {
+        captchaSuspensionModal.classList.remove('hidden');
+        captchaSuspensionModal.style.display = "flex";
+    }
 
     // 3. Persist suspension lock to Supabase
     if (currentUser && db) {
@@ -727,22 +732,29 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
 });
 
 function updateSuspicionUI() {
-    if (!statSuspicion || !pillSuspicionTag) return;
-    statSuspicion.textContent = `${suspicionScore} / 3`;
-    pillSuspicionTag.textContent = `${suspicionScore}/3 Risk`;
+    if (statSuspicion) statSuspicion.textContent = `${suspicionScore} / 5`;
+    if (pillSuspicionTag) {
+        pillSuspicionTag.textContent = `${suspicionScore}/5 Risk`;
+        if (suspicionScore === 0) {
+            pillSuspicionTag.style.color = "#22c55e";
+        } else if (suspicionScore < 5) {
+            pillSuspicionTag.style.color = "#eab308";
+        } else {
+            pillSuspicionTag.style.color = "#ef4444";
+        }
+    }
 
-    if (suspicionScore === 0) {
-        statSuspicion.className = "badge badge-green";
-        pillSuspicionTag.style.color = "#22c55e";
-    } else if (suspicionScore < 3) {
-        statSuspicion.className = "badge badge-yellow";
-        pillSuspicionTag.style.color = "#eab308";
-    } else {
-        statSuspicion.className = "badge badge-red";
-        pillSuspicionTag.style.color = "#ef4444";
+    if (statSuspicion) {
+        if (suspicionScore === 0) statSuspicion.className = "badge badge-green";
+        else if (suspicionScore < 5) statSuspicion.className = "badge badge-yellow";
+        else statSuspicion.className = "badge badge-red";
+    }
+
+    // Immediately trigger CAPTCHA the instant the 5-point threshold is met
+    if (suspicionScore >= 5 && !isSuspended) {
+        triggerSuspensionGate();
     }
 }
-
 // --- PERMISSIONS HELPERS ---
 
 function isSiteAdmin(username = currentUsername) {
@@ -1965,7 +1977,7 @@ function showSidebarViewOnMobile() {
 function showChatViewOnMobile() {
     if (sidebarPane) sidebarPane.classList.add('mobile-hidden');
     if (chatPane) chatPane.classList.remove('mobile-hidden');
-    if (topModalBar) topModalBar.classList.add('hidden');
+    if (topModalBar) topModalBar.classList.remove('hidden'); // Always keep modal header visible
 }
 
 safeAddListener(backToListBtn, 'click', () => {
@@ -3029,11 +3041,15 @@ if (textBox) {
             statPaste.textContent = "TRUE";
             statPaste.className = "badge badge-yellow";
         }
-        if (pillSuspicionTag) {
-            pillSuspicionTag.textContent = `${Math.min(3, suspicionScore + 1)}/3 Risk (Paste Flagged)`;
-            pillSuspicionTag.style.color = "#eab308";
-        }
         if (!isTimerRunning) startCompositionTimer();
+
+        // Adds 1 suspicion point; will only pop up if current score + 1 reaches 5
+        suspicionScore += 1;
+        updateSuspicionUI();
+
+        if (currentUser && db) {
+            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+        }
     });
 
     textBox.addEventListener('keydown', (e) => {
@@ -3283,7 +3299,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
         if (currentUser && db) {
             db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
         }
-        if (suspicionScore >= 3) {
+        if (suspicionScore >= 5) {
             triggerSuspensionGate();
             return;
         }
