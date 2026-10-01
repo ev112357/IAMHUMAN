@@ -9,6 +9,12 @@ const db = (window.supabase && typeof window.supabase.createClient === 'function
             storage: window.localStorage,
             autoRefreshToken: true,
             detectSessionInUrl: true
+        },
+        global: {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate',
+                'Pragma': 'no-cache'
+            }
         }
     })
     : null;
