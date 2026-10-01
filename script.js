@@ -277,6 +277,7 @@ let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes
 let cachedPosts = [];
 let cachedUpdates = [];
 let postCacheMap = new Map();
+let threadFlairMap = new Map();
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -1784,6 +1785,55 @@ function updateThreadControlsUI() {
         }
     }
 
+    // Community Flair Button (Database Synced)
+    let flairBtn = document.getElementById('set-flair-btn');
+    const actionsBar = document.querySelector('.thread-actions-bar');
+
+    if (!currentUser) {
+        if (flairBtn) flairBtn.remove();
+    } else if (actionsBar) {
+        if (!flairBtn) {
+            flairBtn = document.createElement('button');
+            flairBtn.id = 'set-flair-btn';
+            flairBtn.type = 'button';
+            flairBtn.className = 'secondary btn-thread-action';
+            flairBtn.textContent = '🏷️ Set Flair';
+            flairBtn.onclick = async () => {
+                const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
+                const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
+                if (input === null) return;
+
+                const trimmed = input.trim().substring(0, 18);
+
+                if (trimmed === '') {
+                    await db
+                        .from('user_thread_flairs')
+                        .delete()
+                        .eq('thread_name', activeThread)
+                        .eq('username', currentUsername.toLowerCase());
+                    threadFlairMap.delete(currentUsername.toLowerCase());
+                } else {
+                    const { error } = await db
+                        .from('user_thread_flairs')
+                        .upsert({
+                            thread_name: activeThread,
+                            username: currentUsername.toLowerCase(),
+                            flair: trimmed
+                        });
+
+                    if (error) {
+                        alert(`Could not save flair: ${error.message}`);
+                        return;
+                    }
+                    threadFlairMap.set(currentUsername.toLowerCase(), trimmed);
+                }
+
+                renderCurrentFeed();
+            };
+            actionsBar.prepend(flairBtn);
+        }
+    }
+
     if (managePermsBtn) {
         if (canManagePermissions(activeThread)) managePermsBtn.classList.remove('hidden');
         else managePermsBtn.classList.add('hidden');
@@ -1992,11 +2042,23 @@ function renderFormattedContent(text) {
     const escaped = escapeHTML(text);
 
     const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, href) => {
-        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline;">${label}</a>`;
     });
 
-    const withBareUrls = withMdLinks.replace(/(^|[^">])(https?:\/\/[^\s<]+)/g, (_match, prefix, href) => {
-        return `${prefix}<a href="${href}" target="_blank" rel="noopener noreferrer">${href}</a>`;
+    // UI UPGRADE: Rich Link Previews
+    const withBareUrls = withMdLinks.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, (_match, space, href) => {
+        try {
+            const domain = new URL(href).hostname.replace('www.', '');
+            return `${space}<a href="${href}" target="_blank" rel="noopener noreferrer" class="link-preview-card">
+                <div class="link-icon">🔗</div>
+                <div class="link-info">
+                    <strong class="link-domain">${domain}</strong>
+                    <span class="link-url">${href}</span>
+                </div>
+            </a>`;
+        } catch (e) {
+            return `${space}<a href="${href}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">${href}</a>`;
+        }
     });
 
     return withBareUrls.replace(/\n/g, '<br>');
@@ -2947,6 +3009,12 @@ function createPostCardElement(post) {
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
     const renderedBody = post.is_pinned ? post.content : renderFormattedContent(post.content || '');
 
+    // Display globally synced flair
+    const authorFlair = threadFlairMap.get(cleanAuthor);
+    const userFlairBadge = authorFlair 
+        ? `<span class="badge" style="font-size:0.65rem; background: #1e293b; border: 1px solid #475569; color: #94a3b8; margin-left: 4px;">${escapeHTML(authorFlair)}</span>` 
+        : '';
+
     item.innerHTML = `
         <div class="vote-box">
             <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
@@ -2959,6 +3027,7 @@ function createPostCardElement(post) {
                     <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
                     <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>
                     ${roleBadge}
+                    ${userFlairBadge}
                 </div>
                 <span>${dateFormatted}</span>
             </div>
@@ -3129,7 +3198,21 @@ async function loadForumPosts() {
     const thisFetchId = ++currentFetchId;
     const requestedThread = activeThread;
 
-    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    // UI UPGRADE: Skeleton Loaders
+    forumFeed.innerHTML = Array(4).fill(`
+        <div class="post-item skeleton-pulse" style="border: 1px solid #334155; opacity: 0.7;">
+            <div style="width:40px; height:60px; background:#1e293b; border-radius:8px;"></div>
+            <div style="flex:1;">
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <div style="width:26px; height:26px; border-radius:50%; background:#1e293b;"></div>
+                    <div style="height:14px; width:120px; background:#1e293b; border-radius:4px; margin-top:5px;"></div>
+                </div>
+                <div style="height:12px; width:100%; background:#1e293b; border-radius:4px; margin-bottom:6px;"></div>
+                <div style="height:12px; width:80%; background:#1e293b; border-radius:4px;"></div>
+            </div>
+        </div>
+    `).join('');
+    
     cachedPosts = [];
     postCacheMap.clear();
 
@@ -3145,6 +3228,15 @@ async function loadForumPosts() {
         return;
     }
 
+    // BUG FIX: Fetch missing avatars for authors directly before rendering the feed
+    if (posts && posts.length > 0) {
+        const uniqueAuthors = Array.from(new Set(posts.map(p => p.author.toLowerCase().replace('@', ''))));
+        const { data: authorProfiles } = await db.from('profiles').select('username, avatar_url').in('username', uniqueAuthors);
+        (authorProfiles || []).forEach(profile => {
+            if (profile.avatar_url) usernameAvatarMap.set(profile.username.toLowerCase(), profile.avatar_url);
+        });
+    }
+
     if (requestedThread === "Welcome & Security") {
         const welcomePost = getWelcomeSecurityPost();
         cachedPosts = posts && posts.length > 0 ? [welcomePost, ...posts] : [welcomePost];
@@ -3153,6 +3245,18 @@ async function loadForumPosts() {
     }
 
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
+
+    // Fetch globally synced community flairs
+    threadFlairMap.clear();
+    const { data: flairs } = await db
+        .from('user_thread_flairs')
+        .select('username, flair')
+        .eq('thread_name', requestedThread);
+
+    (flairs || []).forEach(f => {
+        threadFlairMap.set(f.username.toLowerCase(), f.flair);
+    });
+
     renderCurrentFeed();
 }
 
