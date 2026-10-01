@@ -3076,14 +3076,6 @@ if (textBox) {
             statPaste.className = "badge badge-yellow";
         }
         if (!isTimerRunning) startCompositionTimer();
-
-        // Adds 1 suspicion point; will only pop up if current score + 1 reaches 5
-        suspicionScore += 1;
-        updateSuspicionUI();
-
-        if (currentUser && db) {
-            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
-        }
     });
 
     textBox.addEventListener('keydown', (e) => {
@@ -3304,14 +3296,14 @@ safeAddListener(forumForm, 'submit', async (event) => {
         behaviorPoints += 1;
     }
 
-    // 3. Superhuman speed check (>60 characters in under 0.6 seconds)
-    if (totalTimeElapsed < 0.6 && postContent.length > 60) {
+    // 3. Superhuman speed check (>60 characters in under 0.5 seconds)
+    if (totalTimeElapsed < 0.5 && postContent.length > 60) {
         behaviorPoints += 1;
     }
 
-    // 4. Rapid burst posting (<6 seconds between forum posts)
+    // 4. Rapid burst posting (<4 seconds between forum posts)
     const now = Date.now();
-    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 6000) {
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 4000) {
         behaviorPoints += 1;
     }
 
@@ -3326,7 +3318,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
         // Suspend and halt ONLY if threshold (5) is reached
         if (suspicionScore >= 5) {
-            resetTelemetryConsole(); // Clear flags so subsequent attempts start fresh after CAPTCHA
+            resetTelemetryConsole(); 
             triggerSuspensionGate();
             return;
         }
@@ -3379,7 +3371,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
     } catch (err) {
         alert(`An error occurred while posting: ${err.message}`);
     } finally {
-        // ALWAYS reset telemetry flags (including textWasPasted) so future regular posts aren't penalized
+        // ALWAYS reset telemetry flags so textWasPasted is reset to FALSE
         resetTelemetryConsole();
 
         if (submitBtn) { 
