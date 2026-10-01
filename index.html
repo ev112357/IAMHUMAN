@@ -239,9 +239,27 @@
         .btn-deny { background-color: #dc2626 !important; color: white !important; }
 
         @media (max-width: 768px) { 
-            .modal-overlay { padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(66px + env(safe-area-bottom, 0px)); } 
-            .modal-box { height: 100% !important; max-height: 100% !important; border-radius: 12px; } 
-            .dm-layout { grid-template-columns: 1fr; position: relative; } 
+            .modal-overlay { 
+                padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(70px + env(safe-area-inset-bottom, 0px)) !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                box-sizing: border-box !important;
+            } 
+            .modal-box { 
+                width: 100% !important;
+                max-width: 100% !important;
+                height: 100% !important; 
+                max-height: 100% !important; 
+                border-radius: 12px !important;
+                margin: 0 !important;
+                box-sizing: border-box !important;
+            } 
+            .dm-layout { 
+                grid-template-columns: 1fr !important; 
+                position: relative !important;
+                width: 100% !important;
+            } 
             .sidebar-pane.mobile-hidden { display: none !important; } 
             .chat-pane.mobile-hidden { display: none !important; } 
             .back-btn { display: inline-block !important; } 
