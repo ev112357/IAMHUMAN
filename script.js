@@ -933,6 +933,13 @@ async function loadUserNotifications() {
                         navigateToPost(n.entity_id);
                     }
                 });
+            } else if (n.type === 'direct_message' && n.entity_id) {
+                div.style.cursor = 'pointer';
+                div.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('clickable-username')) {
+                        navigateToConversation(n.entity_id);
+                    }
+                });
             }
 
             const clickUser = div.querySelector('.clickable-username');
@@ -2778,6 +2785,36 @@ safeAddListener(dmForm, 'submit', async (e) => {
                 'sent you a friend request and a pending message.'
             );
         }).catch(() => {});
+    } else {
+        // DISPATCH NOTIFICATIONS TO ALL OTHER CHAT MEMBERS (DMs & Groups)
+        try {
+            const { data: members } = await db
+                .from('conversation_members')
+                .select('user_id')
+                .eq('conversation_id', activeConversationId)
+                .neq('user_id', currentUser.id);
+
+            if (members && members.length > 0) {
+                let snippet = 'sent a photo.';
+                if (content) {
+                    const cleanText = content.length > 50 ? `${content.substring(0, 47)}...` : content;
+                    snippet = `: "${cleanText}"`;
+                }
+
+                const notifsToInsert = members.map(m => ({
+                    user_id: m.user_id,
+                    actor_username: currentUsername,
+                    type: 'direct_message',
+                    entity_id: activeConversationId,
+                    message: snippet,
+                    is_read: false
+                }));
+
+                await db.from('user_notifications').insert(notifsToInsert);
+            }
+        } catch (notifErr) {
+            console.warn("Notice sending chat notification:", notifErr);
+        }
     }
 
     dmText.value = '';
@@ -3391,6 +3428,49 @@ function resetTelemetryConsole() {
     if (statPaste) { statPaste.textContent = "FALSE"; statPaste.className = "badge badge-green"; }
     if (statTimer) statTimer.textContent = "0.0s"; 
     if (statKeys) statKeys.textContent = "0 keys";
+}
+
+async function navigateToConversation(convId) {
+    if (!currentUser || !db) return;
+    if (notificationsModal) notificationsModal.classList.add('hidden');
+    openMessagesModal();
+
+    try {
+        const { data: conv } = await db
+            .from('conversations')
+            .select('*')
+            .eq('id', convId)
+            .maybeSingle();
+
+        if (!conv) return;
+
+        if (conv.is_group) {
+            selectConversation(conv.id, `Group: ${conv.name}`, null, null, true);
+        } else {
+            const { data: member } = await db
+                .from('conversation_members')
+                .select('user_id')
+                .eq('conversation_id', convId)
+                .neq('user_id', currentUser.id)
+                .maybeSingle();
+
+            let partnerId = member ? member.user_id : null;
+            let partnerUsername = 'Chat';
+
+            if (partnerId) {
+                const { data: profile } = await db
+                    .from('profiles')
+                    .select('username')
+                    .eq('id', partnerId)
+                    .maybeSingle();
+                if (profile?.username) partnerUsername = profile.username;
+            }
+
+            selectConversation(conv.id, `@${partnerUsername}`, partnerId, partnerUsername, true);
+        }
+    } catch (err) {
+        console.warn("Could not open chat from notification:", err);
+    }
 }
 
 async function navigateToPost(postId) {
