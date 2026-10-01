@@ -20,6 +20,7 @@ const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
 
 // DOM Elements - Auth & Nav
+const authPanelWrapper = document.getElementById('auth-panel-wrapper');
 const authPanel = document.getElementById('auth-panel');
 const postPanel = document.getElementById('post-panel');
 const authForm = document.getElementById('authForm');
@@ -32,6 +33,7 @@ const authSubmitBtn = document.getElementById('auth-submit-btn');
 const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
+
 // NEW DOM Elements - FAB Modal & Wrappers
 const desktopFab = document.getElementById('desktop-fab');
 const mobileFab = document.getElementById('mobile-fab');
@@ -40,7 +42,7 @@ const fabModalContainer = document.getElementById('fab-modal-container');
 const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
 const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
-const authPanelWrapper = document.getElementById('auth-panel-wrapper');
+
 // DOM Elements - Header Nav & Profile Bar (Desktop)
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
@@ -85,7 +87,6 @@ const joinLeaveActiveThreadBtn = document.getElementById('join-leave-active-thre
 const forumForm = document.getElementById('forumForm');
 const textBox = document.getElementById('forum-post');
 const honeypotField = document.getElementById('honeypot-field');
-const topicSelect = document.getElementById('topic-select');
 const forumFeed = document.getElementById('forum-feed');
 const currentThreadTitle = document.getElementById('current-thread-title');
 const currentUserThreadRole = document.getElementById('current-user-thread-role');
@@ -235,7 +236,6 @@ let activeConversationIsFriend = false;
 let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
-let dmInterval = null;
 let notifPollInterval = null;
 
 // Thread State (Synced to Cloud)
@@ -600,19 +600,15 @@ async function loadUserNotifications() {
                 </div>
                 <div class="notif-time">${timeAgo}</div>
             `;
-        
-
-            // --- ADD THIS BLOCK FOR CLICKABLE NAVIGATION ---
+            
             if (['upvote_post', 'comment_reply', 'upvote_comment'].includes(n.type) && n.entity_id) {
                 div.style.cursor = 'pointer';
                 div.addEventListener('click', (e) => {
-                    // Prevent triggering if they clicked the username instead
                     if (!e.target.classList.contains('clickable-username')) {
                         navigateToPost(n.entity_id);
                     }
                 });
             }
-            // --- END NEW BLOCK ---
 
             div.querySelector('.clickable-username').addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -855,7 +851,7 @@ async function syncUserState(user) {
         currentUserTag.textContent = `@${currentUsername}`;
         deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
-        authPanelWrapper.classList.add('hidden');
+        if (authPanelWrapper) authPanelWrapper.classList.add('hidden');
         openNotifBtn.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
         openProfileBtn.classList.remove('hidden');
@@ -929,7 +925,7 @@ async function syncUserState(user) {
         linkModal.classList.add('hidden');
         userProfileModal.classList.add('hidden');
         captchaSuspensionModal.classList.add('hidden');
-        authPanelWrapper.classList.remove('hidden');
+        if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
 
         await syncCloudThreads();
     }
@@ -937,6 +933,7 @@ async function syncUserState(user) {
     updateThreadControlsUI();
     loadForumPosts();
 }
+
 function renderUserAvatar(url) {
     if (url) {
         headerAvatarImg.src = url;
@@ -1205,7 +1202,6 @@ async function syncCloudThreads() {
     }
 
     renderJoinedThreadsSidebar();
-    syncTopicDropdown();
     updateThreadControlsUI();
 }
 
@@ -1235,13 +1231,11 @@ function renderJoinedThreadsSidebar() {
             if (activeThread === tName) return;
             activeThread = tName;
             
-            // Hard reset feed state to eliminate cross-thread lingering
             cachedPosts = [];
             postCacheMap.clear();
             forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
             renderJoinedThreadsSidebar();
-            syncTopicDropdown();
             updateThreadControlsUI();
             
             await loadForumPosts();
@@ -1253,7 +1247,7 @@ function renderJoinedThreadsSidebar() {
 }
 
 function syncTopicDropdown() {
-    // Left intentionally blank as we now use the search dropdown
+    // Intentionally blank - now using the custom dropdown menu inside FAB
 }
 
 // --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
@@ -1369,7 +1363,6 @@ async function toggleThreadMembership(tName) {
     forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
     renderJoinedThreadsSidebar();
-    syncTopicDropdown();
     updateThreadControlsUI();
     await loadForumPosts();
     threadSearchInput.dispatchEvent(new Event('input'));
@@ -1462,7 +1455,6 @@ createThreadForm.addEventListener('submit', async (e) => {
     updateThreadControlsUI();
     await loadForumPosts();
 });
-
 
 postSortSelect.addEventListener('change', () => {
     renderCurrentFeed();
@@ -1571,9 +1563,8 @@ async function openPermissionsManager() {
     const reqSection = document.getElementById('thread-requests-section');
     const reqList = document.getElementById('thread-requests-list');
 
-    if (!privacyWrap || !reqSection) return; // Failsafe if HTML isn't added yet
+    if (!privacyWrap || !reqSection) return;
 
-    // 1. Thread Privacy Toggle (Owners & Admins only)
     if (getThreadRole(activeThread) === 'Owner' || isSiteAdmin()) {
         privacyWrap.classList.remove('hidden');
         let isPrivate = threadData ? threadData.is_private : false;
@@ -1585,13 +1576,12 @@ async function openPermissionsManager() {
             isPrivate = !isPrivate;
             await db.from('forum_threads').update({ is_private: isPrivate }).eq('name', activeThread);
             if (threadData) threadData.is_private = isPrivate;
-            openPermissionsManager(); // Refresh view
+            openPermissionsManager();
         };
     } else {
         privacyWrap.classList.add('hidden');
     }
 
-    // 2. Pending Requests Dashboard (Owners & Mods only)
     if (threadData && threadData.is_private && (getThreadRole(activeThread) === 'Owner' || getThreadRole(activeThread) === 'Moderator' || isSiteAdmin())) {
         reqSection.classList.remove('hidden');
         reqList.innerHTML = '<div style="font-size:0.8rem; color:#94a3b8;">Loading requests...</div>';
@@ -1847,42 +1837,34 @@ async function handleVote(postId, direction) {
         return;
     }
 
-    // 1. Get the current post and your previous vote
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
     
     const currentVote = userVotes[postId] || 0;
     let newVote = 0;
 
-    // 2. Calculate the new vote state
     if (currentVote === direction) {
-        newVote = 0; // Clicking the same button removes the vote
+        newVote = 0;
     } else {
         newVote = direction;
     }
 
-    // 3. Save your personal vote locally so the UI remembers your choice
     userVotes[postId] = newVote;
     localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
 
-    // 4. Calculate the new total for the database
     let newLikes = Number(post.likes || 0);
     let newDislikes = Number(post.dislikes || 0);
 
-    // Remove old vote stats
     if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
     if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
     
-    // Apply new vote stats
     if (newVote === 1) newLikes += 1;
     if (newVote === -1) newDislikes += 1;
 
-    // 5. Update the local cache so the screen updates instantly
     post.likes = newLikes;
     post.dislikes = newDislikes;
     renderCurrentFeed();
 
-    // 6. Send the final numbers to Supabase!
     const { error } = await db
         .from('Posts')
         .update({ likes: newLikes, dislikes: newDislikes })
@@ -1890,7 +1872,6 @@ async function handleVote(postId, direction) {
 
     if (error) console.error("Failed to save vote to database:", error);
 
-    // 7. Send notification if it was an upvote
     if (post.author && newVote === 1 && post.author.toLowerCase() !== currentUsername.toLowerCase()) {
         try {
             const { data: targetProfile } = await db
@@ -1925,15 +1906,12 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
             let newLikes = Number(c.likes || 0);
             let newDislikes = Number(c.dislikes || 0);
 
-            // Strip the old vote
             if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
             if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
 
-            // Apply the new vote
             if (newVote === 1) newLikes += 1;
             if (newVote === -1) newDislikes += 1;
 
-            // Save to database
             const { error } = await db.from('post_comments')
                 .update({ likes: newLikes, dislikes: newDislikes })
                 .eq('id', commentId);
@@ -1955,7 +1933,7 @@ async function handleCommentVote(commentId, direction, commentAuthor) {
         } catch (e) {}
     }
 }
-// Post Sorting & Trending Logic
+
 function sortPosts(posts) {
     const sortMode = postSortSelect.value;
     const now = Date.now();
@@ -2050,8 +2028,6 @@ Explore topics, participate in discussions, and enjoy an authenticated bot-free 
     };
 }
 
-// --- POST CREATION & MODERATION UI ---
-
 function createPostCardElement(post) {
     const item = document.createElement('div');
     item.className = `post-item ${post.is_pinned ? 'pinned-post' : ''}`;
@@ -2108,12 +2084,10 @@ function createPostCardElement(post) {
             ${photoHtml}
             ${actionButtonsHtml}
 
-            <!-- Comment Toggle Button -->
             <button type="button" class="btn-toggle-comments" data-post-id="${post.id}">
                 💬 Comments <span class="comment-count" data-post-id="${post.id}">(0)</span>
             </button>
 
-            <!-- Comments Drawer -->
             <div class="post-comments-container hidden" id="comments-container-${post.id}">
                 <div class="comments-list" id="comments-list-${post.id}">
                     <div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>
@@ -2325,7 +2299,6 @@ async function deletePostById(postId) {
 
         if (error) {
             alert(`Database deletion failed: ${error.message}`);
-            console.error("Delete error:", error);
             return;
         }
     }
@@ -2355,11 +2328,9 @@ async function loadForumPosts() {
     updateThreadControlsUI();
     if (!db) return;
 
-    // Track this specific fetch invocation
     const thisFetchId = ++currentFetchId;
     const requestedThread = activeThread;
 
-    // Immediate DOM and cache wipe
     forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
     cachedPosts = [];
     postCacheMap.clear();
@@ -2369,13 +2340,11 @@ async function loadForumPosts() {
         .select('*')
         .eq('thread', requestedThread);
 
-    // If another thread was clicked while this query was in flight, discard this result immediately
     if (thisFetchId !== currentFetchId || activeThread !== requestedThread) {
         return;
     }
 
     if (error) {
-        console.warn("Cloud Retrieval Error:", error);
         forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
         return;
     }
@@ -2388,11 +2357,9 @@ async function loadForumPosts() {
     }
 
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
-
     const postAuthors = cachedPosts.map(p => p.author).filter(Boolean);
     await ensureAuthorAvatarsCached(postAuthors);
 
-    // Final confirmation before rendering to the DOM
     if (thisFetchId === currentFetchId && activeThread === requestedThread) {
         renderCurrentFeed();
     }
@@ -2423,7 +2390,6 @@ async function loadProminentUpdates() {
     }).join('');
 
     tickerContent.innerHTML = items + items;
-
     tickerBadge.onclick = () => openUpdatesDrawer();
     tickerContent.onclick = () => openUpdatesDrawer();
 }
@@ -2520,8 +2486,7 @@ function updateSidebarBadges() {
 }
 
 clearAllNotifsBtn.addEventListener('click', async () => {
-    if (!currentUser) return;
-
+    if (!currentUser || !db) return;
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
@@ -2583,7 +2548,7 @@ async function refreshMessagingHub() {
 }
 
 async function loadFriendRequests() {
-    if (!currentUser) return;
+    if (!currentUser || !db) return;
 
     const { data: requests, error } = await db
         .from('friendships')
@@ -2631,6 +2596,7 @@ async function loadFriendRequests() {
 }
 
 async function handleRequest(requestId, accept) {
+    if (!db) return;
     if (accept) {
         const { data: updatedReq, error } = await db
             .from('friendships')
@@ -2661,7 +2627,7 @@ async function handleRequest(requestId, accept) {
 }
 
 async function loadFriends() {
-    if (!currentUser) return;
+    if (!currentUser || !db) return;
 
     const { data: friendships, error } = await db
         .from('friendships')
@@ -2749,6 +2715,7 @@ async function loadFriends() {
 }
 
 addFriendBtn.addEventListener('click', async () => {
+    if (!db) return;
     const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
     if (!targetUsername) return;
 
@@ -2811,7 +2778,7 @@ addFriendBtn.addEventListener('click', async () => {
 });
 
 async function loadConversations() {
-    if (!currentUser) return;
+    if (!currentUser || !db) return;
 
     const { data: memberships } = await db
         .from('conversation_members')
@@ -2857,6 +2824,7 @@ async function loadConversations() {
 }
 
 async function startOrOpenDirectChat(friend) {
+    if (!db) return;
     const { data: myConvs } = await db
         .from('conversation_members')
         .select('conversation_id')
@@ -2917,6 +2885,7 @@ toggleGroupCreateBtn.addEventListener('click', () => groupCreatorBox.classList.t
 cancelGroupBtn.addEventListener('click', () => groupCreatorBox.classList.add('hidden'));
 
 createGroupConfirmBtn.addEventListener('click', async () => {
+    if (!db) return;
     const groupName = groupNameInput.value.trim();
     if (!groupName) {
         alert("Please provide a group name.");
@@ -2967,6 +2936,7 @@ createGroupConfirmBtn.addEventListener('click', async () => {
 });
 
 function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
+    if (!db) return;
     activeConversationId = conversationId;
     activeConversationPartnerId = partnerId;
     activeConversationPartnerUsername = partnerUsername;
@@ -3000,12 +2970,10 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
 
     loadMessages(true);
 
-    // Cancel any existing Realtime listener before starting a new one
     if (window.chatSubscription) {
         db.removeChannel(window.chatSubscription);
     }
 
-    // Subscribe to instant updates from Supabase!
     window.chatSubscription = db.channel(`chat_${activeConversationId}`)
         .on(
             'postgres_changes',
@@ -3016,7 +2984,6 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
                 filter: `conversation_id=eq.${activeConversationId}` 
             },
             (payload) => {
-                // When a new message hits the database, immediately load it
                 loadMessages(true);
             }
         )
@@ -3036,6 +3003,7 @@ function scrollToBottom(force = false) {
 }
 
 async function ensureAvatarsCached(userIds) {
+    if (!db) return;
     const missing = userIds.filter(id => !userAvatarCache.has(id));
     if (missing.length === 0) return;
 
@@ -3050,7 +3018,7 @@ async function ensureAvatarsCached(userIds) {
 }
 
 async function loadMessages(forceScroll = false) {
-    if (!currentUser || !activeConversationId) return;
+    if (!currentUser || !activeConversationId || !db) return;
 
     const { data: messages, error } = await db
         .from('chat_messages')
@@ -3146,6 +3114,7 @@ dmImageInput.addEventListener('change', () => {
 
 dmForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!db) return;
     if (isSuspended) {
         triggerSuspensionGate();
         return;
@@ -3299,6 +3268,36 @@ function resetTelemetryConsole() {
     statKeys.textContent = "0 keys";
 }
 
+async function navigateToPost(postId) {
+    if (!db) return;
+    const { data: post } = await db.from('Posts').select('thread').eq('id', postId).maybeSingle();
+    
+    if (!post) {
+        alert("This post may have been deleted.");
+        return;
+    }
+
+    notificationsModal.classList.add('hidden'); // Close the notification modal
+    
+    // Switch threads if necessary
+    if (activeThread !== post.thread) {
+        activeThread = post.thread;
+        // syncTopicDropdown();
+        await loadForumPosts(); // Wait for the new thread feed to render
+    }
+
+    // Find the post and scroll to it smoothly
+    const targetEl = document.getElementById(`post-${postId}`);
+    if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Briefly flash a highlight ring around the post so they spot it
+        targetEl.style.transition = 'box-shadow 0.4s ease';
+        targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
+        setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
+    }
+}
+
 // --- FAB POST MODAL LOGIC ---
 function openFabModal(e) {
     if (!currentUser) { 
@@ -3374,7 +3373,6 @@ document.addEventListener('click', (e) => {
 });
 
 // --- FORUM SUBMISSION WITH RISK SCORING & CAPTCHA ESCALATION ---
-
 forumForm.addEventListener('submit', async (event) => {
     event.preventDefault(); 
     
@@ -3389,254 +3387,11 @@ forumForm.addEventListener('submit', async (event) => {
     }
 
     const targetThread = threadSearchSelect.value.trim();
-    if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
-        alert("Community not found. Please select an existing community from the dropdown.");
-        return;
-    }
-
-    if (isUserBannedFromThread(targetThread, currentUsername)) {
-        alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
-        return;
-    }
-
-    if ((targetThread === "Update Thread" || targetThread === "Welcome & Security") && !isSiteAdmin()) {
-        alert(`Permission Denied: Only @gemini can publish to the official "${targetThread}" section.`);
-        return;
-    }
-
-    let behaviorPoints = 0;
-
-    if (honeypotField.value !== "") {
-        behaviorPoints += 5;
-    }
-
-    if (textWasPasted) {
-        behaviorPoints += 1;
-    }
-
-    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
-    if (totalTimeElapsed < 1.5 && textBox.value.length > 50) {
-        behaviorPoints += 1;
-    }
-
-    const now = Date.now();
-    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) {
-        behaviorPoints += 2;
-    }
-
-    if (keystrokeGaps.length > 5) {
-        let perfectIntervals = 0;
-        for (let i = 2; i < keystrokeGaps.length; i++) {
-            if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
-        }
-        const uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
-        if (uniformityRatio > 0.75) {
-            behaviorPoints += 1;
-        }
-    }
-
-    if (behaviorPoints > 0) {
-        suspicionScore += behaviorPoints;
-        updateSuspicionUI();
-
-        if (currentUser && db) {
-            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
-        }
-
-        if (suspicionScore >= 3) {
-            triggerSuspensionGate();
-            return;
-        }
-    }
-
-    if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
-        alert("Please enter a message or attach a photo.");
-        return;
-    }
-
-    const submitBtn = document.getElementById('forum-submit-btn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Publishing...';
-
-    let postImageUrl = null;
-
-    if (selectedPostPhotoFile) {
-        const fileExt = selectedPostPhotoFile.name.split('.').pop();
-        const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
-
-        const { error: uploadError } = await db.storage
-            .from('chat-images')
-            .upload(filePath, selectedPostPhotoFile);
-
-        if (uploadError) {
-            console.warn("Post image upload failed:", uploadError);
-        } 
-        else {
-            const { data: publicUrlData } = db.storage
-                .from('chat-images')
-                .getPublicUrl(filePath);
-            postImageUrl = publicUrlData.publicUrl;
-        }
-    }
-
-    const { error } = await db
-        .from('Posts')
-        .insert([{ 
-            thread: targetThread, 
-            author: currentUsername, 
-            content: textBox.value,
-            image_url: postImageUrl
-        }]);
-
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Publish to Forum';
-
-    if (error) {
-        alert(`Database Error: ${error.message}`);
-        console.error("Supabase Insert Error:", error);
-        return;
-    }
-
-    lastPostTimestamp = Date.now();
-
-    if (targetThread === "Update Thread") {
-        await loadProminentUpdates();
-    } else {
-        activeThread = targetThread;
-        await loadForumPosts();
-    }
-
-    resetTelemetryConsole();
-    fabModalOverlay.classList.remove('active');
-    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
-});
-async function navigateToPost(postId) {
-    if (!db) return;
-    const { data: post } = await db.from('Posts').select('thread').eq('id', postId).maybeSingle();
-    
-    if (!post) {
-        alert("This post may have been deleted.");
-        return;
-    }
-
-    notificationsModal.classList.add('hidden'); // Close the notification modal
-    
-    // Switch threads if necessary
-    if (activeThread !== post.thread) {
-        activeThread = post.thread;
-        syncTopicDropdown();
-        await loadForumPosts(); // Wait for the new thread feed to render
-    }
-
-    // Find the post and scroll to it smoothly
-    const targetEl = document.getElementById(`post-${postId}`);
-    if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Briefly flash a highlight ring around the post so they spot it
-        targetEl.style.transition = 'box-shadow 0.4s ease';
-        targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
-        setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
-    }
-}
-
-// --- NEW FAB POST MODAL LOGIC ---
-function openFabModal(e) {
-    if (!currentUser) { 
-        alert("Please log in to post."); 
-        authEmailInput.focus();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return; 
-    }
-    
-    // Calculate point of origin for smooth scaling
-    const rect = e.currentTarget.getBoundingClientRect();
-    const originX = rect.left + rect.width / 2;
-    const originY = rect.top + rect.height / 2;
-    const originXPercent = (originX / window.innerWidth) * 100;
-    const originYPercent = (originY / window.innerHeight) * 100;
-
-    fabModalContainer.style.transformOrigin = `${originXPercent}% ${originYPercent}%`;
-    fabModalOverlay.classList.remove('hidden');
-    
-    // Allow DOM to update before triggering CSS transition
-    requestAnimationFrame(() => {
-        fabModalOverlay.classList.add('active');
-    });
-
-    threadSearchSelect.value = activeThread;
-    threadSuggestDropdown.classList.add('hidden');
-}
-
-desktopFab.addEventListener('click', openFabModal);
-mobileFab.addEventListener('click', openFabModal);
-
-closeFabModalBtn.addEventListener('click', () => {
-    fabModalOverlay.classList.remove('active');
-    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300); // Wait for transition
-});
-
-// Community Search Dropdown Logic
-threadSearchSelect.addEventListener('input', () => {
-    const q = threadSearchSelect.value.trim().toLowerCase();
-    threadSuggestDropdown.innerHTML = '';
-    
-    if (!q) {
-        threadSuggestDropdown.classList.add('hidden');
-        return;
-    }
-
-    // Prioritize joined threads, then show others
-    const joined = Array.from(myJoinedThreadNames).filter(t => t.toLowerCase().includes(q));
-    const others = allCloudThreads.map(t => t.name).filter(t => !myJoinedThreadNames.has(t) && t.toLowerCase().includes(q));
-    
-    const combined = [...joined, ...others].slice(0, 8); // Top 8 results
-
-    if (combined.length === 0) {
-        threadSuggestDropdown.innerHTML = '<div style="padding: 10px; font-size: 0.85rem; color: #94a3b8;">No matching communities found.</div>';
-    } else {
-        combined.forEach(tName => {
-            const isJoined = myJoinedThreadNames.has(tName);
-            const div = document.createElement('div');
-            div.className = 'suggest-item';
-            div.innerHTML = `<strong>${escapeHTML(tName)}</strong> <span style="font-size: 0.75rem; color: #64748b; float: right;">${isJoined ? 'Joined ✓' : ''}</span>`;
-            
-            div.addEventListener('click', () => {
-                threadSearchSelect.value = tName;
-                threadSuggestDropdown.classList.add('hidden');
-            });
-            threadSuggestDropdown.appendChild(div);
-        });
-    }
-    threadSuggestDropdown.classList.remove('hidden');
-});
-
-// Close dropdown if clicking outside
-document.addEventListener('click', (e) => {
-    if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
-        threadSuggestDropdown.classList.add('hidden');
-    }
-});
-
-// UPDATE EXISTING SUBMIT LISTENER TO READ FROM SEARCH BAR
-forumForm.addEventListener('submit', async (event) => {
-    event.preventDefault(); 
-    
-    if (!currentUsername) {
-        alert("You must be logged in to post.");
-        return;
-    }
-
-    if (isSuspended) {
-        triggerSuspensionGate();
-        return;
-    }
-
-    const targetThread = threadSearchSelect.value.trim(); // <-- Updated
     if (!targetThread) {
         alert("Please select a community to post in.");
         return;
     }
+    
     // Verify thread exists
     if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
         alert("Community not found. Please select an existing community from the dropdown, or create a new one from the sidebar.");
