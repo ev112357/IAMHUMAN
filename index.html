@@ -486,17 +486,21 @@
         <div class="modal-box">
             <div id="top-modal-bar" class="modal-header">
                 <h2>✉️ Direct & Group Messaging</h2>
-                <div style="display: flex; gap: 8px;">
+                <div style="display: flex; gap: 8px; align-items: center;">
                     <button id="clear-all-notifs-btn" class="clear-notifs-btn">Mark All Read</button>
-                    <button id="close-dm-btn" class="close-btn">&times;</button>
+                    <button id="close-dm-btn" class="close-btn" title="Close Messages">&times;</button>
                 </div>
             </div>
 
             <div class="dm-layout">
-                <div id="sidebar-pane" class="sidebar-pane">
-                    <div style="display: flex; gap: 6px; margin-bottom: 10px;">
-                        <input type="text" id="add-friend-input" placeholder="Add @username" style="margin-bottom: 0; padding: 8px;">
-                        <button id="add-friend-btn" style="width: auto; padding: 0 10px; font-size: 0.85rem;">Add</button>
+                <!-- Sidebar Pane remains untouched -->
+                ...
+                <div id="chat-pane" class="chat-pane mobile-hidden">
+                    <div class="chat-header-bar">
+                        <div class="chat-header-left">
+                            <button id="back-to-list-btn" class="back-btn">←</button>
+                            <span id="chat-header">Select a conversation</span>
+                        </div>
                     </div>
 
                     <div id="requests-header" class="sidebar-header-row hidden">
@@ -775,7 +779,7 @@
     </div>
 
     <!-- CAPTCHA MODAL -->
-    <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 20000;">
+    <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 999999 !important;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
             <div style="font-size: 2.2rem;">🛡</div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
