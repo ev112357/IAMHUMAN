@@ -894,7 +894,11 @@ async function loadUserNotifications() {
         notifs.forEach(n => {
             const div = document.createElement('div');
             div.className = `notif-item ${!n.is_read ? 'unread' : ''}`;
-            const timeAgo = new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
+            // FIX: Safely check if created_at exists before formatting it
+            const timeAgo = n.created_at 
+                ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                : 'New';
             
             div.innerHTML = `
                 <div class="notif-text">
