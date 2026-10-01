@@ -19,7 +19,7 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
 
-// Helper to safely bind event listeners without throwing when elements don't exist
+// Helper to safely bind event listeners
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
 }
@@ -47,7 +47,7 @@ const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
 const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
 
-// Header Nav & Profile Bar (Desktop)
+// DOM Elements - Header Nav & Profile Bar (Desktop)
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
@@ -134,6 +134,24 @@ const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
 const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
 const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
 
+// Profile & Account Deletion Elements
+const profileModal = document.getElementById('profile-modal');
+const closeProfileBtn = document.getElementById('close-profile-btn');
+const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
+const profileAvatarFile = document.getElementById('profile-avatar-file');
+const currentPasswordInput = document.getElementById('current-password-input');
+const newPasswordInput = document.getElementById('new-password-input');
+const confirmPasswordInput = document.getElementById('confirm-password-input');
+const updatePasswordBtn = document.getElementById('update-password-btn');
+
+const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
+const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
+const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
+const deleteUsernameInput = document.getElementById('delete-username-input');
+const finalDeleteBtn = document.getElementById('final-delete-btn');
+const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
 // Public User Profile Card Elements
 const userProfileModal = document.getElementById('user-profile-modal');
 const closeUserProfileBtn = document.getElementById('close-user-profile-btn');
@@ -169,6 +187,41 @@ const refreshCaptchaBtn = document.getElementById('refresh-captcha-btn');
 const captchaStatusMsg = document.getElementById('captcha-status-msg');
 let currentCaptchaSecret = "";
 
+// Direct Messages & Groups Elements
+const openDmBtn = document.getElementById('open-dm-btn');
+const closeDmBtn = document.getElementById('close-dm-btn');
+const notifBadge = document.getElementById('notif-badge');
+const clearAllNotifsBtn = document.getElementById('clear-all-notifs-btn');
+const dmModal = document.getElementById('dm-modal');
+const topModalBar = document.getElementById('top-modal-bar');
+const sidebarPane = document.getElementById('sidebar-pane');
+const chatPane = document.getElementById('chat-pane');
+const backToListBtn = document.getElementById('back-to-list-btn');
+
+const addFriendInput = document.getElementById('add-friend-input');
+const addFriendBtn = document.getElementById('add-friend-btn');
+const requestsHeader = document.getElementById('requests-header');
+const requestsContainer = document.getElementById('requests-container');
+const friendsContainer = document.getElementById('friends-container');
+const groupsContainer = document.getElementById('groups-container');
+const chatHeader = document.getElementById('chat-header');
+const chatMessages = document.getElementById('chat-messages');
+const chatPendingBanner = document.getElementById('chat-pending-banner');
+
+// Form & Photo Upload Inputs
+const dmForm = document.getElementById('dm-form');
+const dmText = document.getElementById('dm-text');
+const dmImageInput = document.getElementById('dm-image-input');
+const dmSendBtn = document.getElementById('dm-send-btn');
+
+// Group Creator
+const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
+const groupCreatorBox = document.getElementById('group-creator-box');
+const groupNameInput = document.getElementById('group-name-input');
+const groupFriendsChecklist = document.getElementById('group-friends-checklist');
+const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
+const cancelGroupBtn = document.getElementById('cancel-group-btn');
+
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
 
 // App State
@@ -176,11 +229,17 @@ let currentUser = null;
 let currentUsername = null;
 let currentAvatarUrl = null;
 let isSignUpMode = false;
+let myFriendsList = [];
+let activeConversationId = null;
+let activeConversationPartnerId = null;
+let activeConversationPartnerUsername = null;
+let activeConversationIsFriend = false;
+let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
 let notifPollInterval = null;
 
-// Thread State (Synced to Cloud)
+// Thread State
 let allCloudThreads = []; 
 let myJoinedThreadNames = new Set(MANDATORY_THREADS);
 let activeThread = "Welcome & Security";
@@ -190,7 +249,7 @@ let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || 
 if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
-// Voting & Cache
+// Voting Cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
 let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
@@ -211,16 +270,18 @@ let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
 
-// --- NAVIGATION & ROUTING ---
+// --- DIRECT MODAL & VIEW OPENERS ---
 
-function setMobileTabActive(tabName) {
-    [tabNavFeed, tabNavMessages, tabNavNotifs, tabNavProfile].forEach(btn => {
-        if (btn) btn.classList.remove('active');
-    });
-    if (tabName === 'feed' && tabNavFeed) tabNavFeed.classList.add('active');
-    else if (tabName === 'messages' && tabNavMessages) tabNavMessages.classList.add('active');
-    else if (tabName === 'notifs' && tabNavNotifs) tabNavNotifs.classList.add('active');
-    else if (tabName === 'profile' && tabNavProfile) tabNavProfile.classList.add('active');
+function openMessagesModal() {
+    if (!currentUser) { 
+        alert("Please log in to view messages."); 
+        setMobileTabActive('feed');
+        return; 
+    }
+    if (dmModal) dmModal.classList.remove('hidden');
+    showSidebarViewOnMobile();
+    refreshMessagingHub();
+    setMobileTabActive('messages');
 }
 
 function openNotificationsModal() {
@@ -241,19 +302,75 @@ function openNotificationsModal() {
     setMobileTabActive('notifs');
 }
 
+function openProfileSettingsModal() {
+    if (!currentUser) {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        if (authEmailInput) authEmailInput.focus();
+        setMobileTabActive('feed');
+        return;
+    }
+    if (profileModal) profileModal.classList.remove('hidden');
+    setMobileTabActive('profile');
+}
+
+function closeMessagesModal() {
+    if (dmModal) dmModal.classList.add('hidden');
+    if (window.chatSubscription && db) {
+        db.removeChannel(window.chatSubscription);
+        window.chatSubscription = null;
+    }
+    activeConversationId = null;
+    activeConversationPartnerId = null;
+    activeConversationPartnerUsername = null;
+    showSidebarViewOnMobile();
+    setMobileTabActive('feed');
+    checkNotifications();
+}
+
+// --- MOBILE NAVIGATION BAR ROUTING ---
+
+function setMobileTabActive(tabName) {
+    [tabNavFeed, tabNavMessages, tabNavNotifs, tabNavProfile].forEach(btn => {
+        if (btn) btn.classList.remove('active');
+    });
+    if (tabName === 'feed' && tabNavFeed) tabNavFeed.classList.add('active');
+    else if (tabName === 'messages' && tabNavMessages) tabNavMessages.classList.add('active');
+    else if (tabName === 'notifs' && tabNavNotifs) tabNavNotifs.classList.add('active');
+    else if (tabName === 'profile' && tabNavProfile) tabNavProfile.classList.add('active');
+}
+
 safeAddListener(tabNavFeed, 'click', () => {
+    closeMessagesModal();
     if (notificationsModal) notificationsModal.classList.add('hidden');
+    if (profileModal) profileModal.classList.add('hidden');
     if (userProfileModal) userProfileModal.classList.add('hidden');
     setMobileTabActive('feed');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
+safeAddListener(tabNavMessages, 'click', openMessagesModal);
 safeAddListener(tabNavNotifs, 'click', openNotificationsModal);
+safeAddListener(tabNavProfile, 'click', openProfileSettingsModal);
+
+safeAddListener(openDmBtn, 'click', openMessagesModal);
 safeAddListener(openNotifBtn, 'click', openNotificationsModal);
+safeAddListener(openProfileBtn, 'click', openProfileSettingsModal);
+
+safeAddListener(closeDmBtn, 'click', closeMessagesModal);
 
 safeAddListener(closeNotificationsBtn, 'click', () => {
     if (notificationsModal) notificationsModal.classList.add('hidden');
     setMobileTabActive('feed');
+});
+safeAddListener(closeProfileBtn, 'click', () => {
+    if (profileModal) profileModal.classList.add('hidden');
+    setMobileTabActive('feed');
+});
+
+safeAddListener(chatHeader, 'click', () => {
+    if (activeConversationPartnerUsername) {
+        window.openUserProfileCard(activeConversationPartnerUsername);
+    }
 });
 
 safeAddListener(telemetryPill, 'click', () => {
@@ -552,6 +669,55 @@ async function calculateUserScore(username) {
     }
 }
 
+async function updateProfileFriendButtonUI() {
+    if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
+    targetFriendshipRecord = null;
+
+    const isOwnProfile = !currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '');
+
+    if (isOwnProfile) {
+        if (userCardAddFriendBtn) userCardAddFriendBtn.classList.add('hidden');
+        if (userCardMsgBtn) userCardMsgBtn.classList.add('hidden');
+        return;
+    }
+
+    if (userCardAddFriendBtn) userCardAddFriendBtn.classList.remove('hidden');
+    if (userCardMsgBtn) userCardMsgBtn.classList.remove('hidden');
+
+    try {
+        const { data: friendship } = await db
+            .from('friendships')
+            .select('*')
+            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
+            .maybeSingle();
+
+        targetFriendshipRecord = friendship;
+
+        if (userCardAddFriendBtn) {
+            if (friendship && friendship.status === 'accepted') {
+                userCardAddFriendBtn.innerHTML = `✓ Friends`;
+                userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
+            } else if (friendship && friendship.status === 'pending') {
+                if (friendship.user_id === currentUser.id) {
+                    userCardAddFriendBtn.innerHTML = `⏳ Sent`;
+                    userCardAddFriendBtn.className = 'btn-friend-state secondary';
+                } else {
+                    userCardAddFriendBtn.innerHTML = `📬 Accept`;
+                    userCardAddFriendBtn.className = 'btn-friend-state';
+                }
+            } else {
+                userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
+                userCardAddFriendBtn.className = 'btn-friend-state';
+            }
+        }
+    } catch (e) {
+        if (userCardAddFriendBtn) {
+            userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
+            userCardAddFriendBtn.className = 'btn-friend-state';
+        }
+    }
+}
+
 window.openUserProfileCard = async function(username) {
     if (!username || !userProfileModal) return;
     const cleanUser = username.toLowerCase().replace('@', '');
@@ -581,6 +747,7 @@ window.openUserProfileCard = async function(username) {
         console.warn("Profile load err:", e);
     }
 
+    await updateProfileFriendButtonUI();
     userProfileModal.classList.remove('hidden');
     const score = await calculateUserScore(cleanUser);
     if (userCardScore) userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
@@ -590,6 +757,90 @@ safeAddListener(closeUserProfileBtn, 'click', () => {
     if (userProfileModal) userProfileModal.classList.add('hidden');
 });
 
+safeAddListener(userCardMsgBtn, async () => {
+    if (!currentUser) {
+        alert("Please log in to send direct messages.");
+        return;
+    }
+    if (!targetProfileId || !targetProfileUsername) return;
+
+    if (userProfileModal) userProfileModal.classList.add('hidden');
+    if (dmModal) dmModal.classList.remove('hidden');
+    setMobileTabActive('messages');
+
+    await startOrOpenDirectChat({
+        id: targetProfileId,
+        username: targetProfileUsername
+    });
+});
+
+safeAddListener(userCardAddFriendBtn, async () => {
+    if (!currentUser) {
+        alert("Please log in to manage friends.");
+        return;
+    }
+
+    if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
+        if (unaddConfirmBox) unaddConfirmBox.classList.toggle('hidden');
+        return;
+    }
+
+    if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
+        if (targetFriendshipRecord.user_id !== currentUser.id) {
+            await handleRequest(targetFriendshipRecord.id, true);
+            await updateProfileFriendButtonUI();
+        }
+        return;
+    }
+
+    if (!targetProfileId) return;
+
+    const { error: insertErr } = await db
+        .from('friendships')
+        .insert([{ 
+            user_id: currentUser.id, 
+            friend_id: targetProfileId, 
+            status: 'pending' 
+        }]);
+
+    if (insertErr) {
+        alert(`Could not send request: ${insertErr.message}`);
+        return;
+    }
+
+    await sendNotification(
+        targetProfileId,
+        'friend_request',
+        null,
+        'sent you a friend request.'
+    );
+
+    alert(`Friend request sent to @${targetProfileUsername}!`);
+    await updateProfileFriendButtonUI();
+    refreshMessagingHub();
+});
+
+safeAddListener(confirmUnaddBtn, async () => {
+    if (!targetFriendshipRecord) return;
+    confirmUnaddBtn.disabled = true;
+    const { error } = await db.from('friendships').delete().eq('id', targetFriendshipRecord.id);
+    confirmUnaddBtn.disabled = false;
+
+    if (error) {
+        alert(`Error removing friend: ${error.message}`);
+        return;
+    }
+
+    alert(`@${targetProfileUsername} has been removed from your friends.`);
+    if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
+    await updateProfileFriendButtonUI();
+    refreshMessagingHub();
+});
+
+safeAddListener(cancelUnaddBtn, () => {
+    if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
+});
+
 // --- SESSION & AUTHENTICATION ---
 
 async function syncUserState(user) {
@@ -597,9 +848,11 @@ async function syncUserState(user) {
         currentUser = user;
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
         if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
+        if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
         if (authPanelWrapper) authPanelWrapper.classList.add('hidden');
         if (openNotifBtn) openNotifBtn.classList.remove('hidden');
+        if (openDmBtn) openDmBtn.classList.remove('hidden');
         if (openProfileBtn) openProfileBtn.classList.remove('hidden');
 
         try {
@@ -613,6 +866,7 @@ async function syncUserState(user) {
                 if (profile.username) {
                     currentUsername = profile.username;
                     if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
+                    if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
                 }
                 if (profile.avatar_url) {
                     currentAvatarUrl = profile.avatar_url;
@@ -634,22 +888,40 @@ async function syncUserState(user) {
 
         renderUserAvatar(currentAvatarUrl);
         await syncCloudThreads();
+        checkNotifications();
         loadUserNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
-        notifPollInterval = setInterval(loadUserNotifications, 5000);
+        notifPollInterval = setInterval(() => {
+            checkNotifications();
+            loadUserNotifications();
+        }, 5000);
     } else {
         currentUser = null;
         currentUsername = null;
         currentAvatarUrl = null;
+        activeConversationId = null;
         suspicionScore = 0;
         updateSuspicionUI();
+        if (window.chatSubscription && db) {
+            db.removeChannel(window.chatSubscription);
+            window.chatSubscription = null;
+        }
         if (notifPollInterval) clearInterval(notifPollInterval);
 
         if (openNotifBtn) openNotifBtn.classList.add('hidden');
+        if (openDmBtn) openDmBtn.classList.add('hidden');
         if (openProfileBtn) openProfileBtn.classList.add('hidden');
+        if (notifBadge) notifBadge.classList.add('hidden');
         if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
+        if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
         if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
+        if (dmModal) dmModal.classList.add('hidden');
         if (notificationsModal) notificationsModal.classList.add('hidden');
+        if (profileModal) profileModal.classList.add('hidden');
+        if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
+        if (permsModal) permsModal.classList.add('hidden');
+        if (threadDeleteModal) threadDeleteModal.classList.add('hidden');
+        if (linkModal) linkModal.classList.add('hidden');
         if (userProfileModal) userProfileModal.classList.add('hidden');
         if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
         if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
@@ -668,12 +940,14 @@ function renderUserAvatar(url) {
         if (postBarAvatar) { postBarAvatar.src = url; postBarAvatar.classList.remove('hidden'); }
         if (tabAvatarImg) { tabAvatarImg.src = url; tabAvatarImg.classList.remove('hidden'); }
         if (tabAvatarFallback) tabAvatarFallback.classList.add('hidden');
+        if (profilePreviewAvatar) profilePreviewAvatar.src = url;
     } else {
         if (headerAvatarImg) headerAvatarImg.classList.add('hidden');
         if (headerAvatarFallback) headerAvatarFallback.classList.remove('hidden');
         if (postBarAvatar) postBarAvatar.classList.add('hidden');
         if (tabAvatarImg) tabAvatarImg.classList.add('hidden');
         if (tabAvatarFallback) tabAvatarFallback.classList.remove('hidden');
+        if (profilePreviewAvatar) profilePreviewAvatar.src = DEFAULT_AVATAR;
     }
 }
 
@@ -768,6 +1042,118 @@ safeAddListener(logoutBtn, 'click', async () => {
     setMobileTabActive('feed');
 });
 
+// --- PROFILE SETTINGS MODAL LOGIC ---
+
+safeAddListener(profileAvatarFile, 'change', async () => {
+    const file = profileAvatarFile.files[0];
+    if (!file || !currentUser) return;
+
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${currentUser.id}/avatar_${Date.now()}.${fileExt}`;
+
+    const { error: uploadErr } = await db.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+    if (uploadErr) {
+        alert(`Avatar upload failed: ${uploadErr.message}`);
+        return;
+    }
+
+    const { data: publicData } = db.storage.from('avatars').getPublicUrl(filePath);
+    const newAvatarUrl = publicData.publicUrl;
+
+    const { error: updateErr } = await db
+        .from('profiles')
+        .update({ avatar_url: newAvatarUrl })
+        .eq('id', currentUser.id);
+
+    if (updateErr) {
+        alert(`Error updating profile: ${updateErr.message}`);
+        return;
+    }
+
+    currentAvatarUrl = newAvatarUrl;
+    userAvatarCache.set(currentUser.id, currentAvatarUrl);
+    if (currentUsername) usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
+    renderUserAvatar(currentAvatarUrl);
+    renderCurrentFeed();
+    alert("Avatar updated successfully!");
+});
+
+safeAddListener(updatePasswordBtn, async () => {
+    const currentPassword = currentPasswordInput.value;
+    const newPassword = newPasswordInput.value;
+    const confirmPassword = confirmPasswordInput.value;
+
+    if (!currentPassword) {
+        alert("Please enter your current password.");
+        return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+        alert("New password must be at least 6 characters.");
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        alert("The new passwords do not match.");
+        return;
+    }
+
+    updatePasswordBtn.disabled = true;
+    updatePasswordBtn.textContent = 'Verifying...';
+
+    const { error: authErr } = await db.auth.signInWithPassword({
+        email: currentUser.email,
+        password: currentPassword
+    });
+
+    if (authErr) {
+        updatePasswordBtn.disabled = false;
+        updatePasswordBtn.textContent = 'Update Password';
+        alert("Incorrect current password. Please try again.");
+        return;
+    }
+
+    updatePasswordBtn.textContent = 'Updating...';
+    const { error: updateErr } = await db.auth.updateUser({ password: newPassword });
+
+    updatePasswordBtn.disabled = false;
+    updatePasswordBtn.textContent = 'Update Password';
+
+    if (updateErr) {
+        alert(`Password change failed: ${updateErr.message}`);
+    } else {
+        alert("Password updated successfully!");
+        currentPasswordInput.value = '';
+        newPasswordInput.value = '';
+        confirmPasswordInput.value = '';
+    }
+});
+
+safeAddListener(openDeleteModalBtn, () => {
+    if (deleteConfirmModal) deleteConfirmModal.classList.remove('hidden');
+    if (deleteUsernameInput) deleteUsernameInput.value = '';
+});
+safeAddListener(closeDeleteModalBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
+safeAddListener(cancelDeleteBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
+
+safeAddListener(finalDeleteBtn, async () => {
+    const entered = (deleteUsernameInput ? deleteUsernameInput.value : "").trim().toLowerCase().replace('@', '');
+    const expected = currentUsername.toLowerCase().replace('@', '');
+
+    if (entered !== expected) {
+        alert(`Username does not match. Please enter "@${currentUsername}" to confirm deletion.`);
+        return;
+    }
+
+    finalDeleteBtn.disabled = true;
+    finalDeleteBtn.textContent = 'Deleting...';
+
+    await db.from('profiles').delete().eq('id', currentUser.id);
+    await db.auth.signOut();
+    alert("Your account has been deleted.");
+});
+
 // --- CLOUD THREADS & MEMBERSHIP SYNC ---
 
 async function syncCloudThreads() {
@@ -844,7 +1230,7 @@ function renderJoinedThreadsSidebar() {
     });
 }
 
-// --- THREAD SEARCH & DISCOVERY ---
+// --- THREAD DISCOVERY ---
 
 function fuzzyMatch(str, pattern) {
     const s = str.toLowerCase();
@@ -950,7 +1336,7 @@ safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
     await toggleThreadMembership(activeThread);
 });
 
-// --- THREAD CREATION & SYNC ---
+// --- CREATE & DELETE THREADS ---
 
 function openCreateThreadModal() {
     if (!currentUser) { alert("Please log in to create a thread."); return; }
@@ -1002,11 +1388,7 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
         thread_name: newName
     }]);
 
-    threadMetaMap[newName] = {
-        owner: currentUsername,
-        moderators: [],
-        banned: []
-    };
+    threadMetaMap[newName] = { owner: currentUsername, moderators: [], banned: [] };
     saveThreadMeta();
 
     newThreadTitleInput.value = '';
@@ -1024,9 +1406,7 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
     await loadForumPosts();
 });
 
-safeAddListener(postSortSelect, 'change', () => {
-    renderCurrentFeed();
-});
+safeAddListener(postSortSelect, 'change', () => { renderCurrentFeed(); });
 
 function updateThreadControlsUI() {
     if (currentThreadTitle) currentThreadTitle.textContent = activeThread;
@@ -1065,8 +1445,6 @@ function updateThreadControlsUI() {
     }
 }
 
-// --- THREAD DELETION ---
-
 safeAddListener(deleteThreadBtn, 'click', () => {
     if (!canDeleteThread(activeThread)) {
         alert("You do not have permission to delete this thread.");
@@ -1080,7 +1458,7 @@ safeAddListener(deleteThreadBtn, 'click', () => {
 safeAddListener(closeThreadDeleteModalBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 safeAddListener(cancelDeleteThreadBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 
-safeAddListener(finalDeleteThreadBtn, 'click', async () => {
+safeAddListener(finalDeleteThreadBtn, async () => {
     const inputVal = deleteThreadConfirmInput ? deleteThreadConfirmInput.value.trim() : '';
     if (inputVal !== activeThread) {
         alert(`Confirmation failed. You must type "${activeThread}" exactly to delete this thread.`);
@@ -1103,7 +1481,6 @@ safeAddListener(finalDeleteThreadBtn, 'click', async () => {
     finalDeleteThreadBtn.textContent = 'Confirm Delete';
 
     alert(`Thread "${inputVal}" has been permanently removed.`);
-
     activeThread = "Welcome & Security";
     cachedPosts = [];
     postCacheMap.clear();
@@ -1135,7 +1512,7 @@ function renderPermissionsUserList() {
     cachedPosts.forEach(p => { if (p.author) trackedUsers.add(p.author); });
 
     if (trackedUsers.size === 0) {
-        permsUserList.innerHTML = '<div class="no-posts" style="padding: 10px;">No members active in this thread yet. Add a user above.</div>';
+        permsUserList.innerHTML = '<div class="no-posts" style="padding: 10px;">No members active in this thread yet.</div>';
         return;
     }
 
@@ -1212,7 +1589,776 @@ safeAddListener(removePostPhotoBtn, 'click', () => {
     if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
 });
 
-// --- VOTING & POST RENDERING ---
+// --- MESSAGING & CHATS HUB ---
+
+function showSidebarViewOnMobile() {
+    if (sidebarPane) sidebarPane.classList.remove('mobile-hidden');
+    if (chatPane) chatPane.classList.add('mobile-hidden');
+    if (topModalBar) topModalBar.classList.remove('hidden');
+}
+
+function showChatViewOnMobile() {
+    if (sidebarPane) sidebarPane.classList.add('mobile-hidden');
+    if (chatPane) chatPane.classList.remove('mobile-hidden');
+    if (topModalBar) topModalBar.classList.add('hidden');
+}
+
+safeAddListener(backToListBtn, 'click', () => {
+    if (window.chatSubscription && db) {
+        db.removeChannel(window.chatSubscription);
+        window.chatSubscription = null;
+    }
+    activeConversationId = null;
+    activeConversationPartnerId = null;
+    activeConversationPartnerUsername = null;
+    showSidebarViewOnMobile();
+    refreshMessagingHub();
+});
+
+async function refreshMessagingHub() {
+    await loadFriendRequests();
+    await loadFriends();
+    await loadConversations();
+    updateSidebarBadges();
+}
+
+async function loadFriendRequests() {
+    if (!currentUser || !db || !requestsContainer) return;
+
+    const { data: requests, error } = await db
+        .from('friendships')
+        .select('id, user_id')
+        .eq('friend_id', currentUser.id)
+        .eq('status', 'pending');
+
+    if (error || !requests || requests.length === 0) {
+        if (requestsHeader) requestsHeader.classList.add('hidden');
+        requestsContainer.innerHTML = '';
+        return;
+    }
+
+    const requesterIds = requests.map(r => r.user_id);
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, username')
+        .in('id', requesterIds);
+
+    const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+
+    if (requestsHeader) requestsHeader.classList.remove('hidden');
+    requestsContainer.innerHTML = '';
+
+    requests.forEach(req => {
+        const username = profileMap.get(req.user_id) || 'unknown';
+        const item = document.createElement('div');
+        item.className = 'req-item';
+        item.innerHTML = `
+            <span class="clickable-username" data-username="${escapeHTML(username)}">@${escapeHTML(username)}</span>
+            <div class="req-actions">
+                <button class="btn-accept" title="Accept">✓</button>
+                <button class="btn-deny" title="Deny">✕</button>
+            </div>
+        `;
+
+        item.querySelector('.clickable-username').addEventListener('click', () => {
+            window.openUserProfileCard(username);
+        });
+
+        item.querySelector('.btn-accept').addEventListener('click', () => handleRequest(req.id, true));
+        item.querySelector('.btn-deny').addEventListener('click', () => handleRequest(req.id, false));
+        requestsContainer.appendChild(item);
+    });
+}
+
+async function handleRequest(requestId, accept) {
+    if (!db) return;
+    if (accept) {
+        const { data: updatedReq, error } = await db
+            .from('friendships')
+            .update({ status: 'accepted' })
+            .eq('id', requestId)
+            .select()
+            .single();
+
+        if (error) {
+            alert(`Error accepting request: ${error.message}`);
+        } else if (updatedReq) {
+            await db
+                .from('chat_messages')
+                .update({ pending_approval: false })
+                .or(`and(sender_id.eq.${updatedReq.user_id}),and(sender_id.eq.${updatedReq.friend_id})`)
+                .eq('pending_approval', true);
+        }
+    } else {
+        const { error } = await db.from('friendships').delete().eq('id', requestId);
+        if (error) alert(`Error declining request: ${error.message}`);
+    }
+    refreshMessagingHub();
+    checkNotifications();
+}
+
+async function loadFriends() {
+    if (!currentUser || !db || !friendsContainer) return;
+
+    const { data: friendships, error } = await db
+        .from('friendships')
+        .select('user_id, friend_id')
+        .eq('status', 'accepted')
+        .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
+
+    if (error) {
+        console.warn("Error loading friends:", error);
+        return;
+    }
+
+    const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
+
+    if (friendIds.length === 0) {
+        friendsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No friends yet. Add one above!</div>';
+        myFriendsList = [];
+        return;
+    }
+
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, username, avatar_url')
+        .in('id', friendIds);
+
+    myFriendsList = profiles || [];
+    myFriendsList.forEach(p => {
+        if (p.avatar_url) userAvatarCache.set(p.id, p.avatar_url);
+        if (p.username && p.avatar_url) usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url);
+    });
+
+    const { data: myMemberships } = await db
+        .from('conversation_members')
+        .select('conversation_id, user_id')
+        .in('user_id', [currentUser.id, ...friendIds]);
+
+    const userConvMap = new Map();
+    (myMemberships || []).forEach(m => {
+        if (!userConvMap.has(m.user_id)) userConvMap.set(m.user_id, new Set());
+        userConvMap.get(m.user_id).add(m.conversation_id);
+    });
+
+    const myConvs = userConvMap.get(currentUser.id) || new Set();
+
+    friendsContainer.innerHTML = '';
+    myFriendsList.forEach(friend => {
+        const theirConvs = userConvMap.get(friend.id) || new Set();
+        let directConvId = null;
+        for (let cId of theirConvs) {
+            if (myConvs.has(cId)) {
+                directConvId = cId;
+                break;
+            }
+        }
+
+        const div = document.createElement('div');
+        div.className = 'conv-item';
+        div.id = `friend-item-${friend.id}`;
+        if (directConvId) div.setAttribute('data-conv-id', directConvId);
+
+        const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
+        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
+        div.innerHTML = `
+            <div class="conv-item-label">
+                <span>@${escapeHTML(friend.username)}</span>
+            </div>
+            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+        `;
+
+        div.addEventListener('click', () => startOrOpenDirectChat(friend));
+        friendsContainer.appendChild(div);
+    });
+
+    if (groupFriendsChecklist) {
+        groupFriendsChecklist.innerHTML = '';
+        myFriendsList.forEach(friend => {
+            const item = document.createElement('label');
+            item.style.fontSize = '0.82rem';
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '6px';
+            item.innerHTML = `
+                <input type="checkbox" value="${friend.id}" class="group-friend-chk" style="width: auto; margin-bottom: 0;">
+                <span>@${escapeHTML(friend.username)}</span>
+            `;
+            groupFriendsChecklist.appendChild(item);
+        });
+    }
+}
+
+safeAddListener(addFriendBtn, async () => {
+    if (!db || !addFriendInput) return;
+    const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
+    if (!targetUsername) return;
+
+    if (targetUsername === currentUsername.toLowerCase()) {
+        alert("You cannot add yourself as a friend.");
+        return;
+    }
+
+    const { data: targetProfile, error: profileErr } = await db
+        .from('profiles')
+        .select('id, username')
+        .ilike('username', targetUsername)
+        .maybeSingle();
+
+    if (profileErr || !targetProfile) {
+        alert("User not found.");
+        return;
+    }
+
+    const { data: existing } = await db
+        .from('friendships')
+        .select('id, status, user_id')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+    if (existing) {
+        if (existing.status === 'accepted') alert("You are already friends with this user.");
+        else if (existing.user_id === currentUser.id) alert("Friend request already sent. Waiting for response.");
+        else alert("This user has already sent you a request! Check incoming requests.");
+        return;
+    }
+
+    const { error: insertErr } = await db.from('friendships').insert([{ 
+        user_id: currentUser.id, 
+        friend_id: targetProfile.id, 
+        status: 'pending' 
+    }]);
+
+    if (insertErr) {
+        alert(`Could not send request: ${insertErr.message}`);
+        return;
+    }
+
+    await sendNotification(targetProfile.id, 'friend_request', null, 'sent you a friend request.');
+    addFriendInput.value = '';
+    alert(`Friend request sent to @${targetProfile.username}!`);
+    refreshMessagingHub();
+});
+
+async function loadConversations() {
+    if (!currentUser || !db || !groupsContainer) return;
+
+    const { data: memberships } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    if (!memberships || memberships.length === 0) {
+        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+        return;
+    }
+
+    const convIds = memberships.map(m => m.conversation_id);
+    const { data: convs } = await db
+        .from('conversations')
+        .select('*')
+        .in('id', convIds)
+        .eq('is_group', true);
+
+    groupsContainer.innerHTML = '';
+    if (!convs || convs.length === 0) {
+        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+        return;
+    }
+
+    convs.forEach(conv => {
+        const div = document.createElement('div');
+        div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
+        div.setAttribute('data-conv-id', conv.id);
+
+        const unreadCount = unreadCountsByConv.get(conv.id) || 0;
+        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
+        div.innerHTML = `
+            <div class="conv-item-label">
+                <span>💬 ${escapeHTML(conv.name)}</span>
+            </div>
+            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+        `;
+
+        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, null, true));
+        groupsContainer.appendChild(div);
+    });
+}
+
+async function startOrOpenDirectChat(friend) {
+    if (!db) return;
+    const { data: myConvs } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    const { data: theirConvs } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', friend.id);
+
+    const myIds = new Set((myConvs || []).map(c => c.conversation_id));
+    const common = (theirConvs || []).filter(c => myIds.has(c.conversation_id));
+
+    let existing1on1Id = null;
+    if (common.length > 0) {
+        const { data: convMatches } = await db
+            .from('conversations')
+            .select('id')
+            .in('id', common.map(c => c.conversation_id))
+            .eq('is_group', false)
+            .maybeSingle();
+
+        if (convMatches) existing1on1Id = convMatches.id;
+    }
+
+    const { data: friendship } = await db
+        .from('friendships')
+        .select('status')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+    const isFriend = friendship && friendship.status === 'accepted';
+
+    if (existing1on1Id) {
+        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, friend.username, isFriend);
+    } else {
+        const { data: newConv, error: convErr } = await db
+            .from('conversations')
+            .insert([{ is_group: false, created_by: currentUser.id }])
+            .select()
+            .single();
+
+        if (convErr) {
+            alert(`Error creating chat: ${convErr.message}`);
+            return;
+        }
+
+        await db.from('conversation_members').insert([
+            { conversation_id: newConv.id, user_id: currentUser.id },
+            { conversation_id: newConv.id, user_id: friend.id }
+        ]);
+
+        selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
+    }
+}
+
+safeAddListener(toggleGroupCreateBtn, 'click', () => {
+    if (groupCreatorBox) groupCreatorBox.classList.toggle('hidden');
+});
+safeAddListener(cancelGroupBtn, 'click', () => {
+    if (groupCreatorBox) groupCreatorBox.classList.add('hidden');
+});
+
+safeAddListener(createGroupConfirmBtn, async () => {
+    if (!db || !groupNameInput) return;
+    const groupName = groupNameInput.value.trim();
+    if (!groupName) {
+        alert("Please provide a group name.");
+        return;
+    }
+
+    const checkedBoxes = document.querySelectorAll('.group-friend-chk:checked');
+    const selectedFriendIds = Array.from(checkedBoxes).map(b => b.value);
+
+    if (selectedFriendIds.length === 0) {
+        alert("Please select at least one friend to add.");
+        return;
+    }
+
+    const { data: newGroup, error: groupErr } = await db
+        .from('conversations')
+        .insert([{
+            name: groupName,
+            is_group: true,
+            created_by: currentUser.id
+        }])
+        .select()
+        .single();
+
+    if (groupErr) {
+        alert(`Error creating group: ${groupErr.message}`);
+        return;
+    }
+
+    const membersToInsert = [
+        { conversation_id: newGroup.id, user_id: currentUser.id },
+        ...selectedFriendIds.map(fId => ({ conversation_id: newGroup.id, user_id: fId }))
+    ];
+
+    const { error: membersErr } = await db.from('conversation_members').insert(membersToInsert);
+
+    if (membersErr) {
+        alert(`Error adding group members: ${membersErr.message}`);
+        return;
+    }
+
+    groupNameInput.value = '';
+    if (groupCreatorBox) groupCreatorBox.classList.add('hidden');
+    await loadConversations();
+    selectConversation(newGroup.id, `Group: ${groupName}`, null, null, true);
+});
+
+function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
+    if (!db) return;
+    activeConversationId = conversationId;
+    activeConversationPartnerId = partnerId;
+    activeConversationPartnerUsername = partnerUsername;
+    activeConversationIsFriend = isFriend;
+
+    if (chatHeader) {
+        if (partnerUsername) {
+            chatHeader.innerHTML = `<span class="clickable-username" title="Click to view @${escapeHTML(partnerUsername)}'s profile">@${escapeHTML(partnerUsername)}</span>`;
+        } else {
+            chatHeader.textContent = title;
+        }
+    }
+
+    if (dmText) dmText.disabled = false;
+    if (dmImageInput) dmImageInput.disabled = false;
+    if (dmSendBtn) dmSendBtn.disabled = false;
+
+    if (chatPendingBanner) {
+        if (!isFriend && partnerId) chatPendingBanner.classList.remove('hidden');
+        else chatPendingBanner.classList.add('hidden');
+    }
+
+    showChatViewOnMobile();
+    document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+
+    const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
+    if (activeEl) {
+        activeEl.classList.add('active');
+        const badge = activeEl.querySelector('.conv-badge');
+        if (badge) badge.classList.add('hidden');
+    }
+
+    loadMessages(true);
+
+    if (window.chatSubscription) {
+        db.removeChannel(window.chatSubscription);
+    }
+
+    window.chatSubscription = db.channel(`chat_${activeConversationId}`)
+        .on(
+            'postgres_changes',
+            { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'chat_messages', 
+                filter: `conversation_id=eq.${activeConversationId}` 
+            },
+            () => { loadMessages(true); }
+        )
+        .subscribe();
+}
+
+function scrollToBottom(force = false) {
+    if (!chatMessages) return;
+    const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 120;
+    if (force || isNearBottom) {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        requestAnimationFrame(() => {
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+    }
+}
+
+async function ensureAvatarsCached(userIds) {
+    if (!db) return;
+    const missing = userIds.filter(id => !userAvatarCache.has(id));
+    if (missing.length === 0) return;
+
+    const { data: profiles } = await db
+        .from('profiles')
+        .select('id, avatar_url')
+        .in('id', missing);
+
+    (profiles || []).forEach(p => {
+        userAvatarCache.set(p.id, p.avatar_url || null);
+    });
+}
+
+async function loadMessages(forceScroll = false) {
+    if (!currentUser || !activeConversationId || !db || !chatMessages) return;
+
+    const { data: messages, error } = await db
+        .from('chat_messages')
+        .select('*')
+        .eq('conversation_id', activeConversationId)
+        .order('id', { ascending: true });
+
+    if (error) {
+        console.warn("Error loading chat messages:", error);
+        return;
+    }
+
+    const visibleMessages = (messages || []).filter(msg => {
+        if (!msg.pending_approval) return true;
+        return msg.sender_id === currentUser.id;
+    });
+
+    const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
+    if (!forceScroll && visibleMessages.length === currentMsgCount) return;
+
+    chatMessages.innerHTML = '';
+    if (!visibleMessages || visibleMessages.length === 0) {
+        chatMessages.innerHTML = '<div class="no-posts">No messages in this chat yet. Start the conversation!</div>';
+        return;
+    }
+
+    const senderIds = Array.from(new Set(visibleMessages.map(m => m.sender_id)));
+    await ensureAvatarsCached(senderIds);
+
+    visibleMessages.forEach(msg => {
+        const isMine = msg.sender_id === currentUser.id;
+        const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
+        const isPending = msg.pending_approval;
+
+        const row = document.createElement('div');
+        row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
+
+        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
+        const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
+        const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
+        const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+        const pendingBadge = (isMine && isPending) ? `<span class="pending-tag">⏳ Pending Friend Acceptance</span>` : '';
+
+        const bubbleHtml = `
+            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
+                ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
+            </div>
+        `;
+
+        row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
+
+        const attachedImg = row.querySelector('.chat-img-thumb');
+        if (attachedImg) {
+            attachedImg.onload = () => scrollToBottom(forceScroll);
+        }
+
+        row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
+            clickable.addEventListener('click', (e) => {
+                const u = e.currentTarget.getAttribute('data-username');
+                if (u) window.openUserProfileCard(u);
+            });
+        });
+
+        chatMessages.appendChild(row);
+    });
+
+    scrollToBottom(forceScroll);
+
+    await db
+        .from('chat_messages')
+        .update({ is_read: true })
+        .eq('conversation_id', activeConversationId)
+        .neq('sender_id', currentUser.id)
+        .eq('is_read', false);
+
+    unreadCountsByConv.delete(activeConversationId);
+    checkNotifications();
+}
+
+safeAddListener(dmImageInput, 'change', () => {
+    const file = dmImageInput.files[0];
+    const label = document.querySelector('.upload-photo-label');
+    if (!label) return;
+    if (file) {
+        label.style.borderColor = '#16a34a';
+        label.title = `Attached: ${file.name}`;
+    } else {
+        label.style.borderColor = '#475569';
+        label.title = 'Attach Photo';
+    }
+});
+
+safeAddListener(dmForm, 'submit', async (e) => {
+    e.preventDefault();
+    if (!db) return;
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+
+    const content = dmText.value.trim();
+    const file = dmImageInput.files[0];
+
+    if (!content && !file) return;
+    if (!activeConversationId) return;
+
+    dmSendBtn.disabled = true;
+    dmSendBtn.textContent = '...';
+
+    let uploadedImageUrl = null;
+
+    if (file) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
+        const filePath = `${activeConversationId}/${fileName}`;
+
+        const { error: uploadError } = await db.storage
+            .from('chat-images')
+            .upload(filePath, file);
+
+        if (uploadError) {
+            alert(`Photo upload failed: ${uploadError.message}`);
+            dmSendBtn.disabled = false;
+            dmSendBtn.textContent = 'Send';
+            return;
+        }
+
+        const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
+        uploadedImageUrl = publicUrlData.publicUrl;
+    }
+
+    const isPendingApproval = Boolean(activeConversationPartnerId && !activeConversationIsFriend);
+
+    const { error } = await db
+        .from('chat_messages')
+        .insert([{
+            conversation_id: activeConversationId,
+            sender_id: currentUser.id,
+            sender_username: currentUsername,
+            content: content || '',
+            image_url: uploadedImageUrl,
+            pending_approval: isPendingApproval
+        }]);
+
+    dmSendBtn.disabled = false;
+    dmSendBtn.textContent = 'Send';
+
+    if (error) {
+        alert(`Error sending message: ${error.message}`);
+        return;
+    }
+
+    if (isPendingApproval && activeConversationPartnerId) {
+        await db.from('friendships').insert([{
+            user_id: currentUser.id,
+            friend_id: activeConversationPartnerId,
+            status: 'pending'
+        }]).then(() => {
+            sendNotification(
+                activeConversationPartnerId,
+                'friend_request',
+                null,
+                'sent you a friend request and a pending message.'
+            );
+        }).catch(() => {});
+    }
+
+    dmText.value = '';
+    dmImageInput.value = '';
+    const label = document.querySelector('.upload-photo-label');
+    if (label) {
+        label.style.borderColor = '#475569';
+        label.title = 'Attach Photo';
+    }
+
+    loadMessages(true);
+});
+
+// --- NOTIFICATION BADGES ---
+
+async function checkNotifications() {
+    if (!currentUser || !db) return;
+
+    try {
+        const { count: pendingReqs } = await db
+            .from('friendships')
+            .select('*', { count: 'exact', head: true })
+            .eq('friend_id', currentUser.id)
+            .eq('status', 'pending');
+
+        const { data: memberships } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
+
+        let unreadTotal = 0;
+        unreadCountsByConv.clear();
+
+        if (memberships && memberships.length > 0) {
+            const convIds = memberships.map(m => m.conversation_id);
+            const { data: unreadMsgs } = await db
+                .from('chat_messages')
+                .select('conversation_id')
+                .in('conversation_id', convIds)
+                .neq('sender_id', currentUser.id)
+                .eq('is_read', false)
+                .eq('pending_approval', false);
+
+            if (unreadMsgs) {
+                unreadTotal = unreadMsgs.length;
+                unreadMsgs.forEach(m => {
+                    const cur = unreadCountsByConv.get(m.conversation_id) || 0;
+                    unreadCountsByConv.set(m.conversation_id, cur + 1);
+                });
+            }
+        }
+
+        const total = (pendingReqs || 0) + unreadTotal;
+        if (total > 0) {
+            const badgeText = total > 99 ? '99+' : total;
+            if (notifBadge) { notifBadge.textContent = badgeText; notifBadge.classList.remove('hidden'); }
+            if (mobileMsgBadge) { mobileMsgBadge.textContent = badgeText; mobileMsgBadge.classList.remove('hidden'); }
+        } else {
+            if (notifBadge) notifBadge.classList.add('hidden');
+            if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
+        }
+
+        if (dmModal && !dmModal.classList.contains('hidden')) {
+            updateSidebarBadges();
+        }
+    } catch (e) {
+        console.warn("Notif check notice:", e);
+    }
+}
+
+function updateSidebarBadges() {
+    document.querySelectorAll('[data-conv-id]').forEach(el => {
+        const cId = el.getAttribute('data-conv-id');
+        const badge = el.querySelector('.conv-badge');
+        const count = unreadCountsByConv.get(cId) || 0;
+
+        if (badge) {
+            if (count > 0 && cId !== activeConversationId) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    });
+}
+
+safeAddListener(clearAllNotifsBtn, async () => {
+    if (!currentUser || !db) return;
+    const { data: memberships } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    if (memberships && memberships.length > 0) {
+        const convIds = memberships.map(m => m.conversation_id);
+        await db
+            .from('chat_messages')
+            .update({ is_read: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', currentUser.id)
+            .eq('is_read', false);
+    }
+
+    unreadCountsByConv.clear();
+    if (notifBadge) notifBadge.classList.add('hidden');
+    if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
+    updateSidebarBadges();
+});
+
+// --- VOTING & FEED ENGINE ---
 
 function getPostScore(post) {
     const dbLikes = Number(post.likes || 0);
@@ -1596,7 +2742,7 @@ safeAddListener(closeFabModalBtn, 'click', () => {
     }
 });
 
-// Community Search in FAB Modal
+// Community Search Dropdown Logic
 safeAddListener(threadSearchSelect, 'input', () => {
     if (!threadSuggestDropdown) return;
     const q = threadSearchSelect.value.trim().toLowerCase();
