@@ -165,7 +165,7 @@
         .notif-time { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
 
         /* Telemetry HUD & FAB */
-        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; }
+        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 15000; display: flex; flex-direction: column; align-items: flex-end; }
         .telemetry-pill { background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 6px 16px rgba(0,0,0,0.45); color: #f8fafc; padding: 6px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(8px); }
         .telemetry-pill:hover { transform: translateY(-2px); background: #0f172a; border-color: #7dd3fc; }
         .telemetry-drawer { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; width: 230px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); margin-bottom: 6px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
@@ -775,7 +775,7 @@
     </div>
 
     <!-- CAPTCHA MODAL -->
-    <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
+    <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 20000;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
             <div style="font-size: 2.2rem;">🛡</div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
