@@ -1629,7 +1629,6 @@ safeAddListener(finalDeleteBtn, 'click', async () => {
 });
 
 // --- CLOUD THREADS & MEMBERSHIP SYNC ---
-
 async function syncCloudThreads() {
     if (!db) return;
 
@@ -1638,16 +1637,26 @@ async function syncCloudThreads() {
         .select('*')
         .order('id', { ascending: true });
 
+    // Ensure mandatory threads are always present, even if DB is empty
+    const defaults = [
+        { name: "Welcome & Security", owner_username: "gemini" },
+        { name: "Update Thread", owner_username: "gemini" },
+        { name: "New User Discussion", owner_username: "gemini" }
+    ];
+
+    let mergedThreads = [];
     if (!threadErr && threads && threads.length > 0) {
-        allCloudThreads = threads;
+        mergedThreads = [...threads];
+        defaults.forEach(def => {
+            if (!mergedThreads.find(t => t.name === def.name)) {
+                mergedThreads.push(def);
+            }
+        });
     } else {
-        allCloudThreads = [
-            { name: "Welcome & Security", owner_username: "gemini" },
-            { name: "Update Thread", owner_username: "gemini" },
-            { name: "New User Discussion", owner_username: "gemini" }
-        ];
+        mergedThreads = defaults;
     }
 
+    allCloudThreads = mergedThreads;
     myJoinedThreadNames = new Set(MANDATORY_THREADS);
 
     if (currentUser) {
@@ -1656,12 +1665,7 @@ async function syncCloudThreads() {
             .select('thread_name')
             .eq('user_id', currentUser.id);
 
-        // FIX: Expose hidden database blocks so threads don't silently disappear
-        if (memErr) {
-            console.error("Threads Blocked:", memErr.message);
-            alert(`Database blocked loading your threads: ${memErr.message}`);
-        }
-
+        if (memErr) console.error("Threads Blocked:", memErr.message);
         (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
     }
 
@@ -4124,11 +4128,9 @@ function renderThreadBanner() {
     const img = document.getElementById('thread-banner-img');
     if (!container || !img) return;
 
-    // Safely look up the thread in memory
     const threadData = allCloudThreads.find(t => t.name === activeThread);
     
     if (threadData && threadData.banner_url) {
-        // Prevent flickering if the image is already loaded
         if (img.src !== threadData.banner_url) {
             img.src = threadData.banner_url;
         }
@@ -4174,13 +4176,15 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
 
         // If the DB returned 0 updated rows, the thread didn't exist in the DB yet. Insert it.
         if (!updateData || updateData.length === 0) {
-            await db.from('forum_threads').insert([{
+            const { error: insertErr } = await db.from('forum_threads').insert([{
                 name: activeThread,
                 banner_url: bannerUrl,
                 created_by: currentUser.id,
                 owner_username: SITE_ADMIN_USERNAME,
                 is_private: false
             }]);
+            
+            if (insertErr) throw new Error("Database blocked row creation: " + insertErr.message);
         }
 
         // UPDATE LOCAL MEMORY DIRECTLY AND PERMANENTLY
@@ -4191,28 +4195,38 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
             allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
         }
 
-        // Render immediately from local memory
         renderThreadBanner();
         alert('Community banner updated successfully!');
         
-        // Silently sync the cloud in the background WITHOUT clearing allCloudThreads
+        // Silently sync the cloud in the background WITHOUT wiping memory
         db.from('forum_threads').select('*').order('id', { ascending: true })
             .then(({ data }) => {
                 if (data && data.length > 0) {
-                    allCloudThreads = data;
+                    const defaults = [
+                        { name: "Welcome & Security", owner_username: "gemini" },
+                        { name: "Update Thread", owner_username: "gemini" },
+                        { name: "New User Discussion", owner_username: "gemini" }
+                    ];
+                    let freshMerge = [...data];
+                    defaults.forEach(def => {
+                        if (!freshMerge.find(t => t.name === def.name)) freshMerge.push(def);
+                    });
+                    allCloudThreads = freshMerge;
                 }
             });
 
     } catch (err) {
         alert(`Error uploading banner: ${err.message}`);
     } finally {
-        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️ Set Banner'; }
+        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️️ Set Banner'; }
         e.target.value = ''; // Reset file input
     }
 });
 
 
 // Boot Application
-syncCloudThreads();
-loadProminentUpdates();
-loadForumPosts();
+(async () => {
+    await syncCloudThreads(); // Wait for DB sync to finish first
+    loadProminentUpdates();
+    await loadForumPosts();   // Then render the UI with the banner URL locked in
+})();
