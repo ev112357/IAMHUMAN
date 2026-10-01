@@ -19,7 +19,7 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
 
-// Helper to safely bind event listeners
+// Helper to safely bind event listeners without throwing when elements don't exist
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
 }
@@ -360,7 +360,7 @@ function updateSuspicionUI() {
     }
 }
 
-// --- PERMISSION HELPERS ---
+// --- PERMISSIONS HELPERS ---
 
 function isSiteAdmin(username = currentUsername) {
     if (!username) return false;
@@ -519,7 +519,7 @@ safeAddListener(clearActivityNotifsBtn, 'click', async () => {
     if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
 });
 
-// --- USER SCORE & PROFILE LOGIC ---
+// --- USER SCORE & PUBLIC PROFILE LOGIC ---
 
 async function calculateUserScore(username) {
     if (!username || !db) return 0;
