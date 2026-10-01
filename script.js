@@ -1100,7 +1100,7 @@ safeAddListener(closeUserProfileBtn, 'click', () => {
     if (userProfileModal) userProfileModal.classList.add('hidden');
 });
 
-safeAddListener(userCardMsgBtn, async () => {
+safeAddListener(userCardMsgBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to send direct messages.");
         return;
@@ -1122,7 +1122,7 @@ safeAddListener(userCardMsgBtn, async () => {
     });
 });
 
-safeAddListener(userCardAddFriendBtn, async () => {
+safeAddListener(userCardAddFriendBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to manage friends.");
         return;
@@ -1203,7 +1203,7 @@ safeAddListener(userCardAddFriendBtn, async () => {
     refreshMessagingHub();
 });
 
-safeAddListener(confirmUnaddBtn, async () => {
+safeAddListener(confirmUnaddBtn, 'click', async () => {
     if (!targetFriendshipRecord) return;
     confirmUnaddBtn.disabled = true;
     const { error } = await db.from('friendships').delete().eq('id', targetFriendshipRecord.id);
@@ -1220,7 +1220,7 @@ safeAddListener(confirmUnaddBtn, async () => {
     refreshMessagingHub();
 });
 
-safeAddListener(cancelUnaddBtn, () => {
+safeAddListener(cancelUnaddBtn, 'click', () => {
     if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
 });
 
@@ -1505,7 +1505,7 @@ safeAddListener(profileAvatarFile, 'change', async () => {
     alert("Avatar updated successfully!");
 });
 
-safeAddListener(updatePasswordBtn, async () => {
+safeAddListener(updatePasswordBtn, 'click', async () => {
     const currentPassword = currentPasswordInput.value;
     const newPassword = newPasswordInput.value;
     const confirmPassword = confirmPasswordInput.value;
@@ -1565,7 +1565,7 @@ safeAddListener(document.getElementById('settings-logout-btn'), 'click', async (
     if (profileModal) profileModal.classList.add('hidden');
     setMobileTabActive('feed');
 });
-safeAddListener(finalDeleteBtn, async () => {
+safeAddListener(finalDeleteBtn, 'click', async () => {
     const entered = (deleteUsernameInput ? deleteUsernameInput.value : "").trim().toLowerCase().replace('@', '');
     const expected = currentUsername.toLowerCase().replace('@', '');
 
@@ -1941,7 +1941,7 @@ safeAddListener(deleteThreadBtn, 'click', () => {
 safeAddListener(closeThreadDeleteModalBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 safeAddListener(cancelDeleteThreadBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 
-safeAddListener(finalDeleteThreadBtn, async () => {
+safeAddListener(finalDeleteThreadBtn, 'click', async () => {
     const inputVal = deleteThreadConfirmInput ? deleteThreadConfirmInput.value.trim() : '';
     if (inputVal !== activeThread) {
         alert(`Confirmation failed. You must type "${activeThread}" exactly to delete this thread.`);
@@ -2493,7 +2493,7 @@ async function loadFriends() {
     }
 }
 
-safeAddListener(addFriendBtn, async () => {
+safeAddListener(addFriendBtn, 'click', async () => {
     if (!db || !addFriendInput) return;
     const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
     if (!targetUsername) return;
@@ -2540,7 +2540,7 @@ safeAddListener(addFriendBtn, async () => {
 
     await sendNotification(targetProfile.id, 'friend_request', null, 'sent you a friend request.');
     addFriendInput.value = '';
-    alert(`Friend request sent to @${targetProfile.username}!`);
+    alert("friend request sent");
     refreshMessagingHub();
 });
 
@@ -2669,7 +2669,7 @@ safeAddListener(cancelGroupBtn, 'click', () => {
     if (groupCreatorBox) groupCreatorBox.classList.add('hidden');
 });
 
-safeAddListener(createGroupConfirmBtn, async () => {
+safeAddListener(createGroupConfirmBtn, 'click', async () => {
     if (!db || !groupNameInput) return;
     const groupName = groupNameInput.value.trim();
     if (!groupName) {
@@ -3179,7 +3179,7 @@ function updateSidebarBadges() {
     });
 }
 
-safeAddListener(clearAllNotifsBtn, async () => {
+safeAddListener(clearAllNotifsBtn, 'click', async () => {
     if (!currentUser || !db) return;
     const { data: memberships } = await db
         .from('conversation_members')
