@@ -121,6 +121,8 @@ const newThreadTitleInput = document.getElementById('new-thread-title');
 const permsModal = document.getElementById('perms-modal');
 const closePermsModalBtn = document.getElementById('close-perms-modal-btn');
 const permsThreadName = document.getElementById('perms-thread-name');
+const permUserLookup = document.getElementById('perm-user-lookup');
+const permUserAddBtn = document.getElementById('perm-user-add-btn');
 const permsUserList = document.getElementById('perms-user-list');
 
 // Thread Delete Confirmation Modal Elements
@@ -269,135 +271,132 @@ let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
 
-// Dynamic Settings Tab Navigation Elements
-let settingsTabNavProfile = null;
-let settingsTabNavPrivacy = null;
-let settingsTabProfileSection = null;
-let settingsTabPrivacySection = null;
-let toggleAccountPrivacyCheckbox = null;
-let privacyStatusDescription = null;
+// Dynamic Settings Elements
+let settingsTabBtnProfile = null;
+let settingsTabBtnPrivacy = null;
+let settingsProfilePane = null;
+let settingsPrivacyPane = null;
+let accountPrivacyCheckbox = null;
+let accountPrivacyDesc = null;
 
-// Dynamic Profile Card Post History Container
-let userCardPostsContainer = null;
+// --- DYNAMIC SETTINGS WITH SUB-TABS (PROFILE & PRIVACY) ---
 
-// --- DYNAMIC SETTINGS MODAL UI UPGRADE ---
-function setupSettingsModalTabs() {
+function initializeSettingsModal() {
     if (!profileModal) return;
-    const modalBox = profileModal.querySelector('.modal-box');
-    if (!modalBox || modalBox.dataset.settingsConfigured === "true") return;
+    const box = profileModal.querySelector('.modal-box');
+    if (!box || box.dataset.hasSettingsTabs === "true") return;
 
-    modalBox.dataset.settingsConfigured = "true";
+    box.dataset.hasSettingsTabs = "true";
 
-    const modalTitle = modalBox.querySelector('h2');
-    if (modalTitle) modalTitle.innerHTML = "⚙️ Settings";
+    const header = box.querySelector('.modal-header');
+    if (header) {
+        const title = header.querySelector('h2');
+        if (title) title.innerHTML = "⚙️ Settings";
+    }
 
-    const tabNavBar = document.createElement('div');
-    tabNavBar.style.cssText = "display: flex; gap: 8px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px;";
-    tabNavBar.innerHTML = `
-        <button type="button" id="settings-tab-btn-profile" style="flex: 1; padding: 8px; font-size: 0.88rem; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px;">Profile</button>
-        <button type="button" id="settings-tab-btn-privacy" style="flex: 1; padding: 8px; font-size: 0.88rem; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Privacy & Security</button>
+    const tabNav = document.createElement('div');
+    tabNav.style.cssText = "display: flex; gap: 8px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px;";
+    tabNav.innerHTML = `
+        <button type="button" id="set-tab-profile" style="flex: 1; padding: 8px 12px; font-size: 0.88rem; font-weight: 600; background: #0284c7; color: #ffffff; border: 1px solid #38bdf8; border-radius: 6px;">Profile</button>
+        <button type="button" id="set-tab-privacy" style="flex: 1; padding: 8px 12px; font-size: 0.88rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Privacy & Security</button>
     `;
 
-    const modalHeader = modalBox.querySelector('.modal-header');
-    if (modalHeader) {
-        modalHeader.insertAdjacentElement('afterend', tabNavBar);
+    if (header) {
+        header.insertAdjacentElement('afterend', tabNav);
     }
 
     const profileWrapper = document.createElement('div');
-    profileWrapper.id = "settings-profile-section-wrapper";
-    
-    const elementsToWrap = Array.from(modalBox.children).filter(child => {
-        return child !== modalHeader && child !== tabNavBar;
-    });
+    profileWrapper.id = "settings-profile-pane";
 
-    elementsToWrap.forEach(el => profileWrapper.appendChild(el));
-    modalBox.appendChild(profileWrapper);
+    const childNodes = Array.from(box.children).filter(node => node !== header && node !== tabNav);
+    childNodes.forEach(node => profileWrapper.appendChild(node));
+    box.appendChild(profileWrapper);
 
     const privacyWrapper = document.createElement('div');
-    privacyWrapper.id = "settings-privacy-section-wrapper";
+    privacyWrapper.id = "settings-privacy-pane";
     privacyWrapper.className = "hidden";
     privacyWrapper.innerHTML = `
         <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h3 style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 2px;">Account Privacy</h3>
-                    <p id="privacy-status-desc" style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Public: Any human can view your forum post history.</p>
+                <div style="padding-right: 12px;">
+                    <div style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 3px;">Private Account</div>
+                    <p id="account-privacy-desc" style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Public: Any human can view your forum post history.</p>
                 </div>
-                <input type="checkbox" id="toggle-account-privacy-chk" style="width: 20px; height: 20px; cursor: pointer; margin: 0;">
+                <input type="checkbox" id="privacy-toggle-chk" style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
             </div>
         </div>
         <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.5;">
-            🛡️ <strong>Private Profile Guard:</strong> When your account is private, other users see your verification score and username, but your post history feed remains completely hidden.
+            🛡️ <strong>Private Profile Guard:</strong> When your account is set to private, other members can still view your username and score, but your activity post history is concealed.
         </div>
     `;
-    modalBox.appendChild(privacyWrapper);
+    box.appendChild(privacyWrapper);
 
-    settingsTabNavProfile = document.getElementById('settings-tab-btn-profile');
-    settingsTabNavPrivacy = document.getElementById('settings-tab-btn-privacy');
-    settingsTabProfileSection = profileWrapper;
-    settingsTabPrivacySection = privacyWrapper;
-    toggleAccountPrivacyCheckbox = document.getElementById('toggle-account-privacy-chk');
-    privacyStatusDescription = document.getElementById('privacy-status-desc');
+    settingsTabBtnProfile = document.getElementById('set-tab-profile');
+    settingsTabBtnPrivacy = document.getElementById('set-tab-privacy');
+    settingsProfilePane = profileWrapper;
+    settingsPrivacyPane = privacyWrapper;
+    accountPrivacyCheckbox = document.getElementById('privacy-toggle-chk');
+    accountPrivacyDesc = document.getElementById('account-privacy-desc');
 
-    safeAddListener(settingsTabNavProfile, 'click', () => switchSettingsTab('profile'));
-    safeAddListener(settingsTabNavPrivacy, 'click', () => switchSettingsTab('privacy'));
+    safeAddListener(settingsTabBtnProfile, 'click', () => switchSettingsSubTab('profile'));
+    safeAddListener(settingsTabBtnPrivacy, 'click', () => switchSettingsSubTab('privacy'));
 
-    safeAddListener(toggleAccountPrivacyCheckbox, 'change', async () => {
+    safeAddListener(accountPrivacyCheckbox, 'change', async () => {
         if (!currentUser || !db) return;
-        const newPrivacyState = toggleAccountPrivacyCheckbox.checked;
-        currentUserIsPrivate = newPrivacyState;
-        updatePrivacyDescriptionText();
+        const newIsPrivate = accountPrivacyCheckbox.checked;
+        currentUserIsPrivate = newIsPrivate;
+        syncPrivacyDesc();
 
-        const { error } = await db.from('profiles').update({ is_private: newPrivacyState }).eq('id', currentUser.id);
+        const { error } = await db.from('profiles').update({ is_private: newIsPrivate }).eq('id', currentUser.id);
         if (error) {
-            alert(`Failed to save privacy settings: ${error.message}`);
-            toggleAccountPrivacyCheckbox.checked = !newPrivacyState;
-            currentUserIsPrivate = !newPrivacyState;
-            updatePrivacyDescriptionText();
+            alert(`Could not save privacy setting: ${error.message}`);
+            accountPrivacyCheckbox.checked = !newIsPrivate;
+            currentUserIsPrivate = !newIsPrivate;
+            syncPrivacyDesc();
         }
     });
 }
 
-function updatePrivacyDescriptionText() {
-    if (!privacyStatusDescription) return;
+function syncPrivacyDesc() {
+    if (!accountPrivacyDesc) return;
     if (currentUserIsPrivate) {
-        privacyStatusDescription.textContent = "Private: Your forum post history is hidden from other members.";
+        accountPrivacyDesc.textContent = "Private: Your forum post history is hidden from other members.";
     } else {
-        privacyStatusDescription.textContent = "Public: Any human can view your forum post history.";
+        accountPrivacyDesc.textContent = "Public: Any human can view your forum post history.";
     }
 }
 
-function switchSettingsTab(tab) {
+function switchSettingsSubTab(tab) {
     if (tab === 'profile') {
-        if (settingsTabProfileSection) settingsTabProfileSection.classList.remove('hidden');
-        if (settingsTabPrivacySection) settingsTabPrivacySection.classList.add('hidden');
-        if (settingsTabNavProfile) {
-            settingsTabNavProfile.style.background = '#0284c7';
-            settingsTabNavProfile.style.borderColor = '#38bdf8';
-            settingsTabNavProfile.style.color = '#fff';
+        if (settingsProfilePane) settingsProfilePane.classList.remove('hidden');
+        if (settingsPrivacyPane) settingsPrivacyPane.classList.add('hidden');
+        if (settingsTabBtnProfile) {
+            settingsTabBtnProfile.style.background = "#0284c7";
+            settingsTabBtnProfile.style.borderColor = "#38bdf8";
+            settingsTabBtnProfile.style.color = "#ffffff";
         }
-        if (settingsTabNavPrivacy) {
-            settingsTabNavPrivacy.style.background = '#0f172a';
-            settingsTabNavPrivacy.style.borderColor = '#334155';
-            settingsTabNavPrivacy.style.color = '#94a3b8';
+        if (settingsTabBtnPrivacy) {
+            settingsTabBtnPrivacy.style.background = "#0f172a";
+            settingsTabBtnPrivacy.style.borderColor = "#334155";
+            settingsTabBtnPrivacy.style.color = "#94a3b8";
         }
     } else {
-        if (settingsTabProfileSection) settingsTabProfileSection.classList.add('hidden');
-        if (settingsTabPrivacySection) settingsTabPrivacySection.classList.remove('hidden');
-        if (settingsTabNavPrivacy) {
-            settingsTabNavPrivacy.style.background = '#0284c7';
-            settingsTabNavPrivacy.style.borderColor = '#38bdf8';
-            settingsTabNavPrivacy.style.color = '#fff';
+        if (settingsProfilePane) settingsProfilePane.classList.add('hidden');
+        if (settingsPrivacyPane) settingsPrivacyPane.classList.remove('hidden');
+        if (settingsTabBtnPrivacy) {
+            settingsTabBtnPrivacy.style.background = "#0284c7";
+            settingsTabBtnPrivacy.style.borderColor = "#38bdf8";
+            settingsTabBtnPrivacy.style.color = "#ffffff";
         }
-        if (settingsTabNavProfile) {
-            settingsTabNavProfile.style.background = '#0f172a';
-            settingsTabNavProfile.style.borderColor = '#334155';
-            settingsTabNavProfile.style.color = '#94a3b8';
+        if (settingsTabBtnProfile) {
+            settingsTabBtnProfile.style.background = "#0f172a";
+            settingsTabBtnProfile.style.borderColor = "#334155";
+            settingsTabBtnProfile.style.color = "#94a3b8";
         }
     }
 }
 
-// Ensure the profile settings modal triggers settings layout
+// Convert icons & labels to "Settings"
 if (openSettingsBtn) {
     openSettingsBtn.title = "Settings";
     const headerFallback = openSettingsBtn.querySelector('#header-avatar-fallback');
@@ -410,23 +409,73 @@ if (tabNavSettings) {
     if (iconSpan) iconSpan.textContent = "⚙️";
 }
 
-// --- DYNAMIC PROFILE CARD POST HISTORY CONTAINER ---
-function setupUserProfileHistoryContainer() {
-    if (!userProfileModal) return;
-    const modalBox = userProfileModal.querySelector('.modal-box');
-    if (!modalBox || modalBox.querySelector('#user-card-posts-section')) return;
+// --- PUBLIC POST HISTORY ON USER PROFILES ---
 
-    const postsSection = document.createElement('div');
-    postsSection.id = "user-card-posts-section";
-    postsSection.style.cssText = "margin-top: 14px; border-top: 1px solid #334155; padding-top: 12px; display: flex; flex-direction: column; max-height: 240px; overflow-y: auto;";
-    postsSection.innerHTML = `
+function ensureProfilePostHistorySection() {
+    if (!userProfileModal) return;
+    const box = userProfileModal.querySelector('.modal-box');
+    if (!box || box.querySelector('#user-history-section')) return;
+
+    const histSec = document.createElement('div');
+    histSec.id = "user-history-section";
+    histSec.style.cssText = "margin-top: 14px; border-top: 1px solid #334155; padding-top: 12px; display: flex; flex-direction: column; max-height: 230px; overflow-y: auto;";
+    histSec.innerHTML = `
         <div style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">Activity History</div>
-        <div id="user-card-posts-list" style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="font-size: 0.8rem; color: #64748b;">Loading post history...</div>
-        </div>
+        <div id="user-history-posts-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
     `;
-    modalBox.appendChild(postsSection);
-    userCardPostsContainer = document.getElementById('user-card-posts-list');
+    box.appendChild(histSec);
+}
+
+async function loadProfileUserPostHistory(username, isPrivate) {
+    ensureProfilePostHistorySection();
+    const container = document.getElementById('user-history-posts-list');
+    if (!container) return;
+
+    if (isPrivate) {
+        container.innerHTML = `
+            <div style="background: #0f172a; border: 1px dashed #475569; padding: 12px; border-radius: 8px; text-align: center; color: #94a3b8; font-size: 0.82rem;">
+                🔒 This member's post history is private.
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading post history...</div>';
+
+    const { data: posts, error } = await db
+        .from('Posts')
+        .select('*')
+        .ilike('author', username)
+        .order('id', { ascending: false })
+        .limit(10);
+
+    if (error || !posts || posts.length === 0) {
+        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic;">No public posts from this user yet.</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+    posts.forEach(p => {
+        const item = document.createElement('div');
+        item.style.cssText = "background: #0f172a; border: 1px solid #334155; padding: 8px 10px; border-radius: 6px; cursor: pointer;";
+        const d = p.created_at ? new Date(p.created_at).toLocaleDateString() : '';
+        item.innerHTML = `
+            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #38bdf8; margin-bottom: 2px;">
+                <span>#${escapeHTML(p.thread)}</span>
+                <span style="color: #64748b;">${d}</span>
+            </div>
+            <div style="font-size: 0.82rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${escapeHTML(p.content || '[Attached Photo]')}
+            </div>
+        `;
+        item.onmouseenter = () => { item.style.borderColor = '#38bdf8'; };
+        item.onmouseleave = () => { item.style.borderColor = '#334155'; };
+        item.onclick = () => {
+            if (userProfileModal) userProfileModal.classList.add('hidden');
+            navigateToPost(p.id);
+        };
+        container.appendChild(item);
+    });
 }
 
 // --- DIRECT MODAL & VIEW OPENERS ---
@@ -468,12 +517,12 @@ function openSettingsModal() {
         setMobileTabActive('feed');
         return;
     }
-    setupSettingsModalTabs();
-    if (toggleAccountPrivacyCheckbox) {
-        toggleAccountPrivacyCheckbox.checked = currentUserIsPrivate;
+    initializeSettingsModal();
+    if (accountPrivacyCheckbox) {
+        accountPrivacyCheckbox.checked = currentUserIsPrivate;
     }
-    updatePrivacyDescriptionText();
-    switchSettingsTab('profile');
+    syncPrivacyDesc();
+    switchSettingsSubTab('profile');
     if (profileModal) profileModal.classList.remove('hidden');
     setMobileTabActive('profile');
 }
@@ -519,9 +568,13 @@ safeAddListener(openDmBtn, 'click', openMessagesModal);
 safeAddListener(openNotifBtn, 'click', openNotificationsModal);
 safeAddListener(openSettingsBtn, 'click', openSettingsModal);
 
-safeAddListener(closeDmBtn, 'click', closeMessagesModal);
+// Close button on messaging modal
+safeAddListener(closeDmBtn, 'click', (e) => {
+    e.stopPropagation();
+    closeMessagesModal();
+});
 
-// Unconditionally allow closing messages even when a direct chat is active
+// Click background backdrop to close messaging modal
 safeAddListener(dmModal, 'click', (e) => {
     if (e.target === dmModal) {
         closeMessagesModal();
@@ -888,58 +941,6 @@ async function updateProfileFriendButtonUI() {
     }
 }
 
-async function loadProfileUserPosts(username, isPrivate) {
-    setupUserProfileHistoryContainer();
-    const container = document.getElementById('user-card-posts-list');
-    if (!container) return;
-
-    if (isPrivate) {
-        container.innerHTML = `
-            <div style="background: #0f172a; border: 1px dashed #475569; padding: 12px; border-radius: 8px; text-align: center; color: #94a3b8; font-size: 0.82rem;">
-                🔒 This user's post history is set to private.
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading post history...</div>';
-
-    const { data: userPosts, error } = await db
-        .from('Posts')
-        .select('*')
-        .ilike('author', username)
-        .order('id', { ascending: false })
-        .limit(10);
-
-    if (error || !userPosts || userPosts.length === 0) {
-        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic;">No public posts from this user yet.</div>';
-        return;
-    }
-
-    container.innerHTML = '';
-    userPosts.forEach(p => {
-        const pDate = p.created_at ? new Date(p.created_at).toLocaleDateString() : '';
-        const item = document.createElement('div');
-        item.style.cssText = "background: #0f172a; border: 1px solid #334155; padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: border-color 0.15s;";
-        item.innerHTML = `
-            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #38bdf8; margin-bottom: 2px;">
-                <span>#${escapeHTML(p.thread)}</span>
-                <span style="color: #64748b;">${pDate}</span>
-            </div>
-            <div style="font-size: 0.82rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${escapeHTML(p.content || '[Attached Photo]')}
-            </div>
-        `;
-        item.addEventListener('mouseenter', () => { item.style.borderColor = '#38bdf8'; });
-        item.addEventListener('mouseleave', () => { item.style.borderColor = '#334155'; });
-        item.addEventListener('click', () => {
-            if (userProfileModal) userProfileModal.classList.add('hidden');
-            navigateToPost(p.id);
-        });
-        container.appendChild(item);
-    });
-}
-
 window.openUserProfileCard = async function(username) {
     if (!username || !userProfileModal) return;
     const cleanUser = username.toLowerCase().replace('@', '');
@@ -978,7 +979,7 @@ window.openUserProfileCard = async function(username) {
     const score = await calculateUserScore(cleanUser);
     if (userCardScore) userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
 
-    await loadProfileUserPosts(cleanUser, targetProfileIsPrivate);
+    await loadProfileUserPostHistory(cleanUser, targetProfileIsPrivate);
 };
 
 safeAddListener(closeUserProfileBtn, 'click', () => {
@@ -1103,10 +1104,10 @@ async function syncUserState(user) {
                     renderUserAvatar(currentAvatarUrl);
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
-                if (toggleAccountPrivacyCheckbox) {
-                    toggleAccountPrivacyCheckbox.checked = currentUserIsPrivate;
+                if (accountPrivacyCheckbox) {
+                    accountPrivacyCheckbox.checked = currentUserIsPrivate;
                 }
-                updatePrivacyDescriptionText();
+                syncPrivacyDesc();
 
                 if (profile.suspicion_score != null) {
                     suspicionScore = profile.suspicion_score;
@@ -1724,12 +1725,13 @@ safeAddListener(finalDeleteThreadBtn, async () => {
     await loadForumPosts();
 });
 
-// --- PERMISSIONS MANAGEMENT UI ---
+// --- FULL THREAD PERMISSIONS & ROLE MANAGEMENT UI ---
 
 safeAddListener(managePermsBtn, 'click', () => openPermissionsManager());
 safeAddListener(closePermsModalBtn, 'click', () => { if (permsModal) permsModal.classList.add('hidden'); });
+safeAddListener(permsModal, 'click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
 
-async function openPermissionsManager() {
+function openPermissionsManager() {
     if (permsThreadName) permsThreadName.textContent = activeThread;
     renderPermissionsUserList();
     if (permsModal) permsModal.classList.remove('hidden');
@@ -1754,9 +1756,90 @@ function renderPermissionsUserList() {
     trackedUsers.forEach(uname => {
         const cleanUser = uname.toLowerCase().replace('@', '');
         const role = getThreadRole(activeThread, cleanUser);
+        const isBanned = (meta.banned || []).map(u => u.toLowerCase()).includes(cleanUser);
+
         const row = document.createElement('div');
         row.className = 'perm-user-row';
-        row.innerHTML = `<span class="perm-user-name">@${escapeHTML(cleanUser)} (${role})</span>`;
+
+        let badgeClass = 'badge-blue';
+        if (role === 'Site Admin') badgeClass = 'badge-purple';
+        else if (role === 'Owner') badgeClass = 'badge-yellow';
+        else if (role === 'Moderator') badgeClass = 'badge-green';
+        else if (role === 'Banned') badgeClass = 'badge-red';
+
+        const nameCol = document.createElement('div');
+        nameCol.className = 'perm-user-name';
+        nameCol.innerHTML = `<span class="clickable-username" data-username="${escapeHTML(cleanUser)}">@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
+
+        nameCol.querySelector('.clickable-username').addEventListener('click', () => {
+            window.openUserProfileCard(cleanUser);
+        });
+
+        const btnCol = document.createElement('div');
+        btnCol.style.cssText = "display: flex; gap: 6px;";
+
+        // Moderator Promotion & Demotion
+        if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
+            if (role === 'Moderator') {
+                const demoteBtn = document.createElement('button');
+                demoteBtn.className = 'btn-perm secondary';
+                demoteBtn.textContent = 'Demote Mod';
+                demoteBtn.onclick = () => {
+                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                    updateThreadControlsUI();
+                };
+                btnCol.appendChild(demoteBtn);
+            } else {
+                const promoteBtn = document.createElement('button');
+                promoteBtn.className = 'btn-perm secondary';
+                promoteBtn.textContent = 'Promote Mod';
+                promoteBtn.onclick = () => {
+                    if (!meta.moderators) meta.moderators = [];
+                    if (!meta.moderators.map(m => m.toLowerCase()).includes(cleanUser)) {
+                        meta.moderators.push(cleanUser);
+                    }
+                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                    updateThreadControlsUI();
+                };
+                btnCol.appendChild(promoteBtn);
+            }
+        }
+
+        // Revoke or Allow Posting Privileges
+        if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
+            if (isBanned) {
+                const unbanBtn = document.createElement('button');
+                unbanBtn.className = 'btn-perm secondary';
+                unbanBtn.textContent = 'Allow Posting';
+                unbanBtn.onclick = () => {
+                    meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(unbanBtn);
+            } else {
+                const banBtn = document.createElement('button');
+                banBtn.className = 'btn-perm danger';
+                banBtn.textContent = 'Revoke Access';
+                banBtn.onclick = () => {
+                    if (!meta.banned) meta.banned = [];
+                    if (!meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) {
+                        meta.banned.push(cleanUser);
+                    }
+                    meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
+                    saveThreadMeta();
+                    renderPermissionsUserList();
+                };
+                btnCol.appendChild(banBtn);
+            }
+        }
+
+        row.appendChild(nameCol);
+        row.appendChild(btnCol);
         permsUserList.appendChild(row);
     });
 }
@@ -2941,7 +3024,7 @@ async function navigateToPost(postId) {
     }
 }
 
-// --- FAB POST MODAL LOGIC ---
+// --- FAB POST MODAL LOGIC & CLOSE FIX ---
 
 function openFabModal(e) {
     if (!currentUser) { 
@@ -2960,20 +3043,32 @@ function openFabModal(e) {
     
     if (fabModalOverlay) {
         fabModalOverlay.classList.remove('hidden');
-        requestAnimationFrame(() => fabModalOverlay.classList.add('active'));
+        fabModalOverlay.classList.add('active');
     }
 
     if (threadSearchSelect) threadSearchSelect.value = activeThread;
     if (threadSuggestDropdown) threadSuggestDropdown.classList.add('hidden');
 }
 
+function closeFabModal() {
+    if (fabModalOverlay) {
+        fabModalOverlay.classList.remove('active');
+        fabModalOverlay.classList.add('hidden');
+    }
+}
+
 safeAddListener(desktopFab, 'click', openFabModal);
 safeAddListener(mobileFab, 'click', openFabModal);
 
-safeAddListener(closeFabModalBtn, () => {
-    if (fabModalOverlay) {
-        fabModalOverlay.classList.remove('active');
-        setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+// Unconditionally close the post modal
+safeAddListener(closeFabModalBtn, 'click', (e) => {
+    e.stopPropagation();
+    closeFabModal();
+});
+
+safeAddListener(fabModalOverlay, 'click', (e) => {
+    if (e.target === fabModalOverlay) {
+        closeFabModal();
     }
 });
 
@@ -3100,10 +3195,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
     }
 
     resetTelemetryConsole();
-    if (fabModalOverlay) {
-        fabModalOverlay.classList.remove('active');
-        setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
-    }
+    closeFabModal();
 });
 
 // Boot Application
