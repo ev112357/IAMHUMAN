@@ -492,6 +492,11 @@ function openMessagesModal() {
         return; 
     }
     if (dmModal) dmModal.classList.remove('hidden');
+    
+    // Hide floating telemetry HUD so it doesn't block the Send button
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'none';
+
     showSidebarViewOnMobile();
     refreshMessagingHub();
     setMobileTabActive('messages');
@@ -551,6 +556,11 @@ function closeMessagesModal() {
     activeConversationId = null;
     activeConversationPartnerId = null;
     activeConversationPartnerUsername = null;
+
+    // Restore floating telemetry HUD
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'flex';
+
     showSidebarViewOnMobile();
     setMobileTabActive('feed');
     checkNotifications();
@@ -3237,10 +3247,11 @@ document.addEventListener('click', (e) => {
 });
 
 // Post Submission
+// Post Submission (Robust Paste Handling & Flag Reset)
 safeAddListener(forumForm, 'submit', async (event) => {
     event.preventDefault(); 
-    
-    if (!currentUsername) {
+
+    if (!currentUser || !currentUsername) {
         alert("You must be logged in to post.");
         return;
     }
@@ -3255,7 +3266,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
         alert("Please select a community to post in.");
         return;
     }
-    
+
     if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
         alert("Community not found. Please choose an existing thread or create a new one from the sidebar.");
         return;
@@ -3271,13 +3282,8 @@ safeAddListener(forumForm, 'submit', async (event) => {
         return;
     }
 
-    if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
-        alert("Please enter a message or attach a photo.");
-        return;
-    }
-
-    // Capture post content before any resets or state updates
-    const postContent = textBox.value.trim();
+    // Capture text safely before any processing
+    const postContent = textBox ? textBox.value.trim() : "";
 
     if (postContent.length < 2 && !selectedPostPhotoFile) {
         alert("Please enter a message or attach a photo.");
@@ -3288,28 +3294,28 @@ safeAddListener(forumForm, 'submit', async (event) => {
     let behaviorPoints = 0;
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
 
-    // 1. Bot Trap (Honeypot) - Immediate suspension
+    // 1. Bot Trap / Honeypot field filled
     if (honeypotField && honeypotField.value.trim() !== "") {
         behaviorPoints += 5;
     }
 
-    // 2. Clipboard Paste Detection (+1 point only)
+    // 2. Clipboard Paste (+1 point only)
     if (textWasPasted) {
         behaviorPoints += 1;
     }
 
-    // 3. Superhuman instant posting (>60 chars in under 0.8s)
-    if (totalTimeElapsed < 0.8 && postContent.length > 60) {
+    // 3. Superhuman speed check (>60 characters in under 0.6 seconds)
+    if (totalTimeElapsed < 0.6 && postContent.length > 60) {
         behaviorPoints += 1;
     }
 
-    // 4. Rapid burst posting (less than 8 seconds between posts)
+    // 4. Rapid burst posting (<6 seconds between forum posts)
     const now = Date.now();
-    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 8000) {
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 6000) {
         behaviorPoints += 1;
     }
 
-    // Record suspicion points to UI and database
+    // Update suspicion score
     if (behaviorPoints > 0) {
         suspicionScore += behaviorPoints;
         updateSuspicionUI();
@@ -3318,37 +3324,70 @@ safeAddListener(forumForm, 'submit', async (event) => {
             db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
         }
 
-        // Only lock and abort if the cumulative score hits 5 or higher
+        // Suspend and halt ONLY if threshold (5) is reached
         if (suspicionScore >= 5) {
+            resetTelemetryConsole(); // Clear flags so subsequent attempts start fresh after CAPTCHA
             triggerSuspensionGate();
             return;
         }
     }
 
     const submitBtn = document.getElementById('forum-submit-btn');
-    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Publishing...'; }
-
-    let postImageUrl = null;
-    if (selectedPostPhotoFile) {
-        const fileExt = selectedPostPhotoFile.name.split('.').pop();
-        const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, selectedPostPhotoFile);
-
-        if (!uploadError) {
-            const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
-            postImageUrl = publicUrlData.publicUrl;
-        }
+    if (submitBtn) { 
+        submitBtn.disabled = true; 
+        submitBtn.textContent = 'Publishing...'; 
     }
 
-    const { error } = await db
-        .from('Posts')
-        .insert([{ 
-            thread: targetThread, 
-            author: currentUsername, 
-            content: textBox.value,
-            image_url: postImageUrl
-        }]);
+    let postImageUrl = null;
+    try {
+        if (selectedPostPhotoFile) {
+            const fileExt = selectedPostPhotoFile.name.split('.').pop();
+            const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
+            const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, selectedPostPhotoFile);
 
+            if (!uploadError) {
+                const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
+                postImageUrl = publicUrlData.publicUrl;
+            }
+        }
+
+        // Insert into database
+        const { error } = await db
+            .from('Posts')
+            .insert([{ 
+                thread: targetThread, 
+                author: currentUsername, 
+                content: postContent,
+                image_url: postImageUrl
+            }]);
+
+        if (error) {
+            alert(`Database Error: ${error.message}`);
+            return;
+        }
+
+        lastPostTimestamp = Date.now();
+
+        if (targetThread === "Update Thread") {
+            await loadProminentUpdates();
+        } else {
+            activeThread = targetThread;
+            await loadForumPosts();
+        }
+
+        closeFabModal();
+    } catch (err) {
+        alert(`An error occurred while posting: ${err.message}`);
+    } finally {
+        // ALWAYS reset telemetry flags (including textWasPasted) so future regular posts aren't penalized
+        resetTelemetryConsole();
+
+        if (submitBtn) { 
+            submitBtn.disabled = false; 
+            submitBtn.textContent = 'Publish Post'; 
+        }
+    }
+});
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Publish Post'; }
 
     if (error) {
