@@ -1175,14 +1175,20 @@ async function syncUserState(user) {
     if (user) {
         currentUser = user;
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
-            // LINK DEVICE TO ONESIGNAL:
-        // Ties this device's push token to the Supabase Auth UUID
-        if (window.OneSignal) {
-            window.OneSignal.login(currentUser.id);
-        } else if (window.plugins && window.plugins.OneSignal) {
-        // Fallback for Cordova / Capacitor wrappers
-            window.plugins.OneSignal.login(currentUser.id);
+
+        // LINK DEVICE TO ONESIGNAL (Capacitor & Web compatible)
+        try {
+            if (window.Capacitor?.Plugins?.OneSignal) {
+                window.Capacitor.Plugins.OneSignal.login({ externalId: currentUser.id });
+            } else if (window.OneSignal?.login) {
+                window.OneSignal.login(currentUser.id);
+            } else if (window.plugins?.OneSignal?.login) {
+                window.plugins.OneSignal.login(currentUser.id);
+            }
+        } catch (e) {
+            console.warn("OneSignal login notice:", e);
         }
+
         if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
         if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
@@ -1245,6 +1251,20 @@ async function syncUserState(user) {
         currentUserIsPrivate = false;
         suspicionScore = 0;
         updateSuspicionUI();
+
+        // UNLINK DEVICE ON LOGOUT (Capacitor & Web compatible)
+        try {
+            if (window.Capacitor?.Plugins?.OneSignal) {
+                window.Capacitor.Plugins.OneSignal.logout();
+            } else if (window.OneSignal?.logout) {
+                window.OneSignal.logout();
+            } else if (window.plugins?.OneSignal?.logout) {
+                window.plugins.OneSignal.logout();
+            }
+        } catch (e) {
+            console.warn("OneSignal logout notice:", e);
+        }
+
         if (window.chatSubscription && db) {
             db.removeChannel(window.chatSubscription);
             window.chatSubscription = null;
