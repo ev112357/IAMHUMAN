@@ -47,7 +47,7 @@ const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
 
 // Header Nav & Settings Triggers
-const openSettingsBtn = document.getElementById('open-profile-btn');
+const openSettingsBtn = document.getElementById('open-settings-btn') || document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
 const postBarAvatar = document.getElementById('post-bar-avatar');
@@ -65,11 +65,7 @@ const mobileTabBar = document.getElementById('mobile-tab-bar');
 const tabNavFeed = document.getElementById('tab-nav-feed');
 const tabNavMessages = document.getElementById('tab-nav-messages');
 const tabNavNotifs = document.getElementById('tab-nav-notifs');
-const tabNavSettings = document.getElementById('tab-nav-profile');
-const tabAvatarImg = document.getElementById('tab-avatar-img');
-const tabAvatarFallback = document.getElementById('tab-avatar-fallback');
-const mobileMsgBadge = document.getElementById('mobile-msg-badge');
-const mobileActivityBadge = document.getElementById('mobile-activity-badge');
+const tabNavSettings = document.getElementById('tab-nav-settings') || document.getElementById('tab-nav-profile');
 
 // Pinned Updates Ticker & Modal
 const tickerBadge = document.getElementById('ticker-badge');
@@ -521,7 +517,7 @@ function openNotificationsModal() {
 
 function openSettingsModal() {
     if (!currentUser) {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         if (authEmailInput) authEmailInput.focus();
         setMobileTabActive('feed');
         return;
@@ -531,7 +527,12 @@ function openSettingsModal() {
     }
     syncPrivacyDesc();
     switchSettingsTab('profile');
+    
+    // Close other modals and reveal settings
+    if (notificationsModal) notificationsModal.classList.add('hidden');
+    if (userProfileModal) userProfileModal.classList.add('hidden');
     if (profileModal) profileModal.classList.remove('hidden');
+    
     setMobileTabActive('profile');
 }
 
