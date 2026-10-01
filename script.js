@@ -4224,8 +4224,33 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
 });
 
 
+// --- LIVE USER COUNT TRACKER ---
+async function initLiveUserCount() {
+    if (!db) return;
+    const countEl = document.getElementById('live-user-count');
+    if (!countEl) return;
+
+    const updateCount = async () => {
+        // { head: true } asks Supabase only for the count number, saving massive bandwidth
+        const { count, error } = await db.from('profiles').select('*', { count: 'exact', head: true });
+        if (!error && count !== null) {
+            countEl.textContent = count.toLocaleString() + ' Members';
+        }
+    };
+
+    // 1. Initial fetch on page load
+    await updateCount();
+
+    // 2. Subscribe to real-time additions or deletions in the profiles table
+    db.channel('live-user-count')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, updateCount)
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'profiles' }, updateCount)
+        .subscribe();
+}
+
 // Boot Application
 (async () => {
+    initLiveUserCount(); // Boot the live counter
     await syncCloudThreads(); // Wait for DB sync to finish first
     loadProminentUpdates();
     await loadForumPosts();   // Then render the UI with the banner URL locked in
