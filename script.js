@@ -23,7 +23,7 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
-const MANDATORY_THREADS = ["Welcome & Security", "Update Thread"];
+const MANDATORY_THREADS = ["Welcome & Security", "Update Thread", "New User Discussion"];
 
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
@@ -272,6 +272,7 @@ let currentFetchId = 0;
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
 if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+if (!threadMetaMap["New User Discussion"]) threadMetaMap["New User Discussion"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
 // Voting Cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
@@ -1597,7 +1598,8 @@ async function syncCloudThreads() {
     } else {
         allCloudThreads = [
             { name: "Welcome & Security", owner_username: "gemini" },
-            { name: "Update Thread", owner_username: "gemini" }
+            { name: "Update Thread", owner_username: "gemini" },
+            { name: "New User Discussion", owner_username: "gemini" }
         ];
     }
 
