@@ -414,6 +414,7 @@ img, video, canvas, pre, code {
 
     <header class="top-banner">
         <div class="brand-container">
+            <div class="brand-container">
             <div class="brand-logo-wrap" title="Human-Only Verified">
                 <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <circle cx="256" cy="256" r="236" fill="#38bdf8" opacity="0.4"/>
@@ -423,6 +424,12 @@ img, video, canvas, pre, code {
                 </svg>
             </div>
             <div class="brand-title">Turing's <span>Gate</span></div>
+            
+            <!-- LIVE USER COUNT BADGE -->
+            <div title="Total Verified Humans" style="margin-left: 4px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 12px; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
+                <span class="skeleton-pulse" style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 4px #22c55e;"></span>
+                <span id="live-user-count">...</span>
+            </div>
         </div>
 
         <div class="desktop-nav-actions">
