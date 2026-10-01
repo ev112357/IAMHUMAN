@@ -414,7 +414,6 @@ img, video, canvas, pre, code {
 
     <header class="top-banner">
         <div class="brand-container">
-            <div class="brand-container">
             <div class="brand-logo-wrap" title="Human-Only Verified">
                 <svg width="36" height="36" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <circle cx="256" cy="256" r="236" fill="#38bdf8" opacity="0.4"/>
@@ -424,29 +423,35 @@ img, video, canvas, pre, code {
                 </svg>
             </div>
             <div class="brand-title">Turing's <span>Gate</span></div>
-            
-            <!-- LIVE USER COUNT BADGE -->
-            <div title="Total Verified Humans" style="margin-left: 4px; background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-size: 0.68rem; font-weight: 700; padding: 3px 8px; border-radius: 12px; display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                <span class="skeleton-pulse" style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 4px #22c55e;"></span>
-                <span id="live-user-count">...</span>
-            </div>
         </div>
 
-        <div class="desktop-nav-actions">
-            <div class="btn-badge-wrap">
-                <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
-                <span id="activity-notif-badge" class="notif-badge hidden">0</span>
+        <!-- RIGHT-ALIGNED ACTIONS WRAPPER -->
+        <div style="display: flex; align-items: center; gap: 14px;">
+            
+            <!-- LIVE USER COUNT BADGE (Moved to the right) -->
+            <div title="Total Verified Humans" style="background: #0f172a; border: 1px solid #334155; color: #38bdf8; font-size: 0.68rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">
+                <span class="skeleton-pulse" style="width: 6px; height: 6px; background: #22c55e; border-radius: 50%; display: inline-block; box-shadow: 0 0 5px #22c55e;"></span>
+                <span id="live-user-count">...</span>
             </div>
 
-            <div class="btn-badge-wrap">
-                <button id="open-dm-btn" class="icon-btn hidden" title="Messages & Group Chats">✉️</button>
-                <span id="notif-badge" class="notif-badge hidden">0</span>
-            </div>
+            <!-- DESKTOP ICONS (Hide automatically on mobile) -->
+            <div class="desktop-nav-actions">
+                <div class="btn-badge-wrap">
+                    <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
+                    <span id="activity-notif-badge" class="notif-badge hidden">0</span>
+                </div>
 
-            <!-- Settings Button replaces standalone profile -->
-            <button id="open-settings-btn" class="icon-btn hidden" title="Settings Hub">
-                ⚙️
-            </button>
+                <div class="btn-badge-wrap">
+                    <button id="open-dm-btn" class="icon-btn hidden" title="Messages & Group Chats">✉️</button>
+                    <span id="notif-badge" class="notif-badge hidden">0</span>
+                </div>
+
+                <!-- Settings Button -->
+                <button id="open-settings-btn" class="icon-btn hidden" title="Settings Hub">
+                    ⚙️
+                </button>
+            </div>
+            
         </div>
     </header>
 
