@@ -1460,7 +1460,11 @@ safeAddListener(openDeleteModalBtn, () => {
 });
 safeAddListener(closeDeleteModalBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
 safeAddListener(cancelDeleteBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
-
+safeAddListener(document.getElementById('settings-logout-btn'), 'click', async () => {
+    if (db) await db.auth.signOut();
+    if (profileModal) profileModal.classList.add('hidden');
+    setMobileTabActive('feed');
+});
 safeAddListener(finalDeleteBtn, async () => {
     const entered = (deleteUsernameInput ? deleteUsernameInput.value : "").trim().toLowerCase().replace('@', '');
     const expected = currentUsername.toLowerCase().replace('@', '');
