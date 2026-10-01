@@ -511,7 +511,7 @@
     <!-- OTHER MODALS -->
     <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
-            <div style="font-size: 2.2rem;">🛡️️</div>
+            <div style="font-size: 2.2rem;">🛡</div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
             <p style="font-size: 0.88rem; color: #cbd5e1; line-height: 1.5;">Our security telemetry noted automated cadence or rapid posting behavior. To verify you are human, please solve the security code below to restore your account.</p>
             <div class="captcha-canvas-wrap"><canvas id="captchaCanvas" width="220" height="70"></canvas></div>
@@ -601,12 +601,10 @@
             <form id="createThreadForm">
                 <label for="new-thread-title">Thread Title</label>
                 <input type="text" id="new-thread-title" placeholder="e.g. Philosophical Musings, Web3 Debates" required>
-                
                 <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px; cursor: pointer;">
                     <input type="checkbox" id="new-thread-private-chk" style="width: auto; margin: 0;">
                     Private Community (Requires Approval)
                 </label>
-                
                 <button type="submit" id="create-thread-submit-btn">Create & Join Thread</button>
             </form>
         </div>
@@ -650,100 +648,6 @@
             <div style="display: flex; gap: 8px; margin-top: 6px;">
                 <button id="final-delete-thread-btn" class="danger" style="flex: 1;">Confirm Delete</button>
                 <button id="cancel-delete-thread-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="dm-modal" class="modal-overlay hidden">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h2>💬 Messages & Groups</h2>
-                <button id="close-dm-btn" class="close-btn">&times;</button>
-            </div>
-            <div id="top-modal-bar" style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
-                <input type="text" id="add-friend-input" placeholder="Add friend by @username" style="margin-bottom: 0; flex: 1; min-width: 170px;">
-                <button id="add-friend-btn" style="width: auto; white-space: nowrap; padding: 0 16px;">Add Friend</button>
-                <button id="toggle-group-create-btn" class="secondary" style="width: auto; margin-top: 0; padding: 0 14px;">+ Group</button>
-            </div>
-            <div id="group-creator-box" class="group-creator hidden">
-                <label>Create Group Chat</label>
-                <input type="text" id="group-name-input" placeholder="Group Name" style="margin-bottom: 8px;">
-                <label style="font-size: 0.8rem;">Select Friends to Invite:</label>
-                <div id="group-friends-checklist" class="friend-checkbox-list"></div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <button id="create-group-confirm-btn" style="padding: 8px;">Create Group</button>
-                    <button id="cancel-group-btn" class="secondary" style="margin-top: 0; padding: 8px;">Cancel</button>
-                </div>
-            </div>
-            <div class="dm-layout">
-                <div id="sidebar-pane" class="sidebar-pane">
-                    <div class="sidebar-header-row"><span class="sidebar-section-title">Messages</span><button id="clear-all-notifs-btn" class="clear-notifs-btn">Clear All</button></div>
-                    <div id="requests-header" class="sidebar-section-title hidden" style="margin-top: 6px;">📬 Friend Requests</div>
-                    <div id="requests-container" class="conv-list"></div>
-                    <div class="sidebar-section-title" style="margin-top: 8px;">👥 Groups</div>
-                    <div id="groups-container" class="conv-list" style="max-height: 120px;"></div>
-                    <div class="sidebar-section-title" style="margin-top: 8px;">👤 Direct</div>
-                    <div id="friends-container" class="conv-list"></div>
-                </div>
-                <div id="chat-pane" class="chat-pane mobile-hidden">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #334155; padding-bottom: 6px; gap: 8px;">
-                        <div style="display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1;">
-                            <button id="back-to-list-btn" class="back-btn">← Back</button>
-                            <div id="chat-header" style="font-weight: 600; color: #38bdf8;">Select chat</div>
-                        </div>
-                        <button type="button" id="chat-close-btn" class="close-btn" title="Close Messages">&times;</button>
-                    </div>
-                    <div id="chat-pending-banner" class="msg-pending-banner hidden">🔒 Messages are pending until friend request accepted.</div>
-                    <div id="chat-messages" class="chat-history"></div>
-                    <form id="dm-form" class="dm-form">
-                        <label for="dm-image-input" class="upload-photo-label" title="Attach Photo">📷</label>
-                        <input type="file" id="dm-image-input" accept="image/*" disabled>
-                        <input type="text" id="dm-text" placeholder="Type a message..." disabled autocomplete="off">
-                        <button type="submit" id="dm-send-btn" disabled>Send</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="profile-modal" class="modal-overlay hidden">
-        <div class="modal-box modal-box-small">
-            <div class="modal-header">
-                <h2>⚙️ Profile Settings</h2>
-                <button id="close-profile-btn" class="close-btn">&times;</button>
-            </div>
-            <div class="profile-preview-wrap">
-                <img id="profile-preview-avatar" class="profile-avatar-preview" src="" alt="Preview Avatar">
-                <label for="profile-avatar-file" style="cursor: pointer; color: #38bdf8; font-weight: 600; font-size: 0.9rem;">Upload New Avatar</label>
-                <input type="file" id="profile-avatar-file" accept="image/*" style="display: none;">
-            </div>
-            <div class="profile-section">
-                <label style="color: #f8fafc; font-weight: 600;">Change Password</label>
-                <input type="password" id="current-password-input" placeholder="Current Password">
-                <input type="password" id="new-password-input" placeholder="New Password">
-                <input type="password" id="confirm-password-input" placeholder="Confirm New Password">
-                <button id="update-password-btn" class="secondary" style="margin-top: 0;">Update Password</button>
-            </div>
-            <div class="profile-section">
-                <label style="color: #ef4444; font-weight: 600;">Danger Zone</label>
-                <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Deleting your profile removes your username, messages, and friendship records permanently.</p>
-                <button id="open-delete-modal-btn" class="danger">Delete Account</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="delete-confirm-modal" class="modal-overlay hidden">
-        <div class="modal-box modal-box-small" style="border-color: #ef4444;">
-            <div class="modal-header">
-                <h2 style="color: #ef4444;">⚠️ Delete Account</h2>
-                <button id="close-delete-modal-btn" class="close-btn">&times;</button>
-            </div>
-            <p style="font-size: 0.95rem; color: #f8fafc; margin-bottom: 12px; line-height: 1.5;">Are you sure? This action is permanent.</p>
-            <label style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 6px;">Type your username <strong id="delete-confirm-user-tag" style="color: #f87171;">@username</strong> to confirm:</label>
-            <input type="text" id="delete-username-input" placeholder="Enter username here" autocomplete="off">
-            <div style="display: flex; gap: 8px; margin-top: 6px;">
-                <button id="final-delete-btn" class="danger" style="flex: 1;">Yes, Delete Everything</button>
-                <button id="cancel-delete-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
             </div>
         </div>
     </div>
