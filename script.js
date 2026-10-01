@@ -1175,6 +1175,14 @@ async function syncUserState(user) {
     if (user) {
         currentUser = user;
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
+            // LINK DEVICE TO ONESIGNAL:
+        // Ties this device's push token to the Supabase Auth UUID
+        if (window.OneSignal) {
+            window.OneSignal.login(currentUser.id);
+        } else if (window.plugins && window.plugins.OneSignal) {
+        // Fallback for Cordova / Capacitor wrappers
+            window.plugins.OneSignal.login(currentUser.id);
+        }
         if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
         if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
