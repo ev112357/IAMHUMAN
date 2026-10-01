@@ -32,7 +32,15 @@ const authSubmitBtn = document.getElementById('auth-submit-btn');
 const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
-
+// NEW DOM Elements - FAB Modal & Wrappers
+const desktopFab = document.getElementById('desktop-fab');
+const mobileFab = document.getElementById('mobile-fab');
+const fabModalOverlay = document.getElementById('fab-post-modal');
+const fabModalContainer = document.getElementById('fab-modal-container');
+const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
+const threadSearchSelect = document.getElementById('thread-search-select');
+const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
+const authPanelWrapper = document.getElementById('auth-panel-wrapper');
 // DOM Elements - Header Nav & Profile Bar (Desktop)
 const openProfileBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
@@ -847,8 +855,7 @@ async function syncUserState(user) {
         currentUserTag.textContent = `@${currentUsername}`;
         deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
-        authPanel.classList.add('hidden');
-        postPanel.classList.remove('hidden');
+        authPanelWrapper.classList.add('hidden');
         openNotifBtn.classList.remove('hidden');
         openDmBtn.classList.remove('hidden');
         openProfileBtn.classList.remove('hidden');
@@ -901,12 +908,11 @@ async function syncUserState(user) {
         suspicionScore = 0;
         updateSuspicionUI();
         if (window.chatSubscription) {
-        db.removeChannel(window.chatSubscription);
-        window.chatSubscription = null;
-    }
+            db.removeChannel(window.chatSubscription);
+            window.chatSubscription = null;
+        }
         if (notifPollInterval) clearInterval(notifPollInterval);
 
-        postPanel.classList.add('hidden');
         openNotifBtn.classList.add('hidden');
         openDmBtn.classList.add('hidden');
         openProfileBtn.classList.add('hidden');
@@ -923,7 +929,7 @@ async function syncUserState(user) {
         linkModal.classList.add('hidden');
         userProfileModal.classList.add('hidden');
         captchaSuspensionModal.classList.add('hidden');
-        authPanel.classList.remove('hidden');
+        authPanelWrapper.classList.remove('hidden');
 
         await syncCloudThreads();
     }
@@ -931,7 +937,6 @@ async function syncUserState(user) {
     updateThreadControlsUI();
     loadForumPosts();
 }
-
 function renderUserAvatar(url) {
     if (url) {
         headerAvatarImg.src = url;
@@ -1248,22 +1253,7 @@ function renderJoinedThreadsSidebar() {
 }
 
 function syncTopicDropdown() {
-    topicSelect.innerHTML = '';
-    
-    Array.from(myJoinedThreadNames).forEach(tName => {
-        if (tName === "Update Thread" && !isSiteAdmin()) return;
-
-        const opt = document.createElement('option');
-        opt.value = tName;
-        opt.textContent = tName;
-        topicSelect.appendChild(opt);
-    });
-
-    if (topicSelect.querySelector(`option[value="${activeThread}"]`)) {
-        topicSelect.value = activeThread;
-    } else if (topicSelect.options.length > 0) {
-        topicSelect.selectedIndex = 0;
-    }
+    // Left intentionally blank as we now use the search dropdown
 }
 
 // --- FUZZY THREAD SEARCH & DISCOVERY ENGINE ---
@@ -1473,15 +1463,6 @@ createThreadForm.addEventListener('submit', async (e) => {
     await loadForumPosts();
 });
 
-topicSelect.addEventListener('change', async () => {
-    activeThread = topicSelect.value;
-    cachedPosts = [];
-    postCacheMap.clear();
-    forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
-    renderJoinedThreadsSidebar();
-    updateThreadControlsUI();
-    await loadForumPosts();
-});
 
 postSortSelect.addEventListener('change', () => {
     renderCurrentFeed();
@@ -3477,6 +3458,204 @@ async function navigateToPost(postId) {
         setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
     }
 }
+
+// --- NEW FAB POST MODAL LOGIC ---
+function openFabModal(e) {
+    if (!currentUser) { 
+        alert("Please log in to post."); 
+        authEmailInput.focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return; 
+    }
+    
+    // Calculate point of origin for smooth scaling
+    const rect = e.currentTarget.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+    const originXPercent = (originX / window.innerWidth) * 100;
+    const originYPercent = (originY / window.innerHeight) * 100;
+
+    fabModalContainer.style.transformOrigin = `${originXPercent}% ${originYPercent}%`;
+    fabModalOverlay.classList.remove('hidden');
+    
+    // Allow DOM to update before triggering CSS transition
+    requestAnimationFrame(() => {
+        fabModalOverlay.classList.add('active');
+    });
+
+    threadSearchSelect.value = activeThread;
+    threadSuggestDropdown.classList.add('hidden');
+}
+
+desktopFab.addEventListener('click', openFabModal);
+mobileFab.addEventListener('click', openFabModal);
+
+closeFabModalBtn.addEventListener('click', () => {
+    fabModalOverlay.classList.remove('active');
+    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300); // Wait for transition
+});
+
+// Community Search Dropdown Logic
+threadSearchSelect.addEventListener('input', () => {
+    const q = threadSearchSelect.value.trim().toLowerCase();
+    threadSuggestDropdown.innerHTML = '';
+    
+    if (!q) {
+        threadSuggestDropdown.classList.add('hidden');
+        return;
+    }
+
+    // Prioritize joined threads, then show others
+    const joined = Array.from(myJoinedThreadNames).filter(t => t.toLowerCase().includes(q));
+    const others = allCloudThreads.map(t => t.name).filter(t => !myJoinedThreadNames.has(t) && t.toLowerCase().includes(q));
+    
+    const combined = [...joined, ...others].slice(0, 8); // Top 8 results
+
+    if (combined.length === 0) {
+        threadSuggestDropdown.innerHTML = '<div style="padding: 10px; font-size: 0.85rem; color: #94a3b8;">No matching communities found.</div>';
+    } else {
+        combined.forEach(tName => {
+            const isJoined = myJoinedThreadNames.has(tName);
+            const div = document.createElement('div');
+            div.className = 'suggest-item';
+            div.innerHTML = `<strong>${escapeHTML(tName)}</strong> <span style="font-size: 0.75rem; color: #64748b; float: right;">${isJoined ? 'Joined ✓' : ''}</span>`;
+            
+            div.addEventListener('click', () => {
+                threadSearchSelect.value = tName;
+                threadSuggestDropdown.classList.add('hidden');
+            });
+            threadSuggestDropdown.appendChild(div);
+        });
+    }
+    threadSuggestDropdown.classList.remove('hidden');
+});
+
+// Close dropdown if clicking outside
+document.addEventListener('click', (e) => {
+    if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
+        threadSuggestDropdown.classList.add('hidden');
+    }
+});
+
+// UPDATE EXISTING SUBMIT LISTENER TO READ FROM SEARCH BAR
+forumForm.addEventListener('submit', async (event) => {
+    event.preventDefault(); 
+    
+    if (!currentUsername) {
+        alert("You must be logged in to post.");
+        return;
+    }
+
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+
+    const targetThread = threadSearchSelect.value.trim(); // <-- Updated
+    if (!targetThread) {
+        alert("Please select a community to post in.");
+        return;
+    }
+    // Verify thread exists
+    if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
+        alert("Community not found. Please select an existing community from the dropdown, or create a new one from the sidebar.");
+        return;
+    }
+
+    if (isUserBannedFromThread(targetThread, currentUsername)) {
+        alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
+        return;
+    }
+
+    if ((targetThread === "Update Thread" || targetThread === "Welcome & Security") && !isSiteAdmin()) {
+        alert(`Permission Denied: Only @gemini can publish to the official "${targetThread}" section.`);
+        return;
+    }
+
+    let behaviorPoints = 0;
+    if (honeypotField.value !== "") behaviorPoints += 5;
+    if (textWasPasted) behaviorPoints += 1;
+    const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
+    if (totalTimeElapsed < 1.5 && textBox.value.length > 50) behaviorPoints += 1;
+
+    const now = Date.now();
+    if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 15000) behaviorPoints += 2;
+
+    if (keystrokeGaps.length > 5) {
+        let perfectIntervals = 0;
+        for (let i = 2; i < keystrokeGaps.length; i++) {
+            if (keystrokeGaps[i] === keystrokeGaps[i - 1]) perfectIntervals++;
+        }
+        const uniformityRatio = perfectIntervals / (keystrokeGaps.length - 2);
+        if (uniformityRatio > 0.75) behaviorPoints += 1;
+    }
+
+    if (behaviorPoints > 0) {
+        suspicionScore += behaviorPoints;
+        updateSuspicionUI();
+        if (currentUser && db) db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+        if (suspicionScore >= 3) {
+            triggerSuspensionGate();
+            return;
+        }
+    }
+
+    if (textBox.value.trim().length < 2 && !selectedPostPhotoFile) {
+        alert("Please enter a message or attach a photo.");
+        return;
+    }
+
+    const submitBtn = document.getElementById('forum-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Publishing...';
+
+    let postImageUrl = null;
+
+    if (selectedPostPhotoFile) {
+        const fileExt = selectedPostPhotoFile.name.split('.').pop();
+        const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, selectedPostPhotoFile);
+
+        if (uploadError) {
+            console.warn("Post image upload failed:", uploadError);
+        } else {
+            const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
+            postImageUrl = publicUrlData.publicUrl;
+        }
+    }
+
+    const { error } = await db
+        .from('Posts')
+        .insert([{ 
+            thread: targetThread, 
+            author: currentUsername, 
+            content: textBox.value,
+            image_url: postImageUrl
+        }]);
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Publish to Forum';
+
+    if (error) {
+        alert(`Database Error: ${error.message}`);
+        console.error("Supabase Insert Error:", error);
+        return;
+    }
+
+    lastPostTimestamp = Date.now();
+
+    if (targetThread === "Update Thread") {
+        await loadProminentUpdates();
+    } else {
+        activeThread = targetThread;
+        await loadForumPosts();
+    }
+
+    resetTelemetryConsole();
+
+    fabModalOverlay.classList.remove('active');
+    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+});
 
 // Boot Application
 syncCloudThreads();
