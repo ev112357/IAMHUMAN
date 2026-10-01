@@ -870,10 +870,17 @@ async function loadUserNotifications() {
             .from('user_notifications')
             .select('*')
             .eq('user_id', currentUser.id)
-            .order('id', { ascending: false }) // Reverted back to sequential ID sorting
+            .order('id', { ascending: false })
             .limit(40);
 
-        if (error || !notifs || notifs.length === 0) {
+        // FIX: Expose hidden database blocks so notifications don't silently fail
+        if (error) {
+            console.error("Notifications Blocked:", error.message);
+            alert(`Database blocked loading notifications: ${error.message}`);
+            return;
+        }
+
+        if (!notifs || notifs.length === 0) {
             notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
             if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
             if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
@@ -901,7 +908,6 @@ async function loadUserNotifications() {
             const div = document.createElement('div');
             div.className = `notif-item ${!n.is_read ? 'unread' : ''}`;
             
-            // FIX: Safely check if created_at exists before formatting it
             const timeAgo = n.created_at 
                 ? new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
                 : 'New';
@@ -938,7 +944,6 @@ async function loadUserNotifications() {
         console.warn("Error loading activity notifications:", e);
     }
 }
-
 safeAddListener(clearActivityNotifsBtn, 'click', async () => {
     if (!currentUser || !db) return;
     await db.from('user_notifications').delete().eq('user_id', currentUser.id);
@@ -1510,10 +1515,16 @@ async function syncCloudThreads() {
     myJoinedThreadNames = new Set(MANDATORY_THREADS);
 
     if (currentUser) {
-        const { data: memberships } = await db
+        const { data: memberships, error: memErr } = await db
             .from('forum_thread_members')
             .select('thread_name')
             .eq('user_id', currentUser.id);
+
+        // FIX: Expose hidden database blocks so threads don't silently disappear
+        if (memErr) {
+            console.error("Threads Blocked:", memErr.message);
+            alert(`Database blocked loading your threads: ${memErr.message}`);
+        }
 
         (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
     }
