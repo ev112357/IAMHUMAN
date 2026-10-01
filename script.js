@@ -4123,9 +4123,9 @@ function renderThreadBanner() {
     const threadData = allCloudThreads.find(t => t.name === activeThread);
     if (threadData && threadData.banner_url) {
         img.src = threadData.banner_url;
-        container.style.display = 'block';
+        container.classList.remove('hidden');
     } else {
-        container.style.display = 'none';
+        container.classList.add('hidden');
         img.src = '';
     }
 }
@@ -4138,14 +4138,13 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
     if (bannerBtn) { bannerBtn.disabled = true; bannerBtn.textContent = '⏳ Uploading...'; }
 
     try {
-        // Compress banner (Max width 1920 for high-res screens, 80% quality), skips if GIF
+        // Compress banner, skips if GIF to preserve animation
         const file = await compressImage(rawFile, 1920, 0.80);
         
         const fileExt = file.name.split('.').pop() || (file.type === 'image/gif' ? 'gif' : 'jpeg');
         const safeThreadName = activeThread.replace(/[^a-zA-Z0-9]/g, '_');
         const filePath = `banners/${safeThreadName}_${Date.now()}.${fileExt}`;
 
-        // Reusing 'chat-images' bucket so you don't have to create and configure a new one
         const { error: uploadError } = await db.storage
             .from('chat-images')
             .upload(filePath, file, { upsert: true });
@@ -4155,26 +4154,49 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
         const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
         const bannerUrl = publicUrlData.publicUrl;
 
-        const { error: updateError } = await db
+        // Force select() so we know if a row was actually updated
+        const { error: updateError, data: updateData } = await db
             .from('forum_threads')
             .update({ banner_url: bannerUrl })
-            .eq('name', activeThread);
+            .eq('name', activeThread)
+            .select();
 
         if (updateError) throw updateError;
 
+        // THE FIX: If the DB returned 0 updated rows, the thread didn't exist yet. Insert it.
+        if (!updateData || updateData.length === 0) {
+            await db.from('forum_threads').insert([{
+                name: activeThread,
+                banner_url: bannerUrl,
+                created_by: currentUser.id,
+                owner_username: SITE_ADMIN_USERNAME,
+                is_private: false
+            }]);
+        }
+
+        // Immediately push the URL to local memory so it renders instantly
+        let localThread = allCloudThreads.find(t => t.name === activeThread);
+        if (localThread) {
+            localThread.banner_url = bannerUrl;
+        } else {
+            allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
+        }
+
+        renderThreadBanner();
         alert('Community banner updated successfully!');
         
-        // Refresh local cloud threads cache so the banner renders immediately
-        await syncCloudThreads(); 
-        renderThreadBanner();
+        // Let the cloud sync run in the background
+        syncCloudThreads(); 
 
     } catch (err) {
         alert(`Error uploading banner: ${err.message}`);
     } finally {
-        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️️ Set Banner'; }
+        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️ Set Banner'; }
         e.target.value = '';
     }
 });
+
+
 // Boot Application
 syncCloudThreads();
 loadProminentUpdates();
