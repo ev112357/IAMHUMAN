@@ -3076,6 +3076,11 @@ if (textBox) {
             statPaste.className = "badge badge-yellow";
         }
         if (!isTimerRunning) startCompositionTimer();
+        if (statKeys) {
+            setTimeout(() => {
+                statKeys.textContent = `${textBox.value.length} keys`;
+            }, 0);
+        }
     });
 
     textBox.addEventListener('keydown', (e) => {
@@ -3291,13 +3296,11 @@ safeAddListener(forumForm, 'submit', async (event) => {
         behaviorPoints += 5;
     }
 
-    // 2. Clipboard Paste (+1 point only)
+    // 2. Clipboard Paste (+1 point only, exempted from superhuman speed check)
     if (textWasPasted) {
         behaviorPoints += 1;
-    }
-
-    // 3. Superhuman speed check (>60 characters in under 0.5 seconds)
-    if (totalTimeElapsed < 0.5 && postContent.length > 60) {
+    } else if (totalTimeElapsed > 0 && totalTimeElapsed < 0.5 && postContent.length > 60) {
+        // 3. Superhuman speed check (>60 characters in under 0.5s without pasting)
         behaviorPoints += 1;
     }
 
@@ -3309,16 +3312,16 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
     // Update suspicion score
     if (behaviorPoints > 0) {
-        suspicionScore += behaviorPoints;
+        suspicionScore = Math.min(5, suspicionScore + behaviorPoints);
         updateSuspicionUI();
 
         if (currentUser && db) {
-            db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+            await db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
         }
 
         // Suspend and halt ONLY if threshold (5) is reached
         if (suspicionScore >= 5) {
-            resetTelemetryConsole(); 
+            resetTelemetryConsole();
             triggerSuspensionGate();
             return;
         }
