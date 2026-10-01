@@ -2787,7 +2787,30 @@ function getWelcomeSecurityPost() {
         created_at: new Date().toISOString(),
         likes: 0,
         dislikes: 0,
-        content: `### Welcome to Turing's Gate: The Verified Human Community\n\nExplore topics, participate in discussions, and enjoy an authenticated bot-free community!`
+        content: `### Welcome to Turing's Gate: The Verified Human Community
+
+Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry.
+
+<div class="welcome-diagram">
+    <div class="diagram-step">
+        <span class="diagram-badge">1. Telemetry Cadence</span>
+        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
+        <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">3. Verification Escrow</span>
+        <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">4. Verified Direct Messaging</span>
+        <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
+    </div>
+</div>
+
+Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
     };
 }
 
