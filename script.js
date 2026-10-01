@@ -2913,10 +2913,12 @@ function createPostCardElement(post) {
 
     const userCanDelete = canDeletePost(post) && !post.is_pinned;
 
-    let actionButtonsHtml = '';
-    if (userCanDelete) {
-        actionButtonsHtml = `<div class="post-admin-actions"><button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete Post</button></div>`;
-    }
+    let actionButtonsHtml = `
+        <div class="post-admin-actions">
+            <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 Comments</button>
+            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete</button>` : ''}
+        </div>
+    `;
 
     const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
@@ -2941,6 +2943,14 @@ function createPostCardElement(post) {
             <div class="post-content">${renderedBody}</div>
             ${photoHtml}
             ${actionButtonsHtml}
+            
+            <div id="comments-section-${post.id}" class="comments-section hidden" style="margin-top: 12px; border-top: 1px solid #334155; padding-top: 12px;">
+                <div id="comments-list-${post.id}" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
+                <div style="display: flex; gap: 6px;">
+                    <input type="text" id="comment-input-${post.id}" placeholder="Write a reply..." style="margin-bottom: 0; padding: 8px; font-size: 0.85rem; flex: 1;" autocomplete="off">
+                    <button type="button" class="submit-comment-btn" data-post-id="${post.id}" data-author-username="${escapeHTML(cleanAuthor)}" style="width: auto; padding: 0 12px; font-size: 0.85rem;">Reply</button>
+                </div>
+            </div>
         </div>
     `;
 
@@ -2967,6 +2977,27 @@ function createPostCardElement(post) {
         });
     }
 
+    const commentsBtn = item.querySelector('.toggle-comments-btn');
+    if (commentsBtn) {
+        commentsBtn.addEventListener('click', () => {
+            const section = item.querySelector(`#comments-section-${post.id}`);
+            section.classList.toggle('hidden');
+            if (!section.classList.contains('hidden')) {
+                loadCommentsForPost(post.id);
+            }
+        });
+    }
+
+    const submitCommentBtn = item.querySelector('.submit-comment-btn');
+    if (submitCommentBtn) {
+        submitCommentBtn.addEventListener('click', (e) => {
+            const input = item.querySelector(`#comment-input-${post.id}`);
+            const authorUsername = e.currentTarget.getAttribute('data-author-username');
+            submitComment(post.id, authorUsername, input.value);
+            input.value = '';
+        });
+    }
+
     return item;
 }
 
@@ -2974,6 +3005,7 @@ async function deletePostById(postId) {
     if (!currentUser) return;
     if (db) {
         await db.from('Posts').delete().eq('id', postId);
+        await db.from('post_comments').delete().eq('post_id', postId);
     }
     cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
     postCacheMap.delete(Number(postId));
@@ -2981,6 +3013,79 @@ async function deletePostById(postId) {
     loadProminentUpdates();
 }
 
+async function loadCommentsForPost(postId) {
+    const listEl = document.getElementById(`comments-list-${postId}`);
+    if (!listEl || !db) return;
+    
+    listEl.innerHTML = '<span style="font-size:0.8rem; color:#64748b;">Loading replies...</span>';
+    
+    const { data: comments, error } = await db
+        .from('post_comments')
+        .select('*')
+        .eq('post_id', postId)
+        .order('id', { ascending: true });
+
+    if (error || !comments || comments.length === 0) {
+        listEl.innerHTML = '<span style="font-size:0.8rem; color:#64748b; font-style:italic;">No replies yet.</span>';
+        return;
+    }
+
+    listEl.innerHTML = '';
+    comments.forEach(c => {
+        const cleanAuthor = (c.author || 'anonymous').toLowerCase().replace('@', '');
+        const avatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
+        
+        const div = document.createElement('div');
+        div.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem; background: #0f172a; padding: 8px; border-radius: 6px;";
+        div.innerHTML = `
+            <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; cursor: pointer;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">
+            <div style="flex: 1;">
+                <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</div>
+                <div style="color: #e2e8f0; line-height: 1.3;">${escapeHTML(c.content)}</div>
+            </div>
+        `;
+        
+        div.querySelectorAll('.clickable-username').forEach(clickable => {
+            clickable.addEventListener('click', (e) => {
+                const u = e.currentTarget.getAttribute('data-username');
+                if (u) window.openUserProfileCard(u);
+            });
+        });
+        listEl.appendChild(div);
+    });
+}
+
+async function submitComment(postId, postAuthorUsername, content) {
+    if (!currentUser) {
+        alert("Please log in to comment.");
+        return;
+    }
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+    if (!content.trim()) return;
+
+    const { error } = await db.from('post_comments').insert([{
+        post_id: postId,
+        author: currentUsername,
+        content: content.trim()
+    }]);
+
+    if (error) {
+        alert(`Error posting comment: ${error.message}`);
+        return;
+    }
+
+    loadCommentsForPost(postId);
+
+    if (postAuthorUsername && postAuthorUsername !== currentUsername.toLowerCase()) {
+        const { data: profile } = await db.from('profiles').select('id').ilike('username', postAuthorUsername).maybeSingle();
+        if (profile) {
+            sendNotification(profile.id, 'comment_reply', postId, 'replied to your post.');
+        }
+    }
+}
 function renderCurrentFeed() {
     if (!forumFeed) return;
     const sorted = sortPosts(cachedPosts);
