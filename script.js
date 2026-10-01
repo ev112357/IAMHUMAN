@@ -3341,8 +3341,8 @@ function createPostCardElement(post) {
 
     let actionButtonsHtml = `
         <div class="post-admin-actions">
-            <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 Comments</button>
-            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️ Delete</button>` : ''}
+            <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
+            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️️ Delete</button>` : ''}
         </div>
     `;
 
@@ -3422,17 +3422,35 @@ function createPostCardElement(post) {
     }
 
     const submitCommentBtn = item.querySelector('.submit-comment-btn');
-    if (submitCommentBtn) {
-        submitCommentBtn.addEventListener('click', (e) => {
-            const input = item.querySelector(`#comment-input-${post.id}`);
-            const authorUsername = e.currentTarget.getAttribute('data-author-username');
-            submitComment(post.id, authorUsername, input.value);
-            input.value = '';
-        });
-    }
+        if (submitCommentBtn) {
+            submitCommentBtn.addEventListener('click', (e) => {
+                const input = item.querySelector(`#comment-input-${post.id}`);
+                const authorUsername = e.currentTarget.getAttribute('data-author-username');
+                submitComment(post.id, authorUsername, input.value);
+                input.value = '';
+            });
+        }
 
-    return item;
-}
+        // Fetch comment count asynchronously for the button
+        if (db && post.id !== 'welcome-seed') {
+            db.from('post_comments')
+                .select('*', { count: 'exact', head: true })
+                .eq('post_id', post.id)
+                .then(({ count, error }) => {
+                    if (!error && count !== null) {
+                        const countSpan = item.querySelector(`#comment-count-${post.id}`);
+                        if (countSpan) {
+                            countSpan.textContent = count === 1 ? '1 Comment' : `${count} Comments`;
+                        }
+                    }
+                });
+        } else if (post.id === 'welcome-seed') {
+            const countSpan = item.querySelector(`#comment-count-${post.id}`);
+            if (countSpan) countSpan.textContent = '0 Comments';
+        }
+
+        return item;
+    }
 
 async function deletePostById(postId) {
     if (!currentUser) return;
@@ -3508,6 +3526,14 @@ async function submitComment(postId, postAuthorUsername, content) {
     if (error) {
         alert(`Error posting comment: ${error.message}`);
         return;
+    }
+
+    // Immediately update the comment count button text on screen
+    const countSpan = document.getElementById(`comment-count-${postId}`);
+    if (countSpan) {
+        const currentCount = parseInt(countSpan.textContent) || 0;
+        const newCount = currentCount + 1;
+        countSpan.textContent = newCount === 1 ? '1 Comment' : `${newCount} Comments`;
     }
 
     loadCommentsForPost(postId);
