@@ -3299,6 +3299,80 @@ function resetTelemetryConsole() {
     statKeys.textContent = "0 keys";
 }
 
+// --- FAB POST MODAL LOGIC ---
+function openFabModal(e) {
+    if (!currentUser) { 
+        alert("Please log in to post."); 
+        authEmailInput.focus();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return; 
+    }
+    
+    // Smooth origin animation math
+    const rect = e.currentTarget.getBoundingClientRect();
+    const originX = rect.left + rect.width / 2;
+    const originY = rect.top + rect.height / 2;
+    const originXPercent = (originX / window.innerWidth) * 100;
+    const originYPercent = (originY / window.innerHeight) * 100;
+
+    fabModalContainer.style.transformOrigin = `${originXPercent}% ${originYPercent}%`;
+    fabModalOverlay.classList.remove('hidden');
+    
+    requestAnimationFrame(() => {
+        fabModalOverlay.classList.add('active');
+    });
+
+    threadSearchSelect.value = activeThread;
+    threadSuggestDropdown.classList.add('hidden');
+}
+
+desktopFab.addEventListener('click', openFabModal);
+mobileFab.addEventListener('click', openFabModal);
+
+closeFabModalBtn.addEventListener('click', () => {
+    fabModalOverlay.classList.remove('active');
+    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
+});
+
+// Community Search Dropdown Logic
+threadSearchSelect.addEventListener('input', () => {
+    const q = threadSearchSelect.value.trim().toLowerCase();
+    threadSuggestDropdown.innerHTML = '';
+    
+    if (!q) {
+        threadSuggestDropdown.classList.add('hidden');
+        return;
+    }
+
+    const joined = Array.from(myJoinedThreadNames).filter(t => t.toLowerCase().includes(q));
+    const others = allCloudThreads.map(t => t.name).filter(t => !myJoinedThreadNames.has(t) && t.toLowerCase().includes(q));
+    const combined = [...joined, ...others].slice(0, 8); 
+
+    if (combined.length === 0) {
+        threadSuggestDropdown.innerHTML = '<div style="padding: 10px; font-size: 0.85rem; color: #94a3b8;">No matching communities found.</div>';
+    } else {
+        combined.forEach(tName => {
+            const isJoined = myJoinedThreadNames.has(tName);
+            const div = document.createElement('div');
+            div.className = 'suggest-item';
+            div.innerHTML = `<strong>${escapeHTML(tName)}</strong> <span style="font-size: 0.75rem; color: #64748b; float: right;">${isJoined ? 'Joined ✓' : ''}</span>`;
+            
+            div.addEventListener('click', () => {
+                threadSearchSelect.value = tName;
+                threadSuggestDropdown.classList.add('hidden');
+            });
+            threadSuggestDropdown.appendChild(div);
+        });
+    }
+    threadSuggestDropdown.classList.remove('hidden');
+});
+
+document.addEventListener('click', (e) => {
+    if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
+        threadSuggestDropdown.classList.add('hidden');
+    }
+});
+
 // --- FORUM SUBMISSION WITH RISK SCORING & CAPTCHA ESCALATION ---
 
 forumForm.addEventListener('submit', async (event) => {
@@ -3314,7 +3388,11 @@ forumForm.addEventListener('submit', async (event) => {
         return;
     }
 
-    const targetThread = topicSelect.value;
+    const targetThread = threadSearchSelect.value.trim();
+    if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
+        alert("Community not found. Please select an existing community from the dropdown.");
+        return;
+    }
 
     if (isUserBannedFromThread(targetThread, currentUsername)) {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
@@ -3392,7 +3470,8 @@ forumForm.addEventListener('submit', async (event) => {
 
         if (uploadError) {
             console.warn("Post image upload failed:", uploadError);
-        } else {
+        } 
+        else {
             const { data: publicUrlData } = db.storage
                 .from('chat-images')
                 .getPublicUrl(filePath);
@@ -3428,6 +3507,8 @@ forumForm.addEventListener('submit', async (event) => {
     }
 
     resetTelemetryConsole();
+    fabModalOverlay.classList.remove('active');
+    setTimeout(() => fabModalOverlay.classList.add('hidden'), 300);
 });
 async function navigateToPost(postId) {
     if (!db) return;
