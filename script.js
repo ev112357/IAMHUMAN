@@ -864,7 +864,7 @@ async function loadUserNotifications() {
             .from('user_notifications')
             .select('*')
             .eq('user_id', currentUser.id)
-            .order('id', { ascending: false })
+            .order('created_at', { ascending: false }) // FIX: Sort chronologically instead of randomly
             .limit(40);
 
         if (error || !notifs || notifs.length === 0) {
