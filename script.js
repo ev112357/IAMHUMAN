@@ -1026,17 +1026,23 @@ async function updateProfileFriendButtonUI() {
             if (friendship && friendship.status === 'accepted') {
                 userCardAddFriendBtn.innerHTML = `✓ Friends`;
                 userCardAddFriendBtn.className = 'btn-friend-state btn-friend-added';
+                userCardAddFriendBtn.title = "Click to remove friend";
             } else if (friendship && friendship.status === 'pending') {
                 if (friendship.user_id === currentUser.id) {
-                    userCardAddFriendBtn.innerHTML = `⏳ Sent`;
+                    // Outgoing pending request: can be clicked to rescind
+                    userCardAddFriendBtn.innerHTML = `⏳ Pending`;
                     userCardAddFriendBtn.className = 'btn-friend-state secondary';
+                    userCardAddFriendBtn.title = "Click to cancel request";
                 } else {
+                    // Incoming pending request: can be clicked to accept
                     userCardAddFriendBtn.innerHTML = `📬 Accept`;
                     userCardAddFriendBtn.className = 'btn-friend-state';
+                    userCardAddFriendBtn.title = "Accept friend request";
                 }
             } else {
                 userCardAddFriendBtn.innerHTML = `➕ Add Friend`;
                 userCardAddFriendBtn.className = 'btn-friend-state';
+                userCardAddFriendBtn.title = "Send friend request";
             }
         }
     } catch (e) {
@@ -1115,33 +1121,69 @@ safeAddListener(userCardAddFriendBtn, async () => {
         return;
     }
 
+    // 1. If already friends, toggle the unadd confirmation dialog
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
         if (unaddConfirmBox) unaddConfirmBox.classList.toggle('hidden');
         return;
     }
 
+    // 2. If a request is pending
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
         if (targetFriendshipRecord.user_id !== currentUser.id) {
+            // Incoming: Accept the friend request
             await handleRequest(targetFriendshipRecord.id, true);
             await updateProfileFriendButtonUI();
+        } else {
+            // Outgoing: Rescind the friend request
+            userCardAddFriendBtn.disabled = true;
+            userCardAddFriendBtn.textContent = 'Canceling...';
+
+            const { error: delErr } = await db
+                .from('friendships')
+                .delete()
+                .eq('id', targetFriendshipRecord.id);
+
+            userCardAddFriendBtn.disabled = false;
+
+            if (delErr) {
+                alert(`Could not rescind request: ${delErr.message}`);
+                await updateProfileFriendButtonUI();
+                return;
+            }
+
+            targetFriendshipRecord = null;
+            await updateProfileFriendButtonUI();
+            refreshMessagingHub();
         }
         return;
     }
 
     if (!targetProfileId) return;
 
-    const { error: insertErr } = await db
+    // 3. New request: optimistically show pending and insert
+    userCardAddFriendBtn.disabled = true;
+    userCardAddFriendBtn.innerHTML = `⏳ Pending`;
+
+    const { data: newReq, error: insertErr } = await db
         .from('friendships')
         .insert([{ 
             user_id: currentUser.id, 
             friend_id: targetProfileId, 
             status: 'pending' 
-        }]);
+        }])
+        .select()
+        .single();
+
+    userCardAddFriendBtn.disabled = false;
 
     if (insertErr) {
         alert(`Could not send request: ${insertErr.message}`);
+        await updateProfileFriendButtonUI();
         return;
     }
+
+    targetFriendshipRecord = newReq;
+    await updateProfileFriendButtonUI();
 
     await sendNotification(
         targetProfileId,
@@ -1150,8 +1192,6 @@ safeAddListener(userCardAddFriendBtn, async () => {
         'sent you a friend request.'
     );
 
-    alert(`Friend request sent to @${targetProfileUsername}!`);
-    await updateProfileFriendButtonUI();
     refreshMessagingHub();
 });
 
@@ -2632,13 +2672,46 @@ async function loadMessages(forceScroll = false) {
         return;
     }
 
-    const visibleMessages = (messages || []).filter(msg => {
-        if (!msg.pending_approval) return true;
-        return msg.sender_id === currentUser.id;
-    });
+    const visibleMessages = messages || [];
 
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
     if (!forceScroll && visibleMessages.length === currentMsgCount) return;
+
+    // Check for pending messages
+    const pendingFromPartner = visibleMessages.filter(m => m.pending_approval && m.sender_id !== currentUser.id);
+    const pendingFromMe = visibleMessages.filter(m => m.pending_approval && m.sender_id === currentUser.id);
+
+    // Update banner for chat request approval
+    if (chatPendingBanner) {
+        if (pendingFromPartner.length > 0) {
+            chatPendingBanner.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <span>📬 @${escapeHTML(activeConversationPartnerUsername || 'User')} sent you a chat request.</span>
+                    <button type="button" id="accept-chat-request-btn" style="background:#0284c7; color:#ffffff; border:none; padding:4px 10px; border-radius:4px; font-size:0.75rem; font-weight:600; cursor:pointer;">✓ Accept Chat</button>
+                </div>
+            `;
+            chatPendingBanner.classList.remove('hidden');
+
+            const acceptBtn = document.getElementById('accept-chat-request-btn');
+            if (acceptBtn) {
+                acceptBtn.onclick = async () => {
+                    acceptBtn.disabled = true;
+                    acceptBtn.textContent = 'Accepting...';
+                    await db
+                        .from('chat_messages')
+                        .update({ pending_approval: false })
+                        .eq('conversation_id', activeConversationId);
+                    chatPendingBanner.classList.add('hidden');
+                    loadMessages(true);
+                };
+            }
+        } else if (pendingFromMe.length > 0) {
+            chatPendingBanner.innerHTML = `<span>⏳ Messages are pending until @${escapeHTML(activeConversationPartnerUsername || 'recipient')} accepts your chat or friend request.</span>`;
+            chatPendingBanner.classList.remove('hidden');
+        } else {
+            chatPendingBanner.classList.add('hidden');
+        }
+    }
 
     chatMessages.innerHTML = '';
     if (!visibleMessages || visibleMessages.length === 0) {
@@ -2661,8 +2734,13 @@ async function loadMessages(forceScroll = false) {
         const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
         const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
         const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
-        const pendingBadge = (isMine && isPending) ? `<span class="pending-tag">⏳ Pending Friend Acceptance</span>` : '';
-
+        
+        let pendingBadge = '';
+        if (isPending) {
+            pendingBadge = isMine 
+                ? `<span class="pending-tag">⏳ Pending Approval</span>`
+                : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">📩 Chat Request</span>`;
+        }
         const bubbleHtml = `
             <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
                 ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
@@ -2751,7 +2829,29 @@ safeAddListener(dmForm, 'submit', async (e) => {
         uploadedImageUrl = publicUrlData.publicUrl;
     }
 
-    const isPendingApproval = Boolean(activeConversationPartnerId && !activeConversationIsFriend);
+    // If the recipient replies to an incoming pending chat, auto-approve the conversation
+    if (activeConversationPartnerId) {
+        await db
+            .from('chat_messages')
+            .update({ pending_approval: false })
+            .eq('conversation_id', activeConversationId)
+            .neq('sender_id', currentUser.id)
+            .eq('pending_approval', true);
+    }
+
+    // Check if the chat was already approved previously
+    let isPendingApproval = false;
+    if (activeConversationPartnerId && !activeConversationIsFriend) {
+        const { data: approvedMsg } = await db
+            .from('chat_messages')
+            .select('id')
+            .eq('conversation_id', activeConversationId)
+            .eq('pending_approval', false)
+            .limit(1);
+
+        // If no message has ever been approved and they are not friends, mark as pending
+        isPendingApproval = !approvedMsg || approvedMsg.length === 0;
+    }
 
     const { error } = await db
         .from('chat_messages')
@@ -3485,7 +3585,19 @@ async function navigateToConversation(convId) {
                 if (profile?.username) partnerUsername = profile.username;
             }
 
-            selectConversation(conv.id, `@${partnerUsername}`, partnerId, partnerUsername, true);
+            // Check true friendship status
+            let isFriend = false;
+            if (partnerId) {
+                const { data: fr } = await db
+                    .from('friendships')
+                    .select('status')
+                    .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${partnerId}),and(user_id.eq.${partnerId},friend_id.eq.${currentUser.id})`)
+                    .eq('status', 'accepted')
+                    .maybeSingle();
+                isFriend = Boolean(fr);
+            }
+
+            selectConversation(conv.id, `@${partnerUsername}`, partnerId, partnerUsername, isFriend);
         }
     } catch (err) {
         console.warn("Could not open chat from notification:", err);
