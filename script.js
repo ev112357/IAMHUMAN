@@ -691,22 +691,20 @@ function triggerSuspensionGate() {
         captchaSuspensionModal.style.display = "flex";
     }
 
-    // 3. Persist suspension lock to Supabase
-    // 3. Persist suspension lock to Supabase
+    // 3. Persist suspension lock to Supabase securely
     if (currentUser && db) {
-        // Fix: Chain .then() to return a real Promise before using .catch()
-        db.from('profiles').update({ 
-            is_suspended: true, 
-            suspicion_score: suspicionScore 
-        }).eq('id', currentUser.id).then(() => {}).catch(err => console.warn("Suspension update notice:", err));
+        (async () => {
+            try {
+                await db.from('profiles').update({ 
+                    is_suspended: true, 
+                    suspicion_score: suspicionScore 
+                }).eq('id', currentUser.id);
+            } catch (err) {
+                console.warn("Suspension update notice:", err);
+            }
+        })();
     }
-
-safeAddListener(refreshCaptchaBtn, 'click', () => {
-    currentCaptchaSecret = generateCaptchaCode();
-    drawCaptcha(currentCaptchaSecret);
-    if (captchaInput) captchaInput.value = "";
-    if (captchaStatusMsg) captchaStatusMsg.textContent = "";
-});
+}
 
 safeAddListener(submitCaptchaBtn, 'click', async () => {
     const entered = (captchaInput ? captchaInput.value : "").trim().toUpperCase();
@@ -1358,7 +1356,7 @@ safeAddListener(authForm, 'submit', async (e) => {
         authForm.reset();
     }
 });
-
+    
 safeAddListener(logoutBtn, 'click', async () => {
     if (db) await db.auth.signOut();
     setMobileTabActive('feed');
@@ -3316,7 +3314,6 @@ safeAddListener(forumForm, 'submit', async (event) => {
         suspicionScore = Math.min(5, suspicionScore + behaviorPoints);
         updateSuspicionUI();
 
-        // Fix: Use try/catch with await since Supabase query builders lack a native .catch()
         if (currentUser && db) {
             try {
                 await db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id);
