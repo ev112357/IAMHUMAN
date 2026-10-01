@@ -522,13 +522,19 @@ function openSettingsModal() {
         setMobileTabActive('feed');
         return;
     }
+
+    // Refresh avatar preview in settings
+    const avatarPreview = document.getElementById('profile-preview-avatar');
+    if (avatarPreview) {
+        avatarPreview.src = currentAvatarUrl || DEFAULT_AVATAR;
+    }
+
     if (privacyToggleChk) {
         privacyToggleChk.checked = currentUserIsPrivate;
     }
     syncPrivacyDesc();
     switchSettingsTab('profile');
     
-    // Close other modals and reveal settings
     if (notificationsModal) notificationsModal.classList.add('hidden');
     if (userProfileModal) userProfileModal.classList.add('hidden');
     if (profileModal) profileModal.classList.remove('hidden');
@@ -1179,20 +1185,26 @@ async function syncUserState(user) {
 }
 
 function renderUserAvatar(url) {
+    const avatarEl = document.getElementById('profile-preview-avatar') || profilePreviewAvatar;
+    const finalUrl = url || DEFAULT_AVATAR;
+
+    if (avatarEl) {
+        avatarEl.src = finalUrl;
+        avatarEl.style.display = "block";
+    }
+
     if (url) {
         if (headerAvatarImg) { headerAvatarImg.src = url; headerAvatarImg.classList.remove('hidden'); }
         if (headerAvatarFallback) headerAvatarFallback.classList.add('hidden');
         if (postBarAvatar) { postBarAvatar.src = url; postBarAvatar.classList.remove('hidden'); }
         if (tabAvatarImg) { tabAvatarImg.src = url; tabAvatarImg.classList.remove('hidden'); }
         if (tabAvatarFallback) tabAvatarFallback.classList.add('hidden');
-        if (profilePreviewAvatar) profilePreviewAvatar.src = url;
     } else {
         if (headerAvatarImg) headerAvatarImg.classList.add('hidden');
         if (headerAvatarFallback) headerAvatarFallback.classList.remove('hidden');
         if (postBarAvatar) postBarAvatar.classList.add('hidden');
         if (tabAvatarImg) tabAvatarImg.classList.add('hidden');
         if (tabAvatarFallback) tabAvatarFallback.classList.remove('hidden');
-        if (profilePreviewAvatar) profilePreviewAvatar.src = DEFAULT_AVATAR;
     }
 }
 
