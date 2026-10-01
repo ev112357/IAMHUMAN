@@ -223,6 +223,8 @@ const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
 const requestsHeader = document.getElementById('requests-header');
 const requestsContainer = document.getElementById('requests-container');
+const msgRequestsHeader = document.getElementById('msg-requests-header');
+const msgRequestsContainer = document.getElementById('msg-requests-container');
 const friendsContainer = document.getElementById('friends-container');
 const groupsContainer = document.getElementById('groups-container');
 const chatHeader = document.getElementById('chat-header');
@@ -1107,6 +1109,11 @@ safeAddListener(userCardMsgBtn, async () => {
 
     if (userProfileModal) userProfileModal.classList.add('hidden');
     if (dmModal) dmModal.classList.remove('hidden');
+
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'none';
+
+    showChatViewOnMobile();
     setMobileTabActive('messages');
 
     await startOrOpenDirectChat({
@@ -1127,14 +1134,14 @@ safeAddListener(userCardAddFriendBtn, async () => {
         return;
     }
 
-    // 2. If a request is pending
+    // 2. If a request is already pending
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
         if (targetFriendshipRecord.user_id !== currentUser.id) {
             // Incoming: Accept the friend request
             await handleRequest(targetFriendshipRecord.id, true);
             await updateProfileFriendButtonUI();
         } else {
-            // Outgoing: Rescind the friend request
+            // Outgoing: Rescind/cancel the pending friend request
             userCardAddFriendBtn.disabled = true;
             userCardAddFriendBtn.textContent = 'Canceling...';
 
@@ -1160,7 +1167,7 @@ safeAddListener(userCardAddFriendBtn, async () => {
 
     if (!targetProfileId) return;
 
-    // 3. New request: optimistically show pending and insert
+    // 3. Send new friend request
     userCardAddFriendBtn.disabled = true;
     userCardAddFriendBtn.innerHTML = `⏳ Pending`;
 
@@ -1184,6 +1191,7 @@ safeAddListener(userCardAddFriendBtn, async () => {
 
     targetFriendshipRecord = newReq;
     await updateProfileFriendButtonUI();
+    alert("friend request sent");
 
     await sendNotification(
         targetProfileId,
@@ -2195,8 +2203,126 @@ safeAddListener(backToListBtn, 'click', () => {
 async function refreshMessagingHub() {
     await loadFriendRequests();
     await loadFriends();
+    await loadMessageRequests();
     await loadConversations();
     updateSidebarBadges();
+}
+
+async function loadMessageRequests() {
+    if (!currentUser || !db || !msgRequestsContainer) return;
+
+    try {
+        const { data: myMemberships } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
+
+        if (!myMemberships || myMemberships.length === 0) {
+            if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
+            msgRequestsContainer.innerHTML = '';
+            return;
+        }
+
+        const myConvIds = myMemberships.map(m => m.conversation_id);
+
+        const { data: convs } = await db
+            .from('conversations')
+            .select('id')
+            .in('id', myConvIds)
+            .eq('is_group', false);
+
+        if (!convs || convs.length === 0) {
+            if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
+            msgRequestsContainer.innerHTML = '';
+            return;
+        }
+
+        const oneOnOneIds = convs.map(c => c.id);
+
+        const { data: otherMembers } = await db
+            .from('conversation_members')
+            .select('conversation_id, user_id')
+            .in('conversation_id', oneOnOneIds)
+            .neq('user_id', currentUser.id);
+
+        if (!otherMembers || otherMembers.length === 0) {
+            if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
+            msgRequestsContainer.innerHTML = '';
+            return;
+        }
+
+        const { data: friendships } = await db
+            .from('friendships')
+            .select('user_id, friend_id')
+            .eq('status', 'accepted')
+            .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
+
+        const acceptedFriendIds = new Set(
+            (friendships || []).map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id)
+        );
+
+        const nonFriendMembers = otherMembers.filter(m => !acceptedFriendIds.has(m.user_id));
+
+        if (nonFriendMembers.length === 0) {
+            if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
+            msgRequestsContainer.innerHTML = '';
+            return;
+        }
+
+        const partnerIds = Array.from(new Set(nonFriendMembers.map(m => m.user_id)));
+        const { data: profiles } = await db
+            .from('profiles')
+            .select('id, username, avatar_url')
+            .in('id', partnerIds);
+
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+        const nonFriendConvIds = nonFriendMembers.map(m => m.conversation_id);
+        const { data: msgs } = await db
+            .from('chat_messages')
+            .select('conversation_id')
+            .in('conversation_id', nonFriendConvIds)
+            .limit(100);
+
+        const convsWithMessages = new Set((msgs || []).map(m => m.conversation_id));
+        const activeRequests = nonFriendMembers.filter(m => convsWithMessages.has(m.conversation_id));
+
+        if (activeRequests.length === 0) {
+            if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
+            msgRequestsContainer.innerHTML = '';
+            return;
+        }
+
+        if (msgRequestsHeader) msgRequestsHeader.classList.remove('hidden');
+        msgRequestsContainer.innerHTML = '';
+
+        activeRequests.forEach(req => {
+            const partner = profileMap.get(req.user_id) || { id: req.user_id, username: 'user' };
+            const div = document.createElement('div');
+            div.className = `conv-item ${activeConversationId === req.conversation_id ? 'active' : ''}`;
+            div.setAttribute('data-conv-id', req.conversation_id);
+
+            const unreadCount = unreadCountsByConv.get(req.conversation_id) || 0;
+            const badgeHtml = unreadCount > 0 
+                ? `<span class="conv-badge">${unreadCount}</span>` 
+                : `<span class="badge badge-yellow" style="font-size:0.65rem;">Request</span>`;
+
+            div.innerHTML = `
+                <div class="conv-item-label">
+                    <span>💬 @${escapeHTML(partner.username)}</span>
+                </div>
+                ${badgeHtml}
+            `;
+
+            div.addEventListener('click', () => {
+                selectConversation(req.conversation_id, `@${partner.username}`, partner.id, partner.username, false);
+            });
+
+            msgRequestsContainer.appendChild(div);
+        });
+    } catch (e) {
+        console.warn("loadMessageRequests error:", e);
+    }
 }
 
 async function loadFriendRequests() {
@@ -2465,43 +2591,54 @@ async function loadConversations() {
 }
 
 async function startOrOpenDirectChat(friend) {
-    if (!db) return;
-    const { data: myConvs } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
+    if (!db || !currentUser || !friend?.id) return;
 
-    const { data: theirConvs } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', friend.id);
-
-    const myIds = new Set((myConvs || []).map(c => c.conversation_id));
-    const common = (theirConvs || []).filter(c => myIds.has(c.conversation_id));
-
-    let existing1on1Id = null;
-    if (common.length > 0) {
-        const { data: convMatches } = await db
-            .from('conversations')
-            .select('id')
-            .in('id', common.map(c => c.conversation_id))
-            .eq('is_group', false)
+    try {
+        // Check if accepted friends
+        const { data: friendship } = await db
+            .from('friendships')
+            .select('status')
+            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
             .maybeSingle();
 
-        if (convMatches) existing1on1Id = convMatches.id;
-    }
+        const isFriend = friendship && friendship.status === 'accepted';
 
-    const { data: friendship } = await db
-        .from('friendships')
-        .select('status')
-        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
-        .maybeSingle();
+        // Check for an existing 1-on-1 conversation
+        const { data: myMemberships } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
 
-    const isFriend = friendship && friendship.status === 'accepted';
+        const myConvIds = (myMemberships || []).map(m => m.conversation_id);
+        let existingConvId = null;
 
-    if (existing1on1Id) {
-        selectConversation(existing1on1Id, `@${friend.username}`, friend.id, friend.username, isFriend);
-    } else {
+        if (myConvIds.length > 0) {
+            const { data: sharedMemberships } = await db
+                .from('conversation_members')
+                .select('conversation_id')
+                .in('conversation_id', myConvIds)
+                .eq('user_id', friend.id);
+
+            if (sharedMemberships && sharedMemberships.length > 0) {
+                const sharedIds = sharedMemberships.map(s => s.conversation_id);
+                const { data: conv } = await db
+                    .from('conversations')
+                    .select('id')
+                    .in('id', sharedIds)
+                    .eq('is_group', false)
+                    .limit(1)
+                    .maybeSingle();
+
+                if (conv) existingConvId = conv.id;
+            }
+        }
+
+        if (existingConvId) {
+            selectConversation(existingConvId, `@${friend.username}`, friend.id, friend.username, isFriend);
+            return;
+        }
+
+        // Create new conversation
         const { data: newConv, error: convErr } = await db
             .from('conversations')
             .insert([{ is_group: false, created_by: currentUser.id }])
@@ -2519,6 +2656,9 @@ async function startOrOpenDirectChat(friend) {
         ]);
 
         selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
+    } catch (err) {
+        console.error("startOrOpenDirectChat error:", err);
+        alert(`Could not start chat: ${err.message}`);
     }
 }
 
@@ -2682,12 +2822,16 @@ async function loadMessages(forceScroll = false) {
     const pendingFromMe = visibleMessages.filter(m => m.pending_approval && m.sender_id === currentUser.id);
 
     // Update banner for chat request approval
+    // Update banner for chat request approval
     if (chatPendingBanner) {
-        if (pendingFromPartner.length > 0) {
+        if (!activeConversationIsFriend && pendingFromPartner.length > 0) {
             chatPendingBanner.innerHTML = `
-                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                    <span>📬 @${escapeHTML(activeConversationPartnerUsername || 'User')} sent you a chat request.</span>
-                    <button type="button" id="accept-chat-request-btn" style="background:#0284c7; color:#ffffff; border:none; padding:4px 10px; border-radius:4px; font-size:0.75rem; font-weight:600; cursor:pointer;">✓ Accept Chat</button>
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%; flex-wrap:wrap; gap:8px;">
+                    <span>📬 @${escapeHTML(activeConversationPartnerUsername || 'User')} sent you a message request.</span>
+                    <div style="display:flex; gap:6px;">
+                        <button type="button" id="accept-chat-request-btn" style="background:#16a34a; color:#ffffff; border:none; padding:5px 12px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">✓ Accept</button>
+                        <button type="button" id="deny-chat-request-btn" style="background:#dc2626; color:#ffffff; border:none; padding:5px 12px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">✕ Decline</button>
+                    </div>
                 </div>
             `;
             chatPendingBanner.classList.remove('hidden');
@@ -2703,10 +2847,24 @@ async function loadMessages(forceScroll = false) {
                         .eq('conversation_id', activeConversationId);
                     chatPendingBanner.classList.add('hidden');
                     loadMessages(true);
+                    refreshMessagingHub();
                 };
             }
-        } else if (pendingFromMe.length > 0) {
-            chatPendingBanner.innerHTML = `<span>⏳ Messages are pending until @${escapeHTML(activeConversationPartnerUsername || 'recipient')} accepts your chat or friend request.</span>`;
+
+            const denyBtn = document.getElementById('deny-chat-request-btn');
+            if (denyBtn) {
+                denyBtn.onclick = async () => {
+                    if (!confirm("Decline and delete this message request?")) return;
+                    denyBtn.disabled = true;
+                    await db.from('chat_messages').delete().eq('conversation_id', activeConversationId);
+                    chatPendingBanner.classList.add('hidden');
+                    activeConversationId = null;
+                    showSidebarViewOnMobile();
+                    refreshMessagingHub();
+                };
+            }
+        } else if (!activeConversationIsFriend && pendingFromMe.length > 0) {
+            chatPendingBanner.innerHTML = `<span>⏳ Message request sent. Messages remain pending until @${escapeHTML(activeConversationPartnerUsername || 'recipient')} accepts.</span>`;
             chatPendingBanner.classList.remove('hidden');
         } else {
             chatPendingBanner.classList.add('hidden');
