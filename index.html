@@ -291,6 +291,16 @@
         .profile-section { border-top: 1px solid #334155; padding-top: 16px; margin-top: 16px; }
         .hidden { display: none !important; }
         .hidden-honeypot { display: none !important; visibility: hidden !important; }
+        /* UI Upgrades CSS */
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .skeleton-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        .link-preview-card { display: flex; align-items: center; gap: 12px; padding: 10px 14px; margin: 8px 0; background: #1e293b; border: 1px solid #334155; border-radius: 8px; text-decoration: none !important; transition: border-color 0.2s, background 0.2s; max-width: 450px; }
+        .link-preview-card:hover { border-color: #38bdf8; background: #0f172a; }
+        .link-icon { font-size: 1.4rem; background: #0f172a; padding: 6px; border-radius: 6px; border: 1px solid #475569; }
+        .link-info { display: flex; flex-direction: column; overflow: hidden; }
+        .link-domain { color: #f8fafc; font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin-bottom: 2px; }
+        .link-url { color: #94a3b8; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
     </style>
 </head>
 <body>
@@ -689,6 +699,17 @@
                     <div class="unadd-actions">
                         <button id="confirm-unadd-btn" class="btn-unadd-action danger">✓</button>
                         <button id="cancel-unadd-btn" class="btn-unadd-action secondary">✕</button>
+                    </div>
+                </div>
+                
+                <!-- SECURITY UPGRADE: Human Signature Visualizer -->
+                <div style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-top: 4px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; font-weight: 700;">Keystroke Variance</span>
+                        <span style="font-size: 0.7rem; color: #38bdf8;">Verified Organic</span>
+                    </div>
+                    <div id="human-signature-chart" style="display: flex; align-items: flex-end; justify-content: space-between; height: 36px; gap: 2px;">
+                        <!-- Bars generated dynamically via JS -->
                     </div>
                 </div>
             </div>
