@@ -37,6 +37,10 @@
         .tab-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; }
         .tab-badge { position: absolute; top: 4px; right: calc(50% - 16px); background-color: #ef4444; color: #fff; font-size: 0.65rem; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid #0f172a; }
 
+        .mobile-fab-wrap { flex: 0.8; display: flex; justify-content: center; align-items: center; }
+        .mobile-post-fab { width: 48px; height: 48px; background: linear-gradient(135deg, #38bdf8, #0284c7); border: 2px solid #0f172a; border-radius: 50%; color: white; font-size: 28px; font-weight: 300; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4); cursor: pointer; transform: translateY(-10px); z-index: 100; transition: transform 0.15s; line-height: 1; }
+        .mobile-post-fab:active { transform: translateY(-8px) scale(0.95); }
+
         @media (max-width: 768px) { .desktop-nav-actions { display: none !important; } .mobile-tab-bar { display: flex !important; } body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
 
         .workspace-grid { max-width: 1100px; width: 100%; display: grid; grid-template-columns: 260px 1fr; gap: 16px; margin-bottom: 24px; align-items: start; }
@@ -160,13 +164,18 @@
         .notif-text { color: #e2e8f0; line-height: 1.4; }
         .notif-time { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
 
-        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; }
+        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
         .telemetry-pill { background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 6px 16px rgba(0,0,0,0.45); color: #f8fafc; padding: 6px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(8px); }
         .telemetry-pill:hover { transform: translateY(-2px); background: #0f172a; border-color: #7dd3fc; }
         .telemetry-drawer { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; width: 230px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); margin-bottom: 6px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
         .telemetry-drawer-header { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 4px; }
         .btn-hud-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; width: auto; }
         .hud-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
+
+        /* DESKTOP FAB */
+        .desktop-post-fab { width: 48px; height: 48px; background: linear-gradient(135deg, #38bdf8, #0284c7); border: none; border-radius: 50%; color: white; font-size: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; line-height: 1; }
+        .desktop-post-fab:hover { transform: scale(1.08); box-shadow: 0 6px 16px rgba(56, 189, 248, 0.6); }
+        @media (max-width: 768px) { .desktop-post-fab { display: none !important; } }
 
         .badge { padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: bold; text-transform: uppercase; }
         .badge-green { background-color: #16a34a; color: #ffffff; }
@@ -186,6 +195,9 @@
 
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px; }
         #user-profile-modal { z-index: 105 !important; }
+        /* Link modal needs to be above the composer modal (104) */
+        #link-modal { z-index: 110 !important; } 
+
         .modal-box { background-color: #1e293b; border: 1px solid #334155; border-radius: 14px; width: 100%; max-width: 860px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 92vh; height: 600px; }
         .modal-box-small { max-width: 520px; height: auto; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
@@ -331,6 +343,38 @@
         </aside>
 
         <section class="main-feed-column">
+            
+            <!-- AUTH & USER STATUS BAR (Moved outside the post box) -->
+            <div id="auth-panel-container" class="card" style="margin-bottom: 0;">
+                <div id="auth-panel">
+                    <h2 id="auth-header">🔑 Member Login</h2>
+                    <form id="authForm">
+                        <div id="username-field-group" class="hidden">
+                            <label for="auth-username">Unique Username</label>
+                            <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
+                        </div>
+                        <label for="auth-email">Email</label>
+                        <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
+                        <label for="auth-password">Password</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+                        <button type="submit" id="auth-submit-btn">Log In</button>
+                        <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
+                    </form>
+                </div>
+                
+                <div id="user-status-panel" class="hidden">
+                    <div class="auth-bar" style="margin-bottom: 0;">
+                        <span class="auth-status">
+                            <span id="post-bar-avatar-wrap" style="width: 24px; height: 24px; border-radius: 50%; overflow: hidden; display: inline-flex;">
+                                <img id="post-bar-avatar" style="width: 100%; height: 100%; object-fit: cover;" class="hidden" alt="Avatar">
+                            </span>
+                            Logged in as: <strong id="current-user-tag">@username</strong>
+                        </span>
+                        <button id="logout-btn" class="btn-small secondary">Log Out</button>
+                    </div>
+                </div>
+            </div>
+
             <main class="feed-card">
                 <div class="feed-toolbar">
                     <div class="toolbar-top">
@@ -363,77 +407,10 @@
                     <div class="no-posts">Loading posts...</div>
                 </div>
             </main>
-
-            <div class="post-composer-wrap">
-                <div class="card">
-                    <div id="auth-panel">
-                        <h2 id="auth-header">🔑 Member Login</h2>
-                        <form id="authForm">
-                            <div id="username-field-group" class="hidden">
-                                <label for="auth-username">Unique Username</label>
-                                <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
-                            </div>
-
-                            <label for="auth-email">Email</label>
-                            <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
-
-                            <label for="auth-password">Password</label>
-                            <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
-
-                            <button type="submit" id="auth-submit-btn">Log In</button>
-                            <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
-                        </form>
-                    </div>
-
-                    <div id="post-panel" class="hidden">
-                        <div class="auth-bar">
-                            <span class="auth-status">
-                                <span id="post-bar-avatar-wrap" style="width: 24px; height: 24px; border-radius: 50%; overflow: hidden; display: inline-flex;">
-                                    <img id="post-bar-avatar" style="width: 100%; height: 100%; object-fit: cover;" class="hidden" alt="Avatar">
-                                </span>
-                                Logged in as: <strong id="current-user-tag">@username</strong>
-                            </span>
-                            <button id="logout-btn" class="btn-small secondary">Log Out</button>
-                        </div>
-
-                        <h2>Create Forum Post</h2>
-                        <form id="forumForm">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                <label for="topic-select" style="margin-bottom: 0;">Publish to Thread:</label>
-                                <button type="button" id="open-new-thread-modal-btn" style="background: none; border: none; color: #38bdf8; font-size: 0.8rem; cursor: pointer; text-decoration: underline; width: auto; padding: 0;">+ New Thread</button>
-                            </div>
-                            <select id="topic-select"></select>
-
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <label for="forum-post" style="margin-bottom: 0;">Your Message</label>
-                                <div class="editor-action-bar">
-                                    <button type="button" id="open-link-modal-btn" class="editor-tool-btn" title="Safely insert links without paste lock">🔗 Link</button>
-                                    <label for="post-image-file" class="editor-tool-btn" style="margin-bottom: 0; cursor: pointer;" title="Attach photo to post">📷 Photo</label>
-                                    <input type="file" id="post-image-file" accept="image/*" style="display: none;">
-                                </div>
-                            </div>
-
-                            <div id="post-photo-preview-bar" class="post-photo-preview hidden">
-                                <span id="post-photo-filename">📎 Photo attached</span>
-                                <button type="button" id="remove-post-photo-btn" style="background: none; border: none; color: #ef4444; width: auto; padding: 0; cursor: pointer; font-size: 0.85rem;">Remove ✕</button>
-                            </div>
-
-                            <textarea id="forum-post" placeholder="Type or paste your thoughts..."></textarea>
-                            
-                            <div class="hidden-honeypot">
-                                <label>Bot Trap:</label>
-                                <input type="text" id="honeypot-field" autocomplete="off">
-                            </div>
-                            
-                            <button type="submit" id="forum-submit-btn">Publish to Forum</button>
-                        </form>
-                    </div>
-                </div>
-            </div>
         </section>
     </div>
 
-    <!-- HUD, MODALS & CHAT REMAINS UNCHANGED STRUCTURALLY -->
+    <!-- FLOATING TELEMETRY HUD & DESKTOP FAB -->
     <div id="floating-telemetry" class="floating-telemetry-hud">
         <div id="telemetry-drawer" class="telemetry-drawer hidden">
             <div class="telemetry-drawer-header">
@@ -458,19 +435,74 @@
             </div>
         </div>
 
-        <div id="telemetry-pill" class="telemetry-pill" title="Click to view security monitor">
-            <span>🛡</span>
-            <span>Security: <strong id="pill-suspicion-tag">0/3 Risk</strong></span>
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <!-- DESKTOP COMPOSE FAB -->
+            <button id="desktop-post-fab" class="desktop-post-fab" title="Create Post">+</button>
+            
+            <div id="telemetry-pill" class="telemetry-pill" title="Click to view security monitor">
+                <span>🛡</span>
+                <span>Security: <strong id="pill-suspicion-tag">0/3 Risk</strong></span>
+            </div>
         </div>
     </div>
 
     <nav id="mobile-tab-bar" class="mobile-tab-bar">
         <button type="button" class="tab-btn active" id="tab-nav-feed"><span class="tab-icon">📜</span><span>Feed</span></button>
         <button type="button" class="tab-btn" id="tab-nav-messages"><span class="tab-icon">✉️</span><span>Messages</span><span id="mobile-msg-badge" class="tab-badge hidden">0</span></button>
+        
+        <div class="mobile-fab-wrap">
+            <button type="button" id="mobile-post-fab" class="mobile-post-fab" title="Create Post">+</button>
+        </div>
+
         <button type="button" class="tab-btn" id="tab-nav-notifs"><span class="tab-icon">🔔</span><span>Notifs</span><span id="mobile-activity-badge" class="tab-badge hidden">0</span></button>
         <button type="button" class="tab-btn" id="tab-nav-profile"><span id="tab-avatar-fallback" class="tab-icon">👤</span><img id="tab-avatar-img" class="tab-avatar hidden" alt="Profile"><span>Profile</span></button>
     </nav>
 
+    <!-- NEW MODAL: POST COMPOSER -->
+    <div id="post-composer-modal" class="modal-overlay hidden" style="z-index: 104;">
+        <div class="modal-box modal-box-small" style="max-height: 95vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h2>✏️ Create Post</h2>
+                <button id="close-composer-btn" class="close-btn">&times;</button>
+            </div>
+            
+            <form id="forumForm" style="flex: 1; display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label for="topic-select" style="margin-bottom: 0;">Publish to Community:</label>
+                    <button type="button" id="open-new-thread-modal-btn" style="background: none; border: none; color: #38bdf8; font-size: 0.8rem; cursor: pointer; text-decoration: underline; width: auto; padding: 0;">+ New Community</button>
+                </div>
+                
+                <!-- Sleek Searchable Community List -->
+                <input type="text" id="composer-thread-search" placeholder="🔍 Search your joined communities..." autocomplete="off" style="margin-bottom: 8px; padding: 8px 12px; font-size: 0.9rem;">
+                <select id="topic-select" size="4" style="margin-bottom: 15px; height: 110px;"></select>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <label for="forum-post" style="margin-bottom: 0;">Your Message</label>
+                    <div class="editor-action-bar">
+                        <button type="button" id="open-link-modal-btn" class="editor-tool-btn" title="Safely insert links without paste lock">🔗 Link</button>
+                        <label for="post-image-file" class="editor-tool-btn" style="margin-bottom: 0; cursor: pointer;" title="Attach photo to post">📷 Photo</label>
+                        <input type="file" id="post-image-file" accept="image/*" style="display: none;">
+                    </div>
+                </div>
+
+                <div id="post-photo-preview-bar" class="post-photo-preview hidden">
+                    <span id="post-photo-filename">📎 Photo attached</span>
+                    <button type="button" id="remove-post-photo-btn" style="background: none; border: none; color: #ef4444; width: auto; padding: 0; cursor: pointer; font-size: 0.85rem;">Remove ✕</button>
+                </div>
+
+                <textarea id="forum-post" placeholder="Type or paste your thoughts..." style="height: 140px;"></textarea>
+                
+                <div class="hidden-honeypot">
+                    <label>Bot Trap:</label>
+                    <input type="text" id="honeypot-field" autocomplete="off">
+                </div>
+                
+                <button type="submit" id="forum-submit-btn">Publish to Forum</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MANDATORY CAPTCHA SUSPENSION MODAL -->
     <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
             <div style="font-size: 2.2rem;">🛡️</div>
@@ -557,7 +589,7 @@
     <div id="thread-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
-                <h2>🧵 Create New Thread</h2>
+                <h2>🧵 Create New Community</h2>
                 <button id="close-thread-modal-btn" class="close-btn">&times;</button>
             </div>
             <form id="createThreadForm">
@@ -582,12 +614,10 @@
             </div>
             <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;">Manage privileges for <strong id="perms-thread-name" style="color: #38bdf8;"></strong>:</p>
             
-            <!-- ADD THIS: PRIVACY TOGGLE -->
             <div id="private-thread-toggle-wrap" class="hidden" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155;">
                 <span style="font-size: 0.85rem; font-weight: 600;">🔒 Private Community</span>
                 <button id="toggle-privacy-btn" class="btn-perm secondary">Make Public</button>
             </div>
-            <!-- END PRIVACY TOGGLE -->
 
             <div style="display: flex; gap: 8px; margin-bottom: 14px;">
                 <input type="text" id="perm-user-lookup" placeholder="Target @username" style="margin-bottom: 0; flex: 1;">
@@ -595,12 +625,10 @@
             </div>
             <div id="perms-user-list" style="display: flex; flex-direction: column; max-height: 280px; overflow-y: auto;"></div>
 
-            <!-- ADD THIS: PENDING REQUESTS QUEUE -->
             <div id="thread-requests-section" class="hidden">
                 <h3 style="font-size: 0.85rem; margin: 14px 0 8px; color: #38bdf8; border-top: 1px solid #334155; padding-top: 14px;">Pending Join Requests</h3>
                 <div id="thread-requests-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
             </div>
-            <!-- END PENDING REQUESTS QUEUE -->
         </div>
     </div>
 
