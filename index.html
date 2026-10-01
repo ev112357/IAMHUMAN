@@ -609,21 +609,6 @@
         </div>
     </div>
 
-    <!-- ACCOUNT DELETE CONFIRMATION MODAL -->
-    <div id="delete-confirm-modal" class="modal-overlay hidden" style="z-index: 10006;">
-        <div class="modal-box modal-box-small" style="border: 2px solid #ef4444;">
-            <div class="modal-header">
-                <h2 style="color: #ef4444;">⚠️ Delete Human Profile</h2>
-                <button id="close-delete-modal-btn" class="close-btn">&times;</button>
-            </div>
-            <p style="font-size: 0.88rem; color: #e2e8f0; margin-bottom: 12px; line-height: 1.5;">This cannot be undone. To verify, type your exact username <strong id="delete-confirm-user-tag" style="color: #f87171;">@username</strong> below:</p>
-            <input type="text" id="delete-username-input" placeholder="Confirm @username" autocomplete="off">
-            <div style="display: flex; gap: 8px;">
-                <button id="final-delete-btn" class="danger" style="flex: 1;">Confirm Delete</button>
-                <button id="cancel-delete-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
-            </div>
-        </div>
-    </div>
 
     <!-- NOTIFICATIONS MODAL -->
     <div id="notifications-modal" class="modal-overlay hidden">
@@ -641,19 +626,94 @@
         </div>
     </div>
 
-    <!-- PUBLIC USER PROFILE CARD WITH POST HISTORY -->
-    <div id="user-profile-modal" class="modal-overlay hidden">
+    <!-- SETTINGS & PROFILE MODAL -->
+    <div id="profile-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
+            <div class="modal-header">
+                <h2>⚙️ Settings</h2>
+                <button id="close-profile-btn" class="close-btn">&times;</button>
+            </div>
+
+            <!-- Settings Sub-Tabs -->
+            <div style="display: flex; gap: 8px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px;">
+                <button type="button" id="tab-btn-settings-profile" style="flex: 1; padding: 8px; font-size: 0.88rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px;">Profile</button>
+                <button type="button" id="tab-btn-settings-privacy" style="flex: 1; padding: 8px; font-size: 0.88rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Privacy & Security</button>
+            </div>
+            
+            <!-- Tab 1: Profile Pane -->
+            <div id="pane-settings-profile">
+                <div class="profile-preview-wrap">
+                    <img id="profile-preview-avatar" class="profile-avatar-preview" src="" alt="Avatar">
+                    <label for="profile-avatar-file" class="editor-tool-btn" style="cursor: pointer;">
+                        📷 Change Profile Photo
+                    </label>
+                    <input type="file" id="profile-avatar-file" accept="image/*" style="display: none;">
+                </div>
+
+                <div class="profile-section">
+                    <label>Change Password</label>
+                    <input type="password" id="current-password-input" placeholder="Current Password" autocomplete="current-password">
+                    <input type="password" id="new-password-input" placeholder="New Password (min 6 chars)" autocomplete="new-password">
+                    <input type="password" id="confirm-password-input" placeholder="Confirm New Password" autocomplete="new-password">
+                    <button type="button" id="update-password-btn">Update Password</button>
+                </div>
+
+                <div class="profile-section" style="border-top: 1px solid #ef4444; margin-top: 20px; padding-top: 14px;">
+                    <label style="color: #ef4444; font-weight: 700;">Danger Zone</label>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Permanently delete your human profile and erase credentials.</p>
+                    <button type="button" id="open-delete-modal-btn" class="danger">Delete Account</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Privacy Pane -->
+            <div id="pane-settings-privacy" class="hidden">
+                <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="padding-right: 12px;">
+                            <div style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 3px;">Private Account</div>
+                            <p id="account-privacy-desc" style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Public: Any human can view your forum post & comment history.</p>
+                        </div>
+                        <input type="checkbox" id="privacy-toggle-chk" style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+                </div>
+                <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.5;">
+                    🛡️ <strong>Private Profile Guard:</strong> When your account is set to private, other members see your username and human verification score, but your post and comment histories are completely hidden.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ACCOUNT DELETE CONFIRMATION MODAL -->
+    <div id="delete-confirm-modal" class="modal-overlay hidden" style="z-index: 10006;">
+        <div class="modal-box modal-box-small" style="border: 2px solid #ef4444;">
+            <div class="modal-header">
+                <h2 style="color: #ef4444;">⚠️ Delete Human Profile</h2>
+                <button id="close-delete-modal-btn" class="close-btn">&times;</button>
+            </div>
+            <p style="font-size: 0.88rem; color: #e2e8f0; margin-bottom: 12px; line-height: 1.5;">This cannot be undone. To verify, type your exact username <strong id="delete-confirm-user-tag" style="color: #f87171;">@username</strong> below:</p>
+            <input type="text" id="delete-username-input" placeholder="Confirm @username" autocomplete="off">
+            <div style="display: flex; gap: 8px;">
+                <button id="final-delete-btn" class="danger" style="flex: 1;">Confirm Delete</button>
+                <button id="cancel-delete-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PUBLIC USER PROFILE CARD MODAL -->
+    <div id="user-profile-modal" class="modal-overlay hidden">
+        <div class="modal-box modal-box-small" style="max-height: 85vh; display: flex; flex-direction: column;">
             <div class="modal-header">
                 <h2>👤 Human Profile</h2>
                 <button id="close-user-profile-btn" class="close-btn">&times;</button>
             </div>
+            
             <div class="profile-card-header">
                 <img id="user-card-pfp" class="profile-card-pfp" src="" alt="Avatar">
                 <div id="user-card-username" class="profile-card-user">@username</div>
                 <div class="profile-score-badge"><span>⚡ Human Score:</span><strong id="user-card-score">0</strong></div>
             </div>
-            <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 10px;">
+            
+            <div id="user-card-actions" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
                 <div class="profile-btn-row">
                     <button type="button" id="user-card-msg-btn" style="flex: 1; background-color: #0284c7;">💬 Send Message</button>
                     <button type="button" id="user-card-add-friend-btn" class="btn-friend-state">➕ Add Friend</button>
@@ -666,6 +726,30 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Tabbed Activity History (Posts & Comments) -->
+            <div style="border-top: 1px solid #334155; padding-top: 12px; display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                    <button type="button" id="user-history-tab-posts" style="flex: 1; padding: 6px; font-size: 0.8rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px;">Posts (<span id="user-posts-count">0</span>)</button>
+                    <button type="button" id="user-history-tab-comments" style="flex: 1; padding: 6px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Comments (<span id="user-comments-count">0</span>)</button>
+                </div>
+
+                <div id="user-history-private-notice" class="hidden" style="background: #0f172a; border: 1px dashed #475569; padding: 16px; border-radius: 8px; text-align: center; color: #94a3b8; font-size: 0.85rem;">
+                    🔒 This member's activity history is private.
+                </div>
+
+                <!-- Scrollable Posts List -->
+                <div id="user-posts-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+                    <div style="font-size:0.8rem; color:#64748b;">Loading posts...</div>
+                </div>
+
+                <!-- Scrollable Comments List -->
+                <div id="user-comments-container" class="hidden" style="display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 4px;">
+                    <div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>
+                </div>
+            </div>
+        </div>
+    </div>
 
             <!-- Profile Post History Stream -->
             <div class="user-feed-section">
