@@ -30,16 +30,17 @@
         .notif-badge { position: absolute; top: -4px; right: -4px; background-color: #ef4444; color: #ffffff; font-size: 0.72rem; font-weight: 800; min-width: 19px; height: 19px; border-radius: 10px; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #0f172a; pointer-events: none; }
         .conv-badge { background-color: #ef4444; color: #ffffff; font-size: 0.7rem; font-weight: 800; min-width: 18px; height: 18px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; padding: 0 5px; }
 
+        /* Mobile Tab Bar with Prominent FAB */
         .mobile-tab-bar { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: calc(56px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(16px); border-top: 1px solid #334155; z-index: 99; justify-content: space-around; align-items: center; box-shadow: 0 -4px 20px rgba(0,0,0,0.6); }
         .tab-btn { background: none; border: none; color: #94a3b8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 0.7rem; font-weight: 600; cursor: pointer; position: relative; flex: 1; height: 100%; transition: color 0.15s; }
         .tab-btn.active { color: #38bdf8; }
         .tab-icon { font-size: 1.25rem; line-height: 1; }
         .tab-avatar { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; border: 1px solid #38bdf8; }
         .tab-badge { position: absolute; top: 4px; right: calc(50% - 16px); background-color: #ef4444; color: #fff; font-size: 0.65rem; font-weight: 800; min-width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 2px solid #0f172a; }
-
-        .mobile-fab-wrap { flex: 0.8; display: flex; justify-content: center; align-items: center; }
-        .mobile-post-fab { width: 48px; height: 48px; background: linear-gradient(135deg, #38bdf8, #0284c7); border: 2px solid #0f172a; border-radius: 50%; color: white; font-size: 28px; font-weight: 300; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4); cursor: pointer; transform: translateY(-10px); z-index: 100; transition: transform 0.15s; line-height: 1; }
-        .mobile-post-fab:active { transform: translateY(-8px) scale(0.95); }
+        
+        .mobile-fab-wrap { width: 60px; display: flex; justify-content: center; position: relative; height: 100%; flex-shrink: 0; }
+        .mobile-fab-btn { position: absolute; top: -20px; background-color: #38bdf8; color: #0f172a; border: 5px solid #0f172a; width: 58px; height: 58px; border-radius: 50%; font-size: 1.8rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(56, 189, 248, 0.4); transition: transform 0.2s; }
+        .mobile-fab-btn:active { transform: scale(0.95); }
 
         @media (max-width: 768px) { .desktop-nav-actions { display: none !important; } .mobile-tab-bar { display: flex !important; } body { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } }
 
@@ -164,18 +165,17 @@
         .notif-text { color: #e2e8f0; line-height: 1.4; }
         .notif-time { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
 
-        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+        /* Telemetry & Desktop FAB Container */
+        .floating-telemetry-hud { position: fixed; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); right: 14px; z-index: 90; display: flex; flex-direction: column; align-items: flex-end; }
         .telemetry-pill { background: #1e293b; border: 1px solid #38bdf8; box-shadow: 0 6px 16px rgba(0,0,0,0.45); color: #f8fafc; padding: 6px 12px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; backdrop-filter: blur(8px); }
         .telemetry-pill:hover { transform: translateY(-2px); background: #0f172a; border-color: #7dd3fc; }
         .telemetry-drawer { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; width: 230px; box-shadow: 0 10px 24px rgba(0,0,0,0.5); margin-bottom: 6px; backdrop-filter: blur(10px); display: flex; flex-direction: column; gap: 6px; }
         .telemetry-drawer-header { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; font-weight: 700; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 4px; }
         .btn-hud-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; width: auto; }
         .hud-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
-
-        /* DESKTOP FAB */
-        .desktop-post-fab { width: 48px; height: 48px; background: linear-gradient(135deg, #38bdf8, #0284c7); border: none; border-radius: 50%; color: white; font-size: 28px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; line-height: 1; }
-        .desktop-post-fab:hover { transform: scale(1.08); box-shadow: 0 6px 16px rgba(56, 189, 248, 0.6); }
-        @media (max-width: 768px) { .desktop-post-fab { display: none !important; } }
+        
+        .desktop-fab { background-color: #38bdf8; color: #0f172a; border: none; width: 42px; height: 42px; border-radius: 50%; font-size: 1.5rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(56, 189, 248, 0.4); transition: transform 0.2s, background-color 0.2s; }
+        .desktop-fab:hover { background-color: #7dd3fc; transform: scale(1.05); }
 
         .badge { padding: 2px 7px; border-radius: 4px; font-size: 0.72rem; font-weight: bold; text-transform: uppercase; }
         .badge-green { background-color: #16a34a; color: #ffffff; }
@@ -195,14 +195,25 @@
 
         .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 12px; }
         #user-profile-modal { z-index: 105 !important; }
-        /* Link modal needs to be above the composer modal (104) */
-        #link-modal { z-index: 110 !important; } 
-
         .modal-box { background-color: #1e293b; border: 1px solid #334155; border-radius: 14px; width: 100%; max-width: 860px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 92vh; height: 600px; }
         .modal-box-small { max-width: 520px; height: auto; max-height: 90vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
         .close-btn { background: transparent; border: none; font-size: 1.5rem; color: #94a3b8; cursor: pointer; width: auto; padding: 0 8px; }
         .close-btn:hover { color: #ffffff; }
+
+        /* Full Screen Animated Post Modal */
+        .fab-modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0); pointer-events: none; z-index: 10000; display: flex; align-items: center; justify-content: center; transition: background 0.3s ease; }
+        .fab-modal-overlay.active { background: rgba(15, 23, 42, 0.88); pointer-events: auto; backdrop-filter: blur(6px); }
+        .fab-modal-container { background-color: #1e293b; width: 100%; max-width: 650px; height: 100%; max-height: 85vh; border-radius: 16px; border: 1px solid #334155; display: flex; flex-direction: column; padding: 24px; transform: scale(0); opacity: 0; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s ease; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); overflow-y: auto; }
+        .fab-modal-overlay.active .fab-modal-container { transform: scale(1); opacity: 1; }
+        @media (max-width: 768px) {
+            .fab-modal-container { max-height: 100vh; border-radius: 0; border: none; padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 20px; }
+        }
+
+        /* Search Dropdown */
+        .suggest-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #0f172a; border: 1px solid #38bdf8; border-radius: 8px; max-height: 200px; overflow-y: auto; z-index: 10; margin-top: 4px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
+        .suggest-item { padding: 10px 12px; font-size: 0.9rem; cursor: pointer; color: #e2e8f0; border-bottom: 1px solid #334155; }
+        .suggest-item:hover { background: #1e293b; color: #38bdf8; }
 
         .perm-user-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; margin-bottom: 8px; font-size: 0.85rem; }
         .perm-user-name { font-weight: 600; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
@@ -223,7 +234,7 @@
         .conv-item-label { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .back-btn { background: transparent; border: none; color: #38bdf8; font-weight: 600; font-size: 0.95rem; cursor: pointer; padding: 0 6px 0 0; width: auto; display: none; }
 
-        @media (max-width: 768px) { .modal-overlay { padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(66px + env(safe-area-inset-bottom, 0px)); } .modal-box { height: 100% !important; max-height: 100% !important; border-radius: 12px; } .dm-layout { grid-template-columns: 1fr; position: relative; } .sidebar-pane.mobile-hidden { display: none !important; } .chat-pane.mobile-hidden { display: none !important; } .back-btn { display: inline-block !important; } }
+        @media (max-width: 768px) { .modal-overlay { padding: calc(10px + env(safe-area-inset-top, 0px)) 8px calc(66px + env(safe-area-bottom, 0px)); } .modal-box { height: 100% !important; max-height: 100% !important; border-radius: 12px; } .dm-layout { grid-template-columns: 1fr; position: relative; } .sidebar-pane.mobile-hidden { display: none !important; } .chat-pane.mobile-hidden { display: none !important; } .back-btn { display: inline-block !important; } }
 
         .chat-pane { display: flex; flex-direction: column; background-color: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; height: 100%; min-height: 0; }
         .chat-history { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; padding-right: 5px; scroll-behavior: smooth; }
@@ -343,35 +354,25 @@
         </aside>
 
         <section class="main-feed-column">
-            
-            <!-- AUTH & USER STATUS BAR (Moved outside the post box) -->
-            <div id="auth-panel-container" class="card" style="margin-bottom: 0;">
-                <div id="auth-panel">
+            <!-- AUTH PANEL WRAPPER -->
+            <div id="auth-panel-wrapper">
+                <div id="auth-panel" class="card" style="margin-bottom: 16px;">
                     <h2 id="auth-header">🔑 Member Login</h2>
                     <form id="authForm">
                         <div id="username-field-group" class="hidden">
                             <label for="auth-username">Unique Username</label>
                             <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
                         </div>
+
                         <label for="auth-email">Email</label>
                         <input type="email" id="auth-email" placeholder="you@example.com" required autocomplete="email">
+
                         <label for="auth-password">Password</label>
                         <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+
                         <button type="submit" id="auth-submit-btn">Log In</button>
                         <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
                     </form>
-                </div>
-                
-                <div id="user-status-panel" class="hidden">
-                    <div class="auth-bar" style="margin-bottom: 0;">
-                        <span class="auth-status">
-                            <span id="post-bar-avatar-wrap" style="width: 24px; height: 24px; border-radius: 50%; overflow: hidden; display: inline-flex;">
-                                <img id="post-bar-avatar" style="width: 100%; height: 100%; object-fit: cover;" class="hidden" alt="Avatar">
-                            </span>
-                            Logged in as: <strong id="current-user-tag">@username</strong>
-                        </span>
-                        <button id="logout-btn" class="btn-small secondary">Log Out</button>
-                    </div>
                 </div>
             </div>
 
@@ -385,7 +386,6 @@
                             <option value="newest">🕒 Newest First</option>
                             <option value="oldest">🕰 Oldest First</option>
                         </select>
-                        <button type="button" id="trigger-create-thread-btn" class="toolbar-btn">+ Thread</button>
                     </div>
 
                     <div id="thread-discovery-box" class="discovery-results-box hidden"></div>
@@ -410,7 +410,7 @@
         </section>
     </div>
 
-    <!-- FLOATING TELEMETRY HUD & DESKTOP FAB -->
+    <!-- HUD & DESKTOP FAB -->
     <div id="floating-telemetry" class="floating-telemetry-hud">
         <div id="telemetry-drawer" class="telemetry-drawer hidden">
             <div class="telemetry-drawer-header">
@@ -435,10 +435,8 @@
             </div>
         </div>
 
-        <div style="display: flex; align-items: center; gap: 16px;">
-            <!-- DESKTOP COMPOSE FAB -->
-            <button id="desktop-post-fab" class="desktop-post-fab" title="Create Post">+</button>
-            
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <button type="button" id="desktop-fab" class="desktop-fab" title="Create Post">➕</button>
             <div id="telemetry-pill" class="telemetry-pill" title="Click to view security monitor">
                 <span>🛡</span>
                 <span>Security: <strong id="pill-suspicion-tag">0/3 Risk</strong></span>
@@ -446,41 +444,49 @@
         </div>
     </div>
 
+    <!-- MOBILE TAB BAR WITH FAB -->
     <nav id="mobile-tab-bar" class="mobile-tab-bar">
         <button type="button" class="tab-btn active" id="tab-nav-feed"><span class="tab-icon">📜</span><span>Feed</span></button>
         <button type="button" class="tab-btn" id="tab-nav-messages"><span class="tab-icon">✉️</span><span>Messages</span><span id="mobile-msg-badge" class="tab-badge hidden">0</span></button>
         
         <div class="mobile-fab-wrap">
-            <button type="button" id="mobile-post-fab" class="mobile-post-fab" title="Create Post">+</button>
+            <button type="button" id="mobile-fab" class="mobile-fab-btn">➕</button>
         </div>
 
         <button type="button" class="tab-btn" id="tab-nav-notifs"><span class="tab-icon">🔔</span><span>Notifs</span><span id="mobile-activity-badge" class="tab-badge hidden">0</span></button>
         <button type="button" class="tab-btn" id="tab-nav-profile"><span id="tab-avatar-fallback" class="tab-icon">👤</span><img id="tab-avatar-img" class="tab-avatar hidden" alt="Profile"><span>Profile</span></button>
     </nav>
 
-    <!-- NEW MODAL: POST COMPOSER -->
-    <div id="post-composer-modal" class="modal-overlay hidden" style="z-index: 104;">
-        <div class="modal-box modal-box-small" style="max-height: 95vh; display: flex; flex-direction: column;">
+    <!-- FULL SCREEN FAB MODAL -->
+    <div id="fab-post-modal" class="fab-modal-overlay hidden">
+        <div class="fab-modal-container" id="fab-modal-container">
             <div class="modal-header">
-                <h2>✏️ Create Post</h2>
-                <button id="close-composer-btn" class="close-btn">&times;</button>
+                <h2>✍️ Create Forum Post</h2>
+                <button type="button" id="close-fab-modal-btn" class="close-btn">&times;</button>
             </div>
             
-            <form id="forumForm" style="flex: 1; display: flex; flex-direction: column;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <label for="topic-select" style="margin-bottom: 0;">Publish to Community:</label>
-                    <button type="button" id="open-new-thread-modal-btn" style="background: none; border: none; color: #38bdf8; font-size: 0.8rem; cursor: pointer; text-decoration: underline; width: auto; padding: 0;">+ New Community</button>
-                </div>
-                
-                <!-- Sleek Searchable Community List -->
-                <input type="text" id="composer-thread-search" placeholder="🔍 Search your joined communities..." autocomplete="off" style="margin-bottom: 8px; padding: 8px 12px; font-size: 0.9rem;">
-                <select id="topic-select" size="4" style="margin-bottom: 15px; height: 110px;"></select>
+            <div class="auth-bar" style="margin-bottom: 16px;">
+                <span class="auth-status">
+                    <span style="width: 24px; height: 24px; border-radius: 50%; overflow: hidden; display: inline-flex;">
+                        <img id="post-bar-avatar" style="width: 100%; height: 100%; object-fit: cover;" class="hidden" alt="Avatar">
+                    </span>
+                    Posting as: <strong id="current-user-tag">@username</strong>
+                </span>
+                <button type="button" id="logout-btn" class="btn-small secondary">Log Out</button>
+            </div>
 
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <label for="forum-post" style="margin-bottom: 0;">Your Message</label>
-                    <div class="editor-action-bar">
-                        <button type="button" id="open-link-modal-btn" class="editor-tool-btn" title="Safely insert links without paste lock">🔗 Link</button>
-                        <label for="post-image-file" class="editor-tool-btn" style="margin-bottom: 0; cursor: pointer;" title="Attach photo to post">📷 Photo</label>
+            <form id="forumForm" style="display: flex; flex-direction: column; flex: 1;">
+                <label style="margin-bottom: 6px;">Select Community</label>
+                <div style="position: relative; margin-bottom: 16px;">
+                    <input type="text" id="thread-search-select" placeholder="Search to select a community..." autocomplete="off">
+                    <div id="thread-suggest-dropdown" class="suggest-dropdown hidden"></div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="margin-bottom: 0;">Your Message</label>
+                    <div class="editor-action-bar" style="margin-bottom: 0;">
+                        <button type="button" id="open-link-modal-btn" class="editor-tool-btn">🔗 Link</button>
+                        <label for="post-image-file" class="editor-tool-btn" style="margin-bottom: 0; cursor: pointer;">📷 Photo</label>
                         <input type="file" id="post-image-file" accept="image/*" style="display: none;">
                     </div>
                 </div>
@@ -490,22 +496,22 @@
                     <button type="button" id="remove-post-photo-btn" style="background: none; border: none; color: #ef4444; width: auto; padding: 0; cursor: pointer; font-size: 0.85rem;">Remove ✕</button>
                 </div>
 
-                <textarea id="forum-post" placeholder="Type or paste your thoughts..." style="height: 140px;"></textarea>
+                <textarea id="forum-post" placeholder="Type or paste your thoughts..." style="flex: 1; min-height: 140px;"></textarea>
                 
                 <div class="hidden-honeypot">
                     <label>Bot Trap:</label>
                     <input type="text" id="honeypot-field" autocomplete="off">
                 </div>
                 
-                <button type="submit" id="forum-submit-btn">Publish to Forum</button>
+                <button type="submit" id="forum-submit-btn" style="margin-top: auto;">Publish Post</button>
             </form>
         </div>
     </div>
 
-    <!-- MANDATORY CAPTCHA SUSPENSION MODAL -->
+    <!-- OTHER MODALS -->
     <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 9999;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
-            <div style="font-size: 2.2rem;">🛡️</div>
+            <div style="font-size: 2.2rem;">🛡️️</div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
             <p style="font-size: 0.88rem; color: #cbd5e1; line-height: 1.5;">Our security telemetry noted automated cadence or rapid posting behavior. To verify you are human, please solve the security code below to restore your account.</p>
             <div class="captcha-canvas-wrap"><canvas id="captchaCanvas" width="220" height="70"></canvas></div>
@@ -560,7 +566,7 @@
         </div>
     </div>
 
-    <div id="link-modal" class="modal-overlay hidden">
+    <div id="link-modal" class="modal-overlay hidden" style="z-index: 10005;">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
                 <h2>🔗 Insert Link (Paste Safe)</h2>
@@ -589,18 +595,16 @@
     <div id="thread-modal" class="modal-overlay hidden">
         <div class="modal-box modal-box-small">
             <div class="modal-header">
-                <h2>🧵 Create New Community</h2>
+                <h2>🧵 Create New Thread</h2>
                 <button id="close-thread-modal-btn" class="close-btn">&times;</button>
             </div>
             <form id="createThreadForm">
                 <label for="new-thread-title">Thread Title</label>
                 <input type="text" id="new-thread-title" placeholder="e.g. Philosophical Musings, Web3 Debates" required>
-                
                 <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px; cursor: pointer;">
                     <input type="checkbox" id="new-thread-private-chk" style="width: auto; margin: 0;">
                     Private Community (Requires Approval)
                 </label>
-                
                 <button type="submit" id="create-thread-submit-btn">Create & Join Thread</button>
             </form>
         </div>
