@@ -46,7 +46,7 @@ const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
 const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
 
-// Header Nav & Settings Triggers (Desktop)
+// Header Nav & Settings Triggers
 const openSettingsBtn = document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
@@ -121,8 +121,6 @@ const newThreadTitleInput = document.getElementById('new-thread-title');
 const permsModal = document.getElementById('perms-modal');
 const closePermsModalBtn = document.getElementById('close-perms-modal-btn');
 const permsThreadName = document.getElementById('perms-thread-name');
-const permUserLookup = document.getElementById('perm-user-lookup');
-const permUserAddBtn = document.getElementById('perm-user-add-btn');
 const permsUserList = document.getElementById('perms-user-list');
 
 // Thread Delete Confirmation Modal Elements
@@ -133,9 +131,16 @@ const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
 const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
 const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
 
-// Settings & Account Modal Elements
+// Settings Modal Elements
 const profileModal = document.getElementById('profile-modal');
 const closeProfileBtn = document.getElementById('close-profile-btn');
+const tabBtnSettingsProfile = document.getElementById('tab-btn-settings-profile');
+const tabBtnSettingsPrivacy = document.getElementById('tab-btn-settings-privacy');
+const paneSettingsProfile = document.getElementById('pane-settings-profile');
+const paneSettingsPrivacy = document.getElementById('pane-settings-privacy');
+const privacyToggleChk = document.getElementById('privacy-toggle-chk');
+const accountPrivacyDesc = document.getElementById('account-privacy-desc');
+
 const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
 const profileAvatarFile = document.getElementById('profile-avatar-file');
 const currentPasswordInput = document.getElementById('current-password-input');
@@ -162,6 +167,15 @@ const userCardAddFriendBtn = document.getElementById('user-card-add-friend-btn')
 const unaddConfirmBox = document.getElementById('unadd-confirm-box');
 const confirmUnaddBtn = document.getElementById('confirm-unadd-btn');
 const cancelUnaddBtn = document.getElementById('cancel-unadd-btn');
+
+// Profile History Tabs & Containers
+const userHistoryTabPosts = document.getElementById('user-history-tab-posts');
+const userHistoryTabComments = document.getElementById('user-history-tab-comments');
+const userPostsContainer = document.getElementById('user-posts-container');
+const userCommentsContainer = document.getElementById('user-comments-container');
+const userHistoryPrivateNotice = document.getElementById('user-history-private-notice');
+const userPostsCount = document.getElementById('user-posts-count');
+const userCommentsCount = document.getElementById('user-comments-count');
 
 let targetProfileUsername = null;
 let targetProfileId = null;
@@ -208,13 +222,13 @@ const chatHeader = document.getElementById('chat-header');
 const chatMessages = document.getElementById('chat-messages');
 const chatPendingBanner = document.getElementById('chat-pending-banner');
 
-// Form & Photo Upload Inputs
+// DM Form Inputs
 const dmForm = document.getElementById('dm-form');
 const dmText = document.getElementById('dm-text');
 const dmImageInput = document.getElementById('dm-image-input');
 const dmSendBtn = document.getElementById('dm-send-btn');
 
-// Group Creator
+// Group Creator Elements
 const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
 const groupCreatorBox = document.getElementById('group-creator-box');
 const groupNameInput = document.getElementById('group-name-input');
@@ -271,132 +285,7 @@ let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
 
-// Dynamic Settings Elements
-let settingsTabBtnProfile = null;
-let settingsTabBtnPrivacy = null;
-let settingsProfilePane = null;
-let settingsPrivacyPane = null;
-let accountPrivacyCheckbox = null;
-let accountPrivacyDesc = null;
-
-// --- DYNAMIC SETTINGS WITH SUB-TABS (PROFILE & PRIVACY) ---
-
-function initializeSettingsModal() {
-    if (!profileModal) return;
-    const box = profileModal.querySelector('.modal-box');
-    if (!box || box.dataset.hasSettingsTabs === "true") return;
-
-    box.dataset.hasSettingsTabs = "true";
-
-    const header = box.querySelector('.modal-header');
-    if (header) {
-        const title = header.querySelector('h2');
-        if (title) title.innerHTML = "⚙️ Settings";
-    }
-
-    const tabNav = document.createElement('div');
-    tabNav.style.cssText = "display: flex; gap: 8px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px;";
-    tabNav.innerHTML = `
-        <button type="button" id="set-tab-profile" style="flex: 1; padding: 8px 12px; font-size: 0.88rem; font-weight: 600; background: #0284c7; color: #ffffff; border: 1px solid #38bdf8; border-radius: 6px;">Profile</button>
-        <button type="button" id="set-tab-privacy" style="flex: 1; padding: 8px 12px; font-size: 0.88rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Privacy & Security</button>
-    `;
-
-    if (header) {
-        header.insertAdjacentElement('afterend', tabNav);
-    }
-
-    const profileWrapper = document.createElement('div');
-    profileWrapper.id = "settings-profile-pane";
-
-    const childNodes = Array.from(box.children).filter(node => node !== header && node !== tabNav);
-    childNodes.forEach(node => profileWrapper.appendChild(node));
-    box.appendChild(profileWrapper);
-
-    const privacyWrapper = document.createElement('div');
-    privacyWrapper.id = "settings-privacy-pane";
-    privacyWrapper.className = "hidden";
-    privacyWrapper.innerHTML = `
-        <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="padding-right: 12px;">
-                    <div style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 3px;">Private Account</div>
-                    <p id="account-privacy-desc" style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Public: Any human can view your forum post history.</p>
-                </div>
-                <input type="checkbox" id="privacy-toggle-chk" style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
-            </div>
-        </div>
-        <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.5;">
-            🛡️ <strong>Private Profile Guard:</strong> When your account is set to private, other members can still view your username and score, but your activity post history is concealed.
-        </div>
-    `;
-    box.appendChild(privacyWrapper);
-
-    settingsTabBtnProfile = document.getElementById('set-tab-profile');
-    settingsTabBtnPrivacy = document.getElementById('set-tab-privacy');
-    settingsProfilePane = profileWrapper;
-    settingsPrivacyPane = privacyWrapper;
-    accountPrivacyCheckbox = document.getElementById('privacy-toggle-chk');
-    accountPrivacyDesc = document.getElementById('account-privacy-desc');
-
-    safeAddListener(settingsTabBtnProfile, 'click', () => switchSettingsSubTab('profile'));
-    safeAddListener(settingsTabBtnPrivacy, 'click', () => switchSettingsSubTab('privacy'));
-
-    safeAddListener(accountPrivacyCheckbox, 'change', async () => {
-        if (!currentUser || !db) return;
-        const newIsPrivate = accountPrivacyCheckbox.checked;
-        currentUserIsPrivate = newIsPrivate;
-        syncPrivacyDesc();
-
-        const { error } = await db.from('profiles').update({ is_private: newIsPrivate }).eq('id', currentUser.id);
-        if (error) {
-            alert(`Could not save privacy setting: ${error.message}`);
-            accountPrivacyCheckbox.checked = !newIsPrivate;
-            currentUserIsPrivate = !newIsPrivate;
-            syncPrivacyDesc();
-        }
-    });
-}
-
-function syncPrivacyDesc() {
-    if (!accountPrivacyDesc) return;
-    if (currentUserIsPrivate) {
-        accountPrivacyDesc.textContent = "Private: Your forum post history is hidden from other members.";
-    } else {
-        accountPrivacyDesc.textContent = "Public: Any human can view your forum post history.";
-    }
-}
-
-function switchSettingsSubTab(tab) {
-    if (tab === 'profile') {
-        if (settingsProfilePane) settingsProfilePane.classList.remove('hidden');
-        if (settingsPrivacyPane) settingsPrivacyPane.classList.add('hidden');
-        if (settingsTabBtnProfile) {
-            settingsTabBtnProfile.style.background = "#0284c7";
-            settingsTabBtnProfile.style.borderColor = "#38bdf8";
-            settingsTabBtnProfile.style.color = "#ffffff";
-        }
-        if (settingsTabBtnPrivacy) {
-            settingsTabBtnPrivacy.style.background = "#0f172a";
-            settingsTabBtnPrivacy.style.borderColor = "#334155";
-            settingsTabBtnPrivacy.style.color = "#94a3b8";
-        }
-    } else {
-        if (settingsProfilePane) settingsProfilePane.classList.add('hidden');
-        if (settingsPrivacyPane) settingsPrivacyPane.classList.remove('hidden');
-        if (settingsTabBtnPrivacy) {
-            settingsTabBtnPrivacy.style.background = "#0284c7";
-            settingsTabBtnPrivacy.style.borderColor = "#38bdf8";
-            settingsTabBtnPrivacy.style.color = "#ffffff";
-        }
-        if (settingsTabBtnProfile) {
-            settingsTabBtnProfile.style.background = "#0f172a";
-            settingsTabBtnProfile.style.borderColor = "#334155";
-            settingsTabBtnProfile.style.color = "#94a3b8";
-        }
-    }
-}
-
-// Convert icons & labels to "Settings"
+// Setup Tab Text
 if (openSettingsBtn) {
     openSettingsBtn.title = "Settings";
     const headerFallback = openSettingsBtn.querySelector('#header-avatar-fallback');
@@ -409,73 +298,193 @@ if (tabNavSettings) {
     if (iconSpan) iconSpan.textContent = "⚙️";
 }
 
-// --- PUBLIC POST HISTORY ON USER PROFILES ---
+// --- SETTINGS SUB-TABS (PROFILE & PRIVACY) ---
 
-function ensureProfilePostHistorySection() {
-    if (!userProfileModal) return;
-    const box = userProfileModal.querySelector('.modal-box');
-    if (!box || box.querySelector('#user-history-section')) return;
-
-    const histSec = document.createElement('div');
-    histSec.id = "user-history-section";
-    histSec.style.cssText = "margin-top: 14px; border-top: 1px solid #334155; padding-top: 12px; display: flex; flex-direction: column; max-height: 230px; overflow-y: auto;";
-    histSec.innerHTML = `
-        <div style="font-size: 0.8rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px;">Activity History</div>
-        <div id="user-history-posts-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
-    `;
-    box.appendChild(histSec);
+function switchSettingsTab(tab) {
+    if (tab === 'profile') {
+        if (paneSettingsProfile) paneSettingsProfile.classList.remove('hidden');
+        if (paneSettingsPrivacy) paneSettingsPrivacy.classList.add('hidden');
+        if (tabBtnSettingsProfile) {
+            tabBtnSettingsProfile.style.background = "#0284c7";
+            tabBtnSettingsProfile.style.borderColor = "#38bdf8";
+            tabBtnSettingsProfile.style.color = "#ffffff";
+        }
+        if (tabBtnSettingsPrivacy) {
+            tabBtnSettingsPrivacy.style.background = "#0f172a";
+            tabBtnSettingsPrivacy.style.borderColor = "#334155";
+            tabBtnSettingsPrivacy.style.color = "#94a3b8";
+        }
+    } else {
+        if (paneSettingsProfile) paneSettingsProfile.classList.add('hidden');
+        if (paneSettingsPrivacy) paneSettingsPrivacy.classList.remove('hidden');
+        if (tabBtnSettingsPrivacy) {
+            tabBtnSettingsPrivacy.style.background = "#0284c7";
+            tabBtnSettingsPrivacy.style.borderColor = "#38bdf8";
+            tabBtnSettingsPrivacy.style.color = "#ffffff";
+        }
+        if (tabBtnSettingsProfile) {
+            tabBtnSettingsProfile.style.background = "#0f172a";
+            tabBtnSettingsProfile.style.borderColor = "#334155";
+            tabBtnSettingsProfile.style.color = "#94a3b8";
+        }
+    }
 }
 
-async function loadProfileUserPostHistory(username, isPrivate) {
-    ensureProfilePostHistorySection();
-    const container = document.getElementById('user-history-posts-list');
-    if (!container) return;
+safeAddListener(tabBtnSettingsProfile, 'click', () => switchSettingsTab('profile'));
+safeAddListener(tabBtnSettingsPrivacy, 'click', () => switchSettingsTab('privacy'));
+
+function syncPrivacyDesc() {
+    if (!accountPrivacyDesc) return;
+    if (currentUserIsPrivate) {
+        accountPrivacyDesc.textContent = "Private: Your forum post & comment history is hidden from other members.";
+    } else {
+        accountPrivacyDesc.textContent = "Public: Any human can view your forum post & comment history.";
+    }
+}
+
+safeAddListener(privacyToggleChk, 'change', async () => {
+    if (!currentUser || !db) return;
+    const newIsPrivate = privacyToggleChk.checked;
+    currentUserIsPrivate = newIsPrivate;
+    syncPrivacyDesc();
+
+    const { error } = await db.from('profiles').update({ is_private: newIsPrivate }).eq('id', currentUser.id);
+    if (error) {
+        alert(`Could not save privacy setting: ${error.message}`);
+        privacyToggleChk.checked = !newIsPrivate;
+        currentUserIsPrivate = !newIsPrivate;
+        syncPrivacyDesc();
+    }
+});
+
+// --- PUBLIC PROFILE HISTORY TABS (POSTS VS. COMMENTS) ---
+
+function switchUserHistoryTab(tab) {
+    if (tab === 'posts') {
+        if (userPostsContainer) userPostsContainer.classList.remove('hidden');
+        if (userCommentsContainer) userCommentsContainer.classList.add('hidden');
+        if (userHistoryTabPosts) {
+            userHistoryTabPosts.style.background = "#0284c7";
+            userHistoryTabPosts.style.borderColor = "#38bdf8";
+            userHistoryTabPosts.style.color = "#ffffff";
+        }
+        if (userHistoryTabComments) {
+            userHistoryTabComments.style.background = "#0f172a";
+            userHistoryTabComments.style.borderColor = "#334155";
+            userHistoryTabComments.style.color = "#94a3b8";
+        }
+    } else {
+        if (userPostsContainer) userPostsContainer.classList.add('hidden');
+        if (userCommentsContainer) userCommentsContainer.classList.remove('hidden');
+        if (userHistoryTabComments) {
+            userHistoryTabComments.style.background = "#0284c7";
+            userHistoryTabComments.style.borderColor = "#38bdf8";
+            userHistoryTabComments.style.color = "#ffffff";
+        }
+        if (userHistoryTabPosts) {
+            userHistoryTabPosts.style.background = "#0f172a";
+            userHistoryTabPosts.style.borderColor = "#334155";
+            userHistoryTabPosts.style.color = "#94a3b8";
+        }
+    }
+}
+
+safeAddListener(userHistoryTabPosts, 'click', () => switchUserHistoryTab('posts'));
+safeAddListener(userHistoryTabComments, 'click', () => switchUserHistoryTab('comments'));
+
+async function loadProfileUserActivity(username, isPrivate) {
+    if (!userPostsContainer || !userCommentsContainer) return;
 
     if (isPrivate) {
-        container.innerHTML = `
-            <div style="background: #0f172a; border: 1px dashed #475569; padding: 12px; border-radius: 8px; text-align: center; color: #94a3b8; font-size: 0.82rem;">
-                🔒 This member's post history is private.
-            </div>
-        `;
+        if (userHistoryPrivateNotice) userHistoryPrivateNotice.classList.remove('hidden');
+        userPostsContainer.classList.add('hidden');
+        userCommentsContainer.classList.add('hidden');
+        if (userPostsCount) userPostsCount.textContent = '0';
+        if (userCommentsCount) userCommentsCount.textContent = '0';
         return;
     }
 
-    container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading post history...</div>';
+    if (userHistoryPrivateNotice) userHistoryPrivateNotice.classList.add('hidden');
+    switchUserHistoryTab('posts');
 
-    const { data: posts, error } = await db
+    userPostsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading posts...</div>';
+    userCommentsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>';
+
+    // 1. Fetch Posts
+    const { data: posts } = await db
         .from('Posts')
         .select('*')
         .ilike('author', username)
         .order('id', { ascending: false })
-        .limit(10);
+        .limit(20);
 
-    if (error || !posts || posts.length === 0) {
-        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic;">No public posts from this user yet.</div>';
-        return;
+    const postList = posts || [];
+    if (userPostsCount) userPostsCount.textContent = postList.length;
+
+    if (postList.length === 0) {
+        userPostsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic; padding: 4px;">No posts yet.</div>';
+    } else {
+        userPostsContainer.innerHTML = '';
+        postList.forEach(p => {
+            const item = document.createElement('div');
+            item.style.cssText = "background: #0f172a; border: 1px solid #334155; padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: border-color 0.15s;";
+            const d = p.created_at ? new Date(p.created_at).toLocaleDateString() : '';
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #38bdf8; margin-bottom: 2px;">
+                    <span>#${escapeHTML(p.thread)}</span>
+                    <span style="color: #64748b;">${d}</span>
+                </div>
+                <div style="font-size: 0.82rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${escapeHTML(p.content || '[Attached Photo]')}
+                </div>
+            `;
+            item.onmouseenter = () => { item.style.borderColor = '#38bdf8'; };
+            item.onmouseleave = () => { item.style.borderColor = '#334155'; };
+            item.onclick = () => {
+                if (userProfileModal) userProfileModal.classList.add('hidden');
+                navigateToPost(p.id);
+            };
+            userPostsContainer.appendChild(item);
+        });
     }
 
-    container.innerHTML = '';
-    posts.forEach(p => {
-        const item = document.createElement('div');
-        item.style.cssText = "background: #0f172a; border: 1px solid #334155; padding: 8px 10px; border-radius: 6px; cursor: pointer;";
-        const d = p.created_at ? new Date(p.created_at).toLocaleDateString() : '';
-        item.innerHTML = `
-            <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #38bdf8; margin-bottom: 2px;">
-                <span>#${escapeHTML(p.thread)}</span>
-                <span style="color: #64748b;">${d}</span>
-            </div>
-            <div style="font-size: 0.82rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${escapeHTML(p.content || '[Attached Photo]')}
-            </div>
-        `;
-        item.onmouseenter = () => { item.style.borderColor = '#38bdf8'; };
-        item.onmouseleave = () => { item.style.borderColor = '#334155'; };
-        item.onclick = () => {
-            if (userProfileModal) userProfileModal.classList.add('hidden');
-            navigateToPost(p.id);
-        };
-        container.appendChild(item);
-    });
+    // 2. Fetch Comments
+    const { data: comments } = await db
+        .from('post_comments')
+        .select('*')
+        .ilike('author', username)
+        .order('id', { ascending: false })
+        .limit(20);
+
+    const commentList = comments || [];
+    if (userCommentsCount) userCommentsCount.textContent = commentList.length;
+
+    if (commentList.length === 0) {
+        userCommentsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic; padding: 4px;">No comments yet.</div>';
+    } else {
+        userCommentsContainer.innerHTML = '';
+        commentList.forEach(c => {
+            const item = document.createElement('div');
+            item.style.cssText = "background: #0f172a; border: 1px solid #334155; padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: border-color 0.15s;";
+            const d = c.created_at ? new Date(c.created_at).toLocaleDateString() : '';
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; font-size: 0.72rem; color: #38bdf8; margin-bottom: 2px;">
+                    <span>💬 Reply</span>
+                    <span style="color: #64748b;">${d}</span>
+                </div>
+                <div style="font-size: 0.82rem; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    ${escapeHTML(c.content || '')}
+                </div>
+            `;
+            item.onmouseenter = () => { item.style.borderColor = '#38bdf8'; };
+            item.onmouseleave = () => { item.style.borderColor = '#334155'; };
+            item.onclick = () => {
+                if (userProfileModal) userProfileModal.classList.add('hidden');
+                navigateToPost(c.post_id);
+            };
+            userCommentsContainer.appendChild(item);
+        });
+    }
 }
 
 // --- DIRECT MODAL & VIEW OPENERS ---
@@ -517,12 +526,11 @@ function openSettingsModal() {
         setMobileTabActive('feed');
         return;
     }
-    initializeSettingsModal();
-    if (accountPrivacyCheckbox) {
-        accountPrivacyCheckbox.checked = currentUserIsPrivate;
+    if (privacyToggleChk) {
+        privacyToggleChk.checked = currentUserIsPrivate;
     }
     syncPrivacyDesc();
-    switchSettingsSubTab('profile');
+    switchSettingsTab('profile');
     if (profileModal) profileModal.classList.remove('hidden');
     setMobileTabActive('profile');
 }
@@ -979,7 +987,7 @@ window.openUserProfileCard = async function(username) {
     const score = await calculateUserScore(cleanUser);
     if (userCardScore) userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
 
-    await loadProfileUserPostHistory(cleanUser, targetProfileIsPrivate);
+    await loadProfileUserActivity(cleanUser, targetProfileIsPrivate);
 };
 
 safeAddListener(closeUserProfileBtn, 'click', () => {
@@ -1104,8 +1112,8 @@ async function syncUserState(user) {
                     renderUserAvatar(currentAvatarUrl);
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
-                if (accountPrivacyCheckbox) {
-                    accountPrivacyCheckbox.checked = currentUserIsPrivate;
+                if (privacyToggleChk) {
+                    privacyToggleChk.checked = currentUserIsPrivate;
                 }
                 syncPrivacyDesc();
 
@@ -1725,7 +1733,7 @@ safeAddListener(finalDeleteThreadBtn, async () => {
     await loadForumPosts();
 });
 
-// --- FULL THREAD PERMISSIONS & ROLE MANAGEMENT UI ---
+// --- PERMISSIONS MANAGEMENT UI ---
 
 safeAddListener(managePermsBtn, 'click', () => openPermissionsManager());
 safeAddListener(closePermsModalBtn, 'click', () => { if (permsModal) permsModal.classList.add('hidden'); });
@@ -1778,7 +1786,6 @@ function renderPermissionsUserList() {
         const btnCol = document.createElement('div');
         btnCol.style.cssText = "display: flex; gap: 6px;";
 
-        // Moderator Promotion & Demotion
         if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (role === 'Moderator') {
                 const demoteBtn = document.createElement('button');
@@ -1809,7 +1816,6 @@ function renderPermissionsUserList() {
             }
         }
 
-        // Revoke or Allow Posting Privileges
         if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (isBanned) {
                 const unbanBtn = document.createElement('button');
@@ -3060,7 +3066,6 @@ function closeFabModal() {
 safeAddListener(desktopFab, 'click', openFabModal);
 safeAddListener(mobileFab, 'click', openFabModal);
 
-// Unconditionally close the post modal
 safeAddListener(closeFabModalBtn, 'click', (e) => {
     e.stopPropagation();
     closeFabModal();
