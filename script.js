@@ -3388,25 +3388,6 @@ safeAddListener(forumForm, 'submit', async (event) => {
         }
     }
 });
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Publish Post'; }
-
-    if (error) {
-        alert(`Database Error: ${error.message}`);
-        return;
-    }
-
-    lastPostTimestamp = Date.now();
-
-    if (targetThread === "Update Thread") {
-        await loadProminentUpdates();
-    } else {
-        activeThread = targetThread;
-        await loadForumPosts();
-    }
-
-    resetTelemetryConsole();
-    closeFabModal();
-});
 
 // Boot Application
 syncCloudThreads();
