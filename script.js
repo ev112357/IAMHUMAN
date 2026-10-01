@@ -73,6 +73,11 @@ const tabNavMessages = document.getElementById('tab-nav-messages');
 const tabNavNotifs = document.getElementById('tab-nav-notifs');
 const tabNavSettings = document.getElementById('tab-nav-settings') || document.getElementById('tab-nav-profile');
 
+// FIX: Declare missing DOM variables to prevent ReferenceError crashes
+const mobileMsgBadge = document.getElementById('mobile-msg-badge');
+const mobileActivityBadge = document.getElementById('mobile-activity-badge');
+const tabAvatarImg = document.getElementById('tab-avatar-img');
+const tabAvatarFallback = document.getElementById('tab-avatar-fallback');
 // Pinned Updates Ticker & Modal
 const tickerBadge = document.getElementById('ticker-badge');
 const tickerContent = document.getElementById('ticker-content');
