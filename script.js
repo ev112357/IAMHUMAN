@@ -1989,6 +1989,11 @@ function updateThreadControlsUI() {
         if (canDeleteThread(activeThread)) deleteThreadBtn.classList.remove('hidden');
         else deleteThreadBtn.classList.add('hidden');
     }
+    
+    // Renders the banner once UI and DB sync is complete
+    if (typeof renderThreadBanner === 'function') {
+        renderThreadBanner();
+    }
 }
 
 safeAddListener(deleteThreadBtn, 'click', () => {
@@ -3689,7 +3694,6 @@ async function loadForumPosts() {
         threadFlairMap.set(f.username.toLowerCase(), f.flair);
     });
     
-    renderThreadBanner();
     renderCurrentFeed();
 }
 
