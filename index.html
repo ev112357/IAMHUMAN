@@ -302,20 +302,39 @@
         .link-domain { color: #f8fafc; font-size: 0.85rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin-bottom: 2px; }
         .link-url { color: #94a3b8; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
         /* Lock Viewport & Eliminate Horizontal Scroll */
-html, body {
+/* Lock Viewport, Prevent Horizontal Scroll & Respect Safe Area (Notch / Home Indicator) */
+html {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden !important;
+    margin: 0;
+    padding: 0;
+}
+
+body {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden !important;
     position: relative;
     margin: 0;
-    padding: 0;
+    /* Pushes content down below the notch and above the home indicator */
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    padding-left: env(safe-area-inset-left, 0px) !important;
+    padding-right: env(safe-area-inset-right, 0px) !important;
+    box-sizing: border-box;
+}
+
+/* Ensure sticky/fixed headers or top tickers don't collide with the notch */
+header, .top-modal-bar, .ticker-wrap, #ticker-container {
+    padding-top: max(0px, env(safe-area-inset-top, 0px));
 }
 
 *, *::before, *::after {
     box-sizing: border-box;
 }
 
-/* Ensure flex bars and action buttons wrap on small screens */
+/* Ensure action bars wrap instead of pushing screen wider */
 .thread-actions-bar,
 .post-author-wrap,
 .profile-btn-row {
@@ -323,7 +342,7 @@ html, body {
     max-width: 100%;
 }
 
-/* Ensure link previews and media never exceed screen width */
+/* Fit link previews and media to screen width */
 .link-preview-card {
     width: 100% !important;
     max-width: 100% !important;
@@ -334,8 +353,8 @@ img, video, canvas, pre, code {
     max-width: 100% !important;
     overflow-wrap: break-word;
     word-break: break-word;
-}            
-    </style>
+}
+</style>
 </head>
 <body>
 
