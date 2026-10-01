@@ -2786,31 +2786,50 @@ safeAddListener(dmForm, 'submit', async (e) => {
             );
         }).catch(() => {});
     } else {
-        // DISPATCH NOTIFICATIONS TO ALL OTHER CHAT MEMBERS (DMs & Groups)
+        // DISPATCH NOTIFICATIONS TO CHAT RECIPIENTS
         try {
-            const { data: members } = await db
-                .from('conversation_members')
-                .select('user_id')
-                .eq('conversation_id', activeConversationId)
-                .neq('user_id', currentUser.id);
+            let recipientIds = [];
 
-            if (members && members.length > 0) {
+            // In 1-on-1 chats, target partner directly from memory (avoids RLS query blocks)
+            if (activeConversationPartnerId) {
+                recipientIds.push(activeConversationPartnerId);
+            } else {
+                // In group chats, query all other participants
+                const { data: members } = await db
+                    .from('conversation_members')
+                    .select('user_id')
+                    .eq('conversation_id', activeConversationId)
+                    .neq('user_id', currentUser.id);
+
+                if (members && members.length > 0) {
+                    recipientIds = members.map(m => m.user_id);
+                }
+            }
+
+            if (recipientIds.length > 0) {
                 let snippet = 'sent a photo.';
                 if (content) {
                     const cleanText = content.length > 50 ? `${content.substring(0, 47)}...` : content;
                     snippet = `: "${cleanText}"`;
                 }
 
-                const notifsToInsert = members.map(m => ({
-                    user_id: m.user_id,
+                const notifsToInsert = recipientIds.map(rId => ({
+                    user_id: rId,
                     actor_username: currentUsername,
                     type: 'direct_message',
-                    entity_id: activeConversationId,
+                    entity_id: String(activeConversationId),
                     message: snippet,
                     is_read: false
                 }));
 
-                await db.from('user_notifications').insert(notifsToInsert);
+                const { error: notifError } = await db.from('user_notifications').insert(notifsToInsert);
+
+                // Fail-safe: If entity_id type causes a reject, retry with null entity_id so the push alert still fires
+                if (notifError) {
+                    console.warn("Retrying notification insert without entity_id:", notifError.message);
+                    const fallbackNotifs = notifsToInsert.map(n => ({ ...n, entity_id: null }));
+                    await db.from('user_notifications').insert(fallbackNotifs);
+                }
             }
         } catch (notifErr) {
             console.warn("Notice sending chat notification:", notifErr);
