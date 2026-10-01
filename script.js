@@ -692,13 +692,14 @@ function triggerSuspensionGate() {
     }
 
     // 3. Persist suspension lock to Supabase
+    // 3. Persist suspension lock to Supabase
     if (currentUser && db) {
+        // Fix: Chain .then() to return a real Promise before using .catch()
         db.from('profiles').update({ 
             is_suspended: true, 
             suspicion_score: suspicionScore 
-        }).eq('id', currentUser.id).catch(err => console.warn("Suspension update notice:", err));
+        }).eq('id', currentUser.id).then(() => {}).catch(err => console.warn("Suspension update notice:", err));
     }
-}
 
 safeAddListener(refreshCaptchaBtn, 'click', () => {
     currentCaptchaSecret = generateCaptchaCode();
@@ -3315,13 +3316,18 @@ safeAddListener(forumForm, 'submit', async (event) => {
         suspicionScore = Math.min(5, suspicionScore + behaviorPoints);
         updateSuspicionUI();
 
+        // Fix: Use try/catch with await since Supabase query builders lack a native .catch()
         if (currentUser && db) {
-            await db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+            try {
+                await db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id);
+            } catch (err) {
+                console.warn("Suspicion update error:", err);
+            }
         }
 
         // Suspend and halt ONLY if threshold (5) is reached
         if (suspicionScore >= 5) {
-            resetTelemetryConsole();
+            resetTelemetryConsole(); 
             triggerSuspensionGate();
             return;
         }
