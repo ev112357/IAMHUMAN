@@ -660,14 +660,28 @@ function drawCaptcha(code) {
 
 function triggerSuspensionGate() {
     isSuspended = true;
+    suspicionScore = Math.max(3, suspicionScore);
+    updateSuspicionUI();
+
+    // 1. Immediately dismiss posting modal so the CAPTCHA is unobstructed
+    closeFabModal();
+
+    // 2. Generate and display the CAPTCHA challenge
     currentCaptchaSecret = generateCaptchaCode();
     drawCaptcha(currentCaptchaSecret);
-    if (captchaInput) captchaInput.value = "";
-    if (captchaStatusMsg) captchaStatusMsg.textContent = "";
+    if (captchaInput) {
+        captchaInput.value = "";
+        setTimeout(() => captchaInput.focus(), 100);
+    }
+    if (captchaStatusMsg) captchaStatusMsg.textContent = "Your account is temporarily suspended. Solve the code to restore posting.";
     if (captchaSuspensionModal) captchaSuspensionModal.classList.remove('hidden');
 
+    // 3. Persist suspension lock to Supabase
     if (currentUser && db) {
-        db.from('profiles').update({ is_suspended: true, suspicion_score: suspicionScore }).eq('id', currentUser.id).catch(() => {});
+        db.from('profiles').update({ 
+            is_suspended: true, 
+            suspicion_score: suspicionScore 
+        }).eq('id', currentUser.id).catch(err => console.warn("Suspension update notice:", err));
     }
 }
 
@@ -681,20 +695,34 @@ safeAddListener(refreshCaptchaBtn, 'click', () => {
 safeAddListener(submitCaptchaBtn, 'click', async () => {
     const entered = (captchaInput ? captchaInput.value : "").trim().toUpperCase();
     if (entered === currentCaptchaSecret) {
+        submitCaptchaBtn.disabled = true;
+        submitCaptchaBtn.textContent = "...";
+
         isSuspended = false;
         suspicionScore = 0;
         updateSuspicionUI();
-        if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
 
         if (currentUser && db) {
-            await db.from('profiles').update({ is_suspended: false, suspicion_score: 0 }).eq('id', currentUser.id).catch(() => {});
+            await db.from('profiles').update({ 
+                is_suspended: false, 
+                suspicion_score: 0 
+            }).eq('id', currentUser.id).catch(err => console.warn("Unsuspend update notice:", err));
         }
-        alert("Verification successful! Your account is restored.");
+
+        submitCaptchaBtn.disabled = false;
+        submitCaptchaBtn.textContent = "Verify";
+
+        if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
+        resetTelemetryConsole();
+        alert("Verification successful! Your human standing is restored and suspension is lifted.");
     } else {
         if (captchaStatusMsg) captchaStatusMsg.textContent = "Incorrect code. Please try again.";
         currentCaptchaSecret = generateCaptchaCode();
         drawCaptcha(currentCaptchaSecret);
-        if (captchaInput) captchaInput.value = "";
+        if (captchaInput) {
+            captchaInput.value = "";
+            captchaInput.focus();
+        }
     }
 });
 
@@ -3082,6 +3110,11 @@ function openFabModal(e) {
         if (authEmailInput) authEmailInput.focus();
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return; 
+    }
+
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
     }
     
     if (fabModalContainer && e) {
