@@ -4124,12 +4124,17 @@ function renderThreadBanner() {
     const img = document.getElementById('thread-banner-img');
     if (!container || !img) return;
 
+    // Safely look up the thread in memory
     const threadData = allCloudThreads.find(t => t.name === activeThread);
+    
     if (threadData && threadData.banner_url) {
-        img.src = threadData.banner_url;
-        container.classList.remove('hidden');
+        // Prevent flickering if the image is already loaded
+        if (img.src !== threadData.banner_url) {
+            img.src = threadData.banner_url;
+        }
+        container.style.display = 'block'; // Force visible
     } else {
-        container.classList.add('hidden');
+        container.style.display = 'none'; // Force hide
         img.src = '';
     }
 }
@@ -4142,7 +4147,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
     if (bannerBtn) { bannerBtn.disabled = true; bannerBtn.textContent = '⏳ Uploading...'; }
 
     try {
-        // Compress banner, skips if GIF to preserve animation
+        // Compress banner, skips if GIF
         const file = await compressImage(rawFile, 1920, 0.80);
         
         const fileExt = file.name.split('.').pop() || (file.type === 'image/gif' ? 'gif' : 'jpeg');
@@ -4167,7 +4172,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
 
         if (updateError) throw updateError;
 
-        // THE FIX: If the DB returned 0 updated rows, the thread didn't exist yet. Insert it.
+        // If the DB returned 0 updated rows, the thread didn't exist in the DB yet. Insert it.
         if (!updateData || updateData.length === 0) {
             await db.from('forum_threads').insert([{
                 name: activeThread,
@@ -4178,25 +4183,31 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
             }]);
         }
 
-        // Immediately push the URL to local memory so it renders instantly
-        let localThread = allCloudThreads.find(t => t.name === activeThread);
-        if (localThread) {
-            localThread.banner_url = bannerUrl;
+        // UPDATE LOCAL MEMORY DIRECTLY AND PERMANENTLY
+        let localThreadIndex = allCloudThreads.findIndex(t => t.name === activeThread);
+        if (localThreadIndex !== -1) {
+            allCloudThreads[localThreadIndex].banner_url = bannerUrl;
         } else {
             allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
         }
 
+        // Render immediately from local memory
         renderThreadBanner();
         alert('Community banner updated successfully!');
         
-        // Let the cloud sync run in the background
-        syncCloudThreads(); 
+        // Silently sync the cloud in the background WITHOUT clearing allCloudThreads
+        db.from('forum_threads').select('*').order('id', { ascending: true })
+            .then(({ data }) => {
+                if (data && data.length > 0) {
+                    allCloudThreads = data;
+                }
+            });
 
     } catch (err) {
         alert(`Error uploading banner: ${err.message}`);
     } finally {
         if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = '🖼️ Set Banner'; }
-        e.target.value = '';
+        e.target.value = ''; // Reset file input
     }
 });
 
