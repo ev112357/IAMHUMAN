@@ -1449,6 +1449,14 @@ safeAddListener(authForm, 'submit', async (e) => {
     e.preventDefault();
     const email = authEmailInput.value.trim();
     const password = authPasswordInput.value;
+    
+    // Grab the Cloudflare Turnstile token from the hidden input it generates
+    const captchaToken = document.querySelector('[name="cf-turnstile-response"]')?.value;
+
+    if (!captchaToken) {
+        alert("Please complete the security check.");
+        return;
+    }
 
     authSubmitBtn.disabled = true;
     authSubmitBtn.textContent = isSignUpMode ? "Signing up..." : "Logging in...";
@@ -1472,13 +1480,17 @@ safeAddListener(authForm, 'submit', async (e) => {
             alert("Username already taken. Please choose another.");
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = "Sign Up";
+            if (window.turnstile) turnstile.reset(); // Reset widget for fresh token
             return;
         }
 
         const { error } = await db.auth.signUp({
             email,
             password,
-            options: { data: { username: username } }
+            options: { 
+                data: { username: username },
+                captchaToken: captchaToken // Supabase backend validates this
+            }
         });
 
         authSubmitBtn.disabled = false;
@@ -1486,21 +1498,30 @@ safeAddListener(authForm, 'submit', async (e) => {
 
         if (error) {
             alert(`Sign up error: ${error.message}`);
+            if (window.turnstile) turnstile.reset(); 
             return;
         }
 
         alert("Account created successfully!");
         authForm.reset();
+        if (window.turnstile) turnstile.reset();
     } else {
-        const { error } = await db.auth.signInWithPassword({ email, password });
+        const { error } = await db.auth.signInWithPassword({ 
+            email, 
+            password,
+            options: { captchaToken: captchaToken } // Supabase backend validates this
+        });
+        
         authSubmitBtn.disabled = false;
         authSubmitBtn.textContent = "Log In";
 
         if (error) {
             alert(`Login error: ${error.message}`);
+            if (window.turnstile) turnstile.reset();
             return;
         }
         authForm.reset();
+        if (window.turnstile) turnstile.reset();
     }
 });
     
