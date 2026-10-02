@@ -438,6 +438,8 @@ img, video, canvas, pre, code {
             <!-- DESKTOP ICONS (Hide automatically on mobile) -->
             <div class="desktop-nav-actions">
                 <div class="btn-badge-wrap">
+                    <!-- NEW SHIELD BUTTON -->
+                    <button id="open-security-btn" class="icon-btn" title="Security Architecture">🛡️</button>
                     <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
                     <span id="activity-notif-badge" class="notif-badge hidden">0</span>
                 </div>
@@ -961,5 +963,32 @@ img, video, canvas, pre, code {
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module" src="script.js?v=6"></script>
+
+    <!-- SECURITY WHITEPAPER MODAL -->
+    <div id="security-modal" class="modal-overlay hidden" style="z-index: 10010;">
+        <div class="modal-box" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2 style="color: #38bdf8;">🛡️ Security Architecture</h2>
+                <button id="close-security-modal-btn" class="close-btn" title="Close">&times;</button>
+            </div>
+            
+            <div style="overflow-y: auto; flex: 1; padding-right: 12px; color: #cbd5e1; line-height: 1.6; font-size: 0.95rem;">
+                <p style="margin-bottom: 16px;">Turing's Gate employs a multi-layered defense protocol to ensure all interactions originate from verified organic traffic.</p>
+                
+                <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">1. Passive Telemetry Engine</h3>
+                <p style="margin-bottom: 16px;">We analyze keystroke cadence, micro-pauses, and input variance in real-time. Automated scripts operating with mechanical, zero-variance precision instantly flag our suspicion ledger.</p>
+
+                <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">2. Cryptographic Token Validation</h3>
+                <p style="margin-bottom: 16px;">Core database write-actions (account creation, login) are safeguarded by Cloudflare's invisible Turnstile verification, requiring cryptographic proof of humanity before communicating with our backend.</p>
+
+                <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">3. Secure Row-Level State (RLS)</h3>
+                <p style="margin-bottom: 16px;">Direct API spam is nullified. All backend tables strictly enforce Row Level Security, rejecting any insertions from unauthenticated, unverified connections.</p>
+                
+                <div style="background: #0f172a; border: 1px dashed #475569; padding: 16px; border-radius: 8px; margin-top: 24px; text-align: center;">
+                    <strong style="color: #38bdf8;">Current Status:</strong> You are protected by the Turing's Gate Defense Protocol.
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
