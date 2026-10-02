@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
@@ -482,7 +483,13 @@ img, video, canvas, pre, code {
 
                         <label for="auth-password">Password</label>
                         <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
+                        <label for="auth-password">Password</label>
+                        <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password">
 
+                        <!-- Cloudflare Turnstile Widget -->
+                        <div class="cf-turnstile" data-sitekey="0x4AAAAAAFME5ZfpHFmp1zIO" data-theme="dark" style="margin-bottom: 15px;"></div>
+
+                        <button type="submit" id="auth-submit-btn">Log In</button>
                         <button type="submit" id="auth-submit-btn">Log In</button>
                         <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
                     </form>
