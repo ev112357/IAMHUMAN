@@ -23,7 +23,8 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
-const MANDATORY_THREADS = ["Welcome & Security", "Update Thread", "New User Discussion"];
+const MANDATORY_THREADS = ["New User Discussion"];
+const DEFAULT_THREADS = ["Welcome & Security", "Update Thread"];
 
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
@@ -1680,8 +1681,8 @@ async function syncCloudThreads() {
         .select('*')
         .order('id', { ascending: true });
 
-    // Ensure mandatory threads are always present, even if DB is empty
-    const defaults = [
+    // Ensure core threads are always present, even if DB is empty
+    const coreThreads = [
         { name: "Welcome & Security", owner_username: "gemini" },
         { name: "Update Thread", owner_username: "gemini" },
         { name: "New User Discussion", owner_username: "gemini" }
@@ -1690,32 +1691,51 @@ async function syncCloudThreads() {
     let mergedThreads = [];
     if (!threadErr && threads && threads.length > 0) {
         mergedThreads = [...threads];
-        defaults.forEach(def => {
+        coreThreads.forEach(def => {
             if (!mergedThreads.find(t => t.name === def.name)) {
                 mergedThreads.push(def);
             }
         });
     } else {
-        mergedThreads = defaults;
+        mergedThreads = coreThreads;
     }
 
     allCloudThreads = mergedThreads;
-    myJoinedThreadNames = new Set(MANDATORY_THREADS);
-
+    
     if (currentUser) {
+        myJoinedThreadNames = new Set(MANDATORY_THREADS);
+        
         const { data: memberships, error: memErr } = await db
             .from('forum_thread_members')
             .select('thread_name')
             .eq('user_id', currentUser.id);
 
         if (memErr) console.error("Threads Blocked:", memErr.message);
-        (memberships || []).forEach(m => myJoinedThreadNames.add(m.thread_name));
+        
+        const dbJoinedNames = (memberships || []).map(m => m.thread_name);
+        dbJoinedNames.forEach(name => myJoinedThreadNames.add(name));
+
+        // Migration / Auto-Join for Default Threads
+        const autoJoinFlag = `has_auto_joined_defaults_${currentUser.id}`;
+        if (!localStorage.getItem(autoJoinFlag)) {
+            const toInsert = DEFAULT_THREADS
+                .filter(t => !dbJoinedNames.includes(t))
+                .map(t => ({ user_id: currentUser.id, thread_name: t }));
+            
+            if (toInsert.length > 0) {
+                await db.from('forum_thread_members').insert(toInsert);
+                toInsert.forEach(m => myJoinedThreadNames.add(m.thread_name));
+            }
+            localStorage.setItem(autoJoinFlag, 'true');
+        }
+    } else {
+        // For logged out guests, show both mandatory and defaults
+        myJoinedThreadNames = new Set([...MANDATORY_THREADS, ...DEFAULT_THREADS]);
     }
 
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
 }
-
 function renderJoinedThreadsSidebar() {
     if (!joinedThreadsContainer) return;
     joinedThreadsContainer.innerHTML = '';
@@ -3412,23 +3432,27 @@ function getWelcomeSecurityPost() {
         dislikes: 0,
         content: `### Welcome to Turing's Gate: The Verified Human Community
 
-Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry.
+Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry and cryptographic perimeter defense.
 
 <div class="welcome-diagram">
     <div class="diagram-step">
-        <span class="diagram-badge">1. Telemetry Cadence</span>
-        <span>Keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+        <span class="diagram-badge">1. Cryptographic Perimeter Guard</span>
+        <span>Account creation and logins are safeguarded by Cloudflare Turnstile, ensuring only cryptographically verified human browsers can interact with our database APIs.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">2. Accessibility-Safe Risk Ledger</span>
+        <span class="diagram-badge">2. Telemetry Cadence</span>
+        <span>In-app keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">3. Accessibility-Safe Risk Ledger</span>
         <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">3. Verification Escrow</span>
+        <span class="diagram-badge">4. Verification Escrow</span>
         <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">4. Verified Direct Messaging</span>
+        <span class="diagram-badge">5. Verified Direct Messaging</span>
         <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
     </div>
 </div>
