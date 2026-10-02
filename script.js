@@ -43,6 +43,11 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
+// Security Whitepaper Elements
+const openSecurityBtn = document.getElementById('open-security-btn');
+const securityModal = document.getElementById('security-modal');
+const closeSecurityModalBtn = document.getElementById('close-security-modal-btn');
+
 // FAB Modal & Wrappers
 const desktopFab = document.getElementById('desktop-fab');
 const mobileFab = document.getElementById('mobile-fab');
@@ -84,6 +89,22 @@ const tickerContent = document.getElementById('ticker-content');
 const updatesModal = document.getElementById('updates-modal');
 const closeUpdatesModalBtn = document.getElementById('close-updates-modal-btn');
 const updatesModalFeed = document.getElementById('updates-modal-feed');
+
+// Security Whitepaper Listeners
+safeAddListener(openSecurityBtn, 'click', () => {
+    if (securityModal) securityModal.classList.remove('hidden');
+});
+
+safeAddListener(closeSecurityModalBtn, 'click', () => {
+    if (securityModal) securityModal.classList.add('hidden');
+});
+
+// Allow closing by clicking the dark background overlay
+safeAddListener(securityModal, 'click', (e) => {
+    if (e.target === securityModal) {
+        securityModal.classList.add('hidden');
+    }
+});
 
 // Thread Sidebar & Discovery Elements
 const joinedThreadsContainer = document.getElementById('joined-threads-container');
@@ -1455,6 +1476,7 @@ safeAddListener(authForm, 'submit', async (e) => {
 
     if (!captchaToken) {
         alert("Please complete the security check.");
+        if (window.turnstile) turnstile.reset(); // ADD THIS LINE
         return;
     }
 
