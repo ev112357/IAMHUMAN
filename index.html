@@ -106,7 +106,17 @@
         .thread-badge-wrap { display: flex; align-items: center; gap: 8px; }
         .thread-role-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 700; white-space: nowrap; }
         .thread-actions-bar { display: flex; gap: 8px; }
-        .btn-thread-action { width: auto; padding: 6px 12px; font-size: 0.8rem; height: 34px; white-space: nowrap; }
+        .btn-thread-action { 
+            width: 125px !important; 
+            padding: 0 8px; 
+            font-size: 0.8rem; 
+            height: 36px; 
+            white-space: nowrap; 
+            margin-top: 0 !important; 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
 
         .feed-toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; background-color: #0f172a; padding: 14px; border-radius: 10px; border: 1px solid #334155; }
         .toolbar-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -436,8 +446,8 @@ img, video, canvas, pre, code {
             </div>
 
             <!-- SECURITY ARCHITECTURE BUTTON (Moved outside desktop nav so it stays on mobile) -->
-            <button id="open-security-btn" class="icon-btn" title="Security Architecture" style="width: 36px; height: 36px; font-size: 1.1rem; flex-shrink: 0;">🛡️</button>
-
+            <button id="open-security-btn" class="icon-btn" title="Security Architecture" style="flex-shrink: 0;">🛡️</button>
+            
             <!-- DESKTOP ICONS (Hide automatically on mobile) -->
             <div class="desktop-nav-actions">
                 <div class="btn-badge-wrap">
