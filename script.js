@@ -1461,13 +1461,39 @@ function renderUserAvatar(url) {
     }
 }
 
+let hasBooted = false;
+
 if (db) {
-    db.auth.getSession().then(({ data: { session } }) => {
-        syncUserState(session?.user || null);
+    db.auth.getSession().then(async ({ data: { session } }) => {
+        await syncUserState(session?.user || null);
+        
+        // Only run the deep link check once after the initial user state is settled
+        if (!hasBooted) {
+            hasBooted = true;
+            initLiveUserCount();
+            loadProminentUpdates();
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetPostId = urlParams.get('post');
+            const targetThreadName = urlParams.get('thread');
+
+            if (targetPostId) {
+                await navigateToPost(targetPostId);
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else if (targetThreadName) {
+                const decodedThread = decodeURIComponent(targetThreadName);
+                const matchedThread = allCloudThreads.find(t => t.name.toLowerCase() === decodedThread.toLowerCase());
+                activeThread = matchedThread ? matchedThread.name : decodedThread;
+                await loadForumPosts();
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
     }).catch(e => console.warn("Session check error:", e));
 
-    db.auth.onAuthStateChange((_event, session) => {
-        syncUserState(session?.user || null);
+    db.auth.onAuthStateChange(async (_event, session) => {
+        if (hasBooted) {
+            await syncUserState(session?.user || null);
+        }
     });
 }
 
@@ -4003,12 +4029,20 @@ async function navigateToPost(postId) {
         await loadForumPosts();
     }
 
-    const targetEl = document.getElementById(`post-${postId}`);
-    if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
-        setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
-    }
+    // Polls the DOM until the feed finishes rendering the post, then scrolls
+    let attempts = 0;
+    const scrollInterval = setInterval(() => {
+        const targetEl = document.getElementById(`post-${postId}`);
+        if (targetEl) {
+            clearInterval(scrollInterval);
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetEl.style.boxShadow = '0 0 0 2px #38bdf8, 0 0 20px rgba(56, 189, 248, 0.5)';
+            setTimeout(() => { targetEl.style.boxShadow = 'none'; }, 2000);
+        } else if (attempts > 20) { 
+            clearInterval(scrollInterval); // Give up after 2 seconds
+        }
+        attempts++;
+    }, 100);
 }
 
 
@@ -4517,44 +4551,3 @@ async function initLiveUserCount() {
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'profiles' }, updateCount)
         .subscribe();
 }
-// Boot Application
-(async () => {
-    initLiveUserCount(); // Boot the live counter
-    await syncCloudThreads(); // Wait for DB sync to finish first
-    loadProminentUpdates();
-
-    // Deep Linking: Check if the user arrived via a Shared Link
-    const urlParams = new URLSearchParams(window.location.search);
-    const targetPostId = urlParams.get('post');
-    const targetThreadName = urlParams.get('thread');
-
-    if (targetPostId) {
-        if (db) {
-            // Find which thread the shared post belongs to
-            const { data: post } = await db.from('Posts').select('thread').eq('id', targetPostId).maybeSingle();
-            if (post) {
-                activeThread = post.thread; // Switch to the correct community
-            }
-        }
-        await loadForumPosts();
-        
-        // Give the DOM a slight pause to render the skeleton UI and layout, then scroll to it
-        setTimeout(() => navigateToPost(targetPostId), 600);
-        
-        // Clean the URL bar so it doesn't look messy after they arrive
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (targetThreadName) {
-        // Deep Link directly to a Thread (e.g., /?thread=Philosophy)
-        const decodedThread = decodeURIComponent(targetThreadName);
-        const matchedThread = allCloudThreads.find(t => t.name.toLowerCase() === decodedThread.toLowerCase());
-        if (matchedThread) {
-            activeThread = matchedThread.name;
-        } else {
-            activeThread = decodedThread;
-        }
-        await loadForumPosts();
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-        await loadForumPosts();
-    }
-})();
