@@ -30,6 +30,17 @@ function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
 }
 
+// Share Modal Elements
+const shareModal = document.getElementById('share-modal');
+const closeShareModalBtn = document.getElementById('close-share-modal-btn');
+const nativeShareBtn = document.getElementById('native-share-btn');
+const copyLinkBtn = document.getElementById('copy-link-btn');
+const shareDmSelect = document.getElementById('share-dm-select');
+const internalShareBtn = document.getElementById('internal-share-btn');
+
+let currentSharePostId = null;
+let currentSharePostUrl = null;
+
 // DOM Elements - Auth & Nav
 const authPanelWrapper = document.getElementById('auth-panel-wrapper');
 const authPanel = document.getElementById('auth-panel');
@@ -3482,7 +3493,8 @@ function createPostCardElement(post) {
     let actionButtonsHtml = `
         <div class="post-admin-actions">
             <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
-            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑️️ Delete</button>` : ''}
+            <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share</button>
+            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑 Delete</button>` : ''}
         </div>
     `;
 
@@ -3558,6 +3570,13 @@ function createPostCardElement(post) {
             if (!section.classList.contains('hidden')) {
                 loadCommentsForPost(post.id);
             }
+        });
+    }
+
+    const shareBtn = item.querySelector('.btn-share-post');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', () => {
+            openShareModal(post.id);
         });
     }
 
@@ -3950,6 +3969,129 @@ async function navigateToPost(postId) {
     }
 }
 
+
+// --- SHARING LOGIC ---
+safeAddListener(closeShareModalBtn, 'click', () => { if(shareModal) shareModal.classList.add('hidden'); });
+safeAddListener(shareModal, 'click', (e) => { if(e.target === shareModal) shareModal.classList.add('hidden'); });
+
+async function openShareModal(postId) {
+    currentSharePostId = postId;
+    // Construct the deep-link URL 
+    currentSharePostUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
+
+    if (shareDmSelect) {
+        shareDmSelect.innerHTML = '<option value="">Select a friend or group...</option>';
+        internalShareBtn.disabled = true;
+
+        if (currentUser && db) {
+            // Load conversations for the dropdown
+            const { data: memberships } = await db.from('conversation_members')
+                .select('conversation_id').eq('user_id', currentUser.id);
+
+            if (memberships && memberships.length > 0) {
+                const convIds = memberships.map(m => m.conversation_id);
+                const { data: convs } = await db.from('conversations').select('id, name, is_group').in('id', convIds);
+                const { data: allMembers } = await db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id);
+                
+                const partnerIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
+                const { data: profiles } = partnerIds.length > 0 ? await db.from('profiles').select('id, username').in('id', partnerIds) : { data: [] };
+
+                (convs || []).forEach(conv => {
+                    let displayName = '';
+                    if (conv.is_group) {
+                        displayName = `Group: ${conv.name}`;
+                    } else {
+                        const partnerMem = (allMembers || []).find(m => m.conversation_id === conv.id);
+                        const pProfile = partnerMem ? (profiles || []).find(p => p.id === partnerMem.user_id) : null;
+                        displayName = pProfile ? `@${pProfile.username}` : 'Empty Chat';
+                    }
+
+                    const option = document.createElement('option');
+                    option.value = conv.id;
+                    option.textContent = displayName;
+                    shareDmSelect.appendChild(option);
+                });
+            }
+        } else {
+            const option = document.createElement('option');
+            option.value = "";
+            option.textContent = "Log in to share via DM";
+            shareDmSelect.appendChild(option);
+            shareDmSelect.disabled = true;
+        }
+    }
+
+    if (shareModal) shareModal.classList.remove('hidden');
+}
+
+// 1. Native OS Sharing (Triggers iOS/Android share drawer for iMessage, Insta, WhatsApp)
+safeAddListener(nativeShareBtn, 'click', async () => {
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: "Turing's Gate",
+                text: "Check out this post on Turing's Gate!",
+                url: currentSharePostUrl
+            });
+            if (shareModal) shareModal.classList.add('hidden');
+        } catch (err) {
+            console.log("Native share cancelled or failed", err);
+        }
+    } else {
+        alert("Your device doesn't support the native share menu. Please copy the link instead.");
+    }
+});
+
+// 2. Fallback Copy to Clipboard
+safeAddListener(copyLinkBtn, 'click', async () => {
+    try {
+        await navigator.clipboard.writeText(currentSharePostUrl);
+        const originalText = copyLinkBtn.textContent;
+        copyLinkBtn.textContent = '✅ Link Copied!';
+        setTimeout(() => { copyLinkBtn.textContent = originalText; if(shareModal) shareModal.classList.add('hidden'); }, 1500);
+    } catch (err) {
+        alert("Failed to copy link.");
+    }
+});
+
+safeAddListener(shareDmSelect, 'change', () => {
+    internalShareBtn.disabled = !shareDmSelect.value;
+});
+
+// 3. Send Internal DM
+safeAddListener(internalShareBtn, 'click', async () => {
+    const selectedConvId = shareDmSelect.value;
+    if (!selectedConvId || !currentSharePostId || !currentUser) return;
+
+    internalShareBtn.disabled = true;
+    internalShareBtn.textContent = 'Sending...';
+
+    // Formats it so your existing Markdown renderer turns it into a clickable button/link
+    const formattedLink = `Check out this post: [View Post](${currentSharePostUrl})`;
+
+    const { error } = await db.from('chat_messages').insert([{
+        conversation_id: selectedConvId,
+        sender_id: currentUser.id,
+        sender_username: currentUsername,
+        content: formattedLink,
+        pending_approval: false
+    }]);
+
+    if (error) {
+        alert(`Error sharing post: ${error.message}`);
+        internalShareBtn.disabled = false;
+        internalShareBtn.textContent = 'Send Message';
+        return;
+    }
+
+    // Trigger unread notification state for recipients
+    await db.from('chat_messages').update({ is_read: false }).eq('conversation_id', selectedConvId).neq('sender_id', currentUser.id);
+
+    alert("Post shared in your messages!");
+    if (shareModal) shareModal.classList.add('hidden');
+    internalShareBtn.textContent = 'Send Message';
+});
+
 // --- FAB POST MODAL LOGIC & CLOSE FIX ---
 
 function openFabModal(e) {
@@ -4314,11 +4456,32 @@ async function initLiveUserCount() {
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'profiles' }, updateCount)
         .subscribe();
 }
-
 // Boot Application
 (async () => {
     initLiveUserCount(); // Boot the live counter
     await syncCloudThreads(); // Wait for DB sync to finish first
     loadProminentUpdates();
-    await loadForumPosts();   // Then render the UI with the banner URL locked in
+
+    // Deep Linking: Check if the user arrived via a Shared Link
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetPostId = urlParams.get('post');
+
+    if (targetPostId) {
+        if (db) {
+            // Find which thread the shared post belongs to
+            const { data: post } = await db.from('Posts').select('thread').eq('id', targetPostId).maybeSingle();
+            if (post) {
+                activeThread = post.thread; // Switch to the correct community
+            }
+        }
+        await loadForumPosts();
+        
+        // Give the DOM a slight pause to render the skeleton UI and layout, then scroll to it
+        setTimeout(() => navigateToPost(targetPostId), 600);
+        
+        // Clean the URL bar so it doesn't look messy after they arrive
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+        await loadForumPosts();
+    }
 })();
