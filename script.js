@@ -2161,6 +2161,26 @@ function updateThreadControlsUI() {
         else managePermsBtn.classList.add('hidden');
     }
 
+    const manageChatBtn = document.getElementById('manage-chat-btn');
+    if (manageChatBtn) {
+        if (canManagePermissions(activeThread)) manageChatBtn.classList.remove('hidden');
+        else manageChatBtn.classList.add('hidden');
+    }
+
+    // Evaluate Live Chat Schedule / Lock
+    const tData = allCloudThreads.find(t => t.name === activeThread);
+    const liveChatBtn = document.getElementById('open-live-chat-btn');
+    if (liveChatBtn && tData) {
+        window.currentLiveChatIsOpen = evaluateLiveChatStatus(tData);
+        if (window.currentLiveChatIsOpen) {
+            liveChatBtn.classList.remove('locked');
+            liveChatBtn.innerHTML = `<div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">0</span>)`;
+        } else {
+            liveChatBtn.classList.add('locked');
+            liveChatBtn.innerHTML = `🔒 Chat Closed`;
+        }
+    }
+
     if (deleteThreadBtn) {
         if (canDeleteThread(activeThread)) deleteThreadBtn.classList.remove('hidden');
         else deleteThreadBtn.classList.add('hidden');
@@ -3595,11 +3615,13 @@ function createPostCardElement(post) {
     else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
 
     const userCanDelete = canDeletePost(post) && !post.is_pinned;
+    const userCanEdit = post.author && currentUsername && post.author.toLowerCase() === currentUsername.toLowerCase();
 
     let actionButtonsHtml = `
         <div class="post-admin-actions">
             <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
             <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></button>
+            ${userCanEdit ? `<button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">✏️ Edit</button>` : ''}
             ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑 Delete</button>` : ''}
         </div>
     `;
@@ -3629,9 +3651,11 @@ function createPostCardElement(post) {
                     ${roleBadge}
                     ${userFlairBadge}
                 </div>
-                <span>${dateFormatted}</span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <span>${dateFormatted}</span>${post.is_edited ? `<span class="edited-badge view-edit-history" data-post-id="${post.id}">Edited 🕒</span>` : ''}
+                </div>
             </div>
-            <div class="post-content">${renderedBody}</div>
+            <div class="post-content" id="post-text-${post.id}">${renderedBody}</div>
             ${photoHtml}
             ${actionButtonsHtml}
             
@@ -3713,6 +3737,16 @@ function createPostCardElement(post) {
             const countSpan = item.querySelector(`#comment-count-${post.id}`);
             if (countSpan) countSpan.textContent = '0 Comments';
         }
+    const editBtn = item.querySelector('.btn-edit-post');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => openPostEditModal(post));
+        }
+        
+        const historyBtn = item.querySelector('.view-edit-history');
+        if (historyBtn) {
+            historyBtn.addEventListener('click', () => loadEditHistory(post.id));
+        }
+
 
         return item;
     }
@@ -4876,3 +4910,254 @@ safeAddListener(document.getElementById('live-chat-form'), 'submit', (e) => {
 
     liveChatInput.value = '';
 });
+// --- POST EDITING & HISTORY ENGINE ---
+const postEditModal = document.getElementById('post-edit-modal');
+const editPostIdInput = document.getElementById('edit-post-id');
+const editPostTextInput = document.getElementById('edit-post-text');
+
+function openPostEditModal(post) {
+    if (!currentUser) return;
+    editPostIdInput.value = post.id;
+    // Strip markdown formatting like `<br>` back to standard newlines for the editor
+    editPostTextInput.value = (post.content || '').replace(/<br>/g, '\n'); 
+    postEditModal.classList.remove('hidden');
+}
+
+safeAddListener(document.getElementById('close-post-edit-btn'), 'click', () => {
+    postEditModal.classList.add('hidden');
+});
+
+safeAddListener(document.getElementById('post-edit-form'), 'submit', async (e) => {
+    e.preventDefault();
+    if (!currentUser || !db) return;
+    
+    const submitBtn = document.getElementById('submit-edit-btn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving...';
+
+    const postId = Number(editPostIdInput.value);
+    const newContent = editPostTextInput.value.trim();
+    const post = postCacheMap.get(postId);
+
+    if (post && newContent !== post.content) {
+        // Log to history table
+        await db.from('post_edits').insert([{
+            post_id: postId,
+            old_content: post.content,
+            new_content: newContent
+        }]);
+
+        // Update main post
+        const { error } = await db.from('Posts').update({
+            content: newContent,
+            is_edited: true
+        }).eq('id', postId);
+
+        if (!error) {
+            post.content = newContent;
+            post.is_edited = true;
+            renderCurrentFeed();
+        } else {
+            alert("Error editing post: " + error.message);
+        }
+    }
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Save Changes';
+    postEditModal.classList.add('hidden');
+});
+
+async function loadEditHistory(postId) {
+    const historyModal = document.getElementById('edit-history-modal');
+    const historyList = document.getElementById('edit-history-list');
+    if (!db || !historyModal || !historyList) return;
+
+    historyModal.classList.remove('hidden');
+    historyList.innerHTML = '<div class="no-posts">Loading history...</div>';
+
+    const { data: edits, error } = await db.from('post_edits')
+        .select('*')
+        .eq('post_id', postId)
+        .order('edited_at', { ascending: false });
+
+    if (error || !edits || edits.length === 0) {
+        historyList.innerHTML = '<div class="no-posts">No edit history found.</div>';
+        return;
+    }
+
+    historyList.innerHTML = '';
+    edits.forEach(edit => {
+        const d = new Date(edit.edited_at).toLocaleString();
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        item.innerHTML = `
+            <span class="history-time">Prior to ${d}</span>
+            <div>${renderFormattedContent(edit.old_content)}</div>
+        `;
+        historyList.appendChild(item);
+    });
+}
+
+safeAddListener(document.getElementById('close-edit-history-btn'), 'click', () => {
+    document.getElementById('edit-history-modal').classList.add('hidden');
+});
+
+// --- LIVE CHAT SCHEDULING LOGIC ---
+const chatConfigModal = document.getElementById('chat-config-modal');
+const scheduleCheckbox = document.getElementById('chat-schedule-enable-chk');
+const scheduleOptionsBox = document.getElementById('schedule-options');
+
+function evaluateLiveChatStatus(threadData) {
+    if (!threadData) return true;
+    if (threadData.live_chat_locked) return false;
+    
+    const sched = threadData.live_chat_schedule;
+    if (!sched || !sched.enabled) return true;
+
+    try {
+        // Evaluate current time against target timezone
+        const options = { timeZone: sched.timezone || 'America/New_York', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric' };
+        const parts = new Intl.DateTimeFormat('en-US', options).formatToParts(new Date());
+        
+        const day = parts.find(p => p.type === 'weekday').value;
+        const hrStr = parts.find(p => p.type === 'hour').value;
+        const minStr = parts.find(p => p.type === 'minute').value;
+        
+        // Pad single digits (e.g. 9:00 -> 09:00) for string comparison
+        const currentStr = `${hrStr.padStart(2, '0')}:${minStr.padStart(2, '0')}`;
+
+        if (!sched.days.includes(day)) return false;
+        if (currentStr >= sched.startTime && currentStr <= sched.endTime) return true;
+        return false;
+    } catch (e) {
+        console.warn("Schedule evaluation error", e);
+        return true; // fail open
+    }
+}
+
+// Override original live chat click listener to block if closed
+const oldLiveBtn = document.getElementById('open-live-chat-btn');
+if (oldLiveBtn) {
+    // Clone and replace to kill the old event listener
+    const newLiveBtn = oldLiveBtn.cloneNode(true);
+    oldLiveBtn.parentNode.replaceChild(newLiveBtn, oldLiveBtn);
+    
+    newLiveBtn.addEventListener('click', () => {
+        if (!currentUser) {
+            alert("Please log in to join the live chat.");
+            return;
+        }
+        
+        const role = getThreadRole(activeThread);
+        // Only owners/admins can bypass a locked chat
+        if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
+            alert("This live chat is currently locked or outside of its scheduled hours.");
+            return;
+        }
+
+        document.getElementById('live-chat-thread-name').textContent = activeThread;
+        liveChatModal.classList.remove('hidden');
+        setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+        scrollToBottomLiveChat();
+    });
+}
+
+// Configuration Modal UI
+safeAddListener(scheduleCheckbox, 'change', (e) => {
+    scheduleOptionsBox.style.opacity = e.target.checked ? '1' : '0.5';
+    scheduleOptionsBox.style.pointerEvents = e.target.checked ? 'auto' : 'none';
+});
+
+safeAddListener(document.getElementById('manage-chat-btn'), 'click', () => {
+    const tData = allCloudThreads.find(t => t.name === activeThread);
+    if (!tData) return;
+
+    document.getElementById('chat-manual-lock-chk').checked = !!tData.live_chat_locked;
+    
+    const sched = tData.live_chat_schedule || { enabled: false, days: [], startTime: "19:00", endTime: "20:00", timezone: "America/Toronto" };
+    scheduleCheckbox.checked = sched.enabled;
+    scheduleCheckbox.dispatchEvent(new Event('change'));
+
+    document.querySelectorAll('.sched-day').forEach(chk => {
+        chk.checked = sched.days.includes(chk.value);
+    });
+    
+    document.getElementById('chat-sched-start').value = sched.startTime || "19:00";
+    document.getElementById('chat-sched-end').value = sched.endTime || "20:00";
+    document.getElementById('chat-sched-tz').value = sched.timezone || "America/Toronto";
+
+    chatConfigModal.classList.remove('hidden');
+});
+
+safeAddListener(document.getElementById('close-chat-config-btn'), 'click', () => {
+    chatConfigModal.classList.add('hidden');
+});
+
+safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e) => {
+    e.preventDefault();
+    if (!db || !currentUser) return;
+
+    const btn = document.getElementById('save-chat-settings-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const isLocked = document.getElementById('chat-manual-lock-chk').checked;
+    const schedEnabled = scheduleCheckbox.checked;
+    
+    const selectedDays = Array.from(document.querySelectorAll('.sched-day:checked')).map(chk => chk.value);
+    const scheduleJSON = {
+        enabled: schedEnabled,
+        days: selectedDays,
+        startTime: document.getElementById('chat-sched-start').value,
+        endTime: document.getElementById('chat-sched-end').value,
+        timezone: document.getElementById('chat-sched-tz').value
+    };
+
+    const { error } = await db.from('forum_threads').update({
+        live_chat_locked: isLocked,
+        live_chat_schedule: scheduleJSON
+    }).eq('name', activeThread);
+
+    if (!error) {
+        // Update local memory so we don't have to fully re-fetch
+        let localThread = allCloudThreads.find(t => t.name === activeThread);
+        if (localThread) {
+            localThread.live_chat_locked = isLocked;
+            localThread.live_chat_schedule = scheduleJSON;
+        }
+        updateThreadControlsUI(); // Instantly update the button color
+        chatConfigModal.classList.add('hidden');
+    } else {
+        alert("Failed to update chat settings: " + error.message);
+    }
+
+    btn.disabled = false;
+    btn.textContent = 'Save Settings';
+});
+
+// Hijack realtime chat send so it fails if user tries to bypass UI via console
+const oldLiveChatForm = document.getElementById('live-chat-form');
+if (oldLiveChatForm) {
+    const newLiveChatForm = oldLiveChatForm.cloneNode(true);
+    oldLiveChatForm.parentNode.replaceChild(newLiveChatForm, oldLiveChatForm);
+    
+    newLiveChatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = document.getElementById('live-chat-input').value.trim();
+        if (!text || !liveThreadSubscription || !currentUser) return;
+
+        const role = getThreadRole(activeThread);
+        if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
+            alert("Chat is currently locked. Message blocked.");
+            return;
+        }
+
+        liveThreadSubscription.send({
+            type: 'broadcast',
+            event: 'chat_msg',
+            payload: { username: currentUsername, avatar: currentAvatarUrl, text: text }
+        });
+
+        document.getElementById('live-chat-input').value = '';
+    });
+}
