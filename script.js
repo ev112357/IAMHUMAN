@@ -579,6 +579,8 @@ function openMessagesModal() {
     if (!currentUser) { 
         alert("Please log in to view messages."); 
         setMobileTabActive('feed');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return; 
     }
     if (dmModal) dmModal.classList.remove('hidden');
@@ -596,6 +598,8 @@ function openNotificationsModal() {
     if (!currentUser) { 
         alert("Please log in to view notifications."); 
         setMobileTabActive('feed');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return; 
     }
     if (notificationsModal) notificationsModal.classList.remove('hidden');
@@ -1179,6 +1183,9 @@ safeAddListener(closeUserProfileBtn, 'click', () => {
 safeAddListener(userCardMsgBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to send direct messages.");
+        if (userProfileModal) userProfileModal.classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return;
     }
     if (!targetProfileId || !targetProfileUsername) return;
@@ -1201,6 +1208,9 @@ safeAddListener(userCardMsgBtn, 'click', async () => {
 safeAddListener(userCardAddFriendBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to manage friends.");
+        if (userProfileModal) userProfileModal.classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return;
     }
 
@@ -1844,11 +1854,12 @@ safeAddListener(threadSearchInput, 'input', () => {
         actionBtn.addEventListener('click', async () => {
             if (!currentUser) {
                 alert("Please log in to join or leave threads.");
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
                 return;
             }
             await toggleThreadMembership(t.name);
         });
-
         row.appendChild(label);
         row.appendChild(actionBtn);
         threadDiscoveryBox.appendChild(row);
@@ -1890,6 +1901,8 @@ async function toggleThreadMembership(tName) {
 safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
     if (!currentUser) {
         alert("Please log in to manage your threads.");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return;
     }
     await toggleThreadMembership(activeThread);
@@ -1898,7 +1911,12 @@ safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
 // --- CREATE & DELETE THREADS ---
 
 function openCreateThreadModal() {
-    if (!currentUser) { alert("Please log in to create a thread."); return; }
+    if (!currentUser) { 
+        alert("Please log in to create a thread."); 
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
+        return; 
+    }
     if (threadModal) threadModal.classList.remove('hidden');
 }
 
@@ -3360,6 +3378,8 @@ function getPostScore(post) {
 async function handleVote(postId, direction) {
     if (!currentUser) {
         alert("You must be logged in to like or dislike posts.");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return;
     }
     if (isSuspended) {
@@ -3668,6 +3688,8 @@ async function loadCommentsForPost(postId) {
 async function submitComment(postId, postAuthorUsername, content) {
     if (!currentUser) {
         alert("Please log in to comment.");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
         return;
     }
     if (isSuspended) {
