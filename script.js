@@ -3616,12 +3616,14 @@ function createPostCardElement(post) {
 
     const userCanDelete = canDeletePost(post) && !post.is_pinned;
     const userCanEdit = post.author && currentUsername && post.author.toLowerCase() === currentUsername.toLowerCase();
+    const userCanPin = (postAuthorRole === 'Site Admin' || postAuthorRole === 'Owner' || postAuthorRole === 'Moderator');
 
     let actionButtonsHtml = `
         <div class="post-admin-actions">
             <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
             <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></button>
             ${userCanEdit ? `<button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">✏️ Edit</button>` : ''}
+            ${userCanPin ? `<button type="button" class="btn-post-action btn-pin-post" data-post-id="${post.id}">${post.is_pinned ? '📌 Unpin' : '📌 Pin'}</button>` : ''}
             ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑 Delete</button>` : ''}
         </div>
     `;
@@ -3629,7 +3631,45 @@ function createPostCardElement(post) {
     const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
-    const renderedBody = post.is_pinned ? post.content : renderFormattedContent(post.content || '');
+    const renderedBody = post.is_pinned && !post.poll_options ? post.content : renderFormattedContent(post.content || '');
+
+    // Construct Poll UI
+    let pollHtml = '';
+    if (post.poll_options && Array.isArray(post.poll_options)) {
+        const votes = post.poll_votes || {};
+        const totalVotes = Object.keys(votes).length;
+        const hasVoted = currentUsername && votes[currentUsername.toLowerCase()] !== undefined;
+        const isExpired = post.poll_expires_at && new Date(post.poll_expires_at) < new Date();
+        const showResults = hasVoted || isExpired;
+
+        // Tally votes
+        const tallies = post.poll_options.map(() => 0);
+        Object.values(votes).forEach(optIndex => {
+            if(tallies[optIndex] !== undefined) tallies[optIndex]++;
+        });
+        const maxVotes = Math.max(...tallies, 0);
+
+        pollHtml += `<div class="poll-container" id="poll-${post.id}">`;
+        
+        post.poll_options.forEach((opt, idx) => {
+            if (showResults) {
+                const pct = totalVotes > 0 ? Math.round((tallies[idx] / totalVotes) * 100) : 0;
+                const isWinner = tallies[idx] === maxVotes && totalVotes > 0;
+                pollHtml += `
+                    <div class="poll-result-bar-wrap">
+                        <div class="poll-result-fill ${isWinner ? 'winner' : ''}" style="width: ${pct}%;"></div>
+                        <div class="poll-result-text">
+                            <span>${escapeHTML(opt)} ${votes[currentUsername?.toLowerCase()] === idx ? ' ✓' : ''}</span>
+                            <span>${pct}%</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                pollHtml += `<button type="button" class="poll-option-btn vote-poll-btn" data-post-id="${post.id}" data-opt-idx="${idx}">${escapeHTML(opt)}</button>`;
+            }
+        });
+        pollHtml += `<div class="poll-meta">${totalVotes} votes • ${isExpired ? 'Final Results' : 'Poll Open'}</div></div>`;
+    }
 
     // Display globally synced flair
     const authorFlair = threadFlairMap.get(cleanAuthor);
@@ -3656,6 +3696,7 @@ function createPostCardElement(post) {
                 </div>
             </div>
             <div class="post-content" id="post-text-${post.id}">${renderedBody}</div>
+            ${pollHtml}
             ${photoHtml}
             ${actionButtonsHtml}
             
@@ -3746,6 +3787,18 @@ function createPostCardElement(post) {
         if (historyBtn) {
             historyBtn.addEventListener('click', () => loadEditHistory(post.id));
         }
+    item.querySelectorAll('.vote-poll-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const pId = e.currentTarget.getAttribute('data-post-id');
+            const oIdx = e.currentTarget.getAttribute('data-opt-idx');
+            submitPollVote(pId, oIdx);
+        });
+    });
+
+    const pinBtn = item.querySelector('.btn-pin-post');
+    if (pinBtn) {
+        pinBtn.addEventListener('click', () => togglePinPost(post));
+    }
 
 
         return item;
@@ -4104,6 +4157,19 @@ function resetTelemetryConsole() {
     if (statPaste) { statPaste.textContent = "FALSE"; statPaste.className = "badge badge-green"; }
     if (statTimer) statTimer.textContent = "0.0s"; 
     if (statKeys) statKeys.textContent = "0 keys";
+    
+    // Clear Poll Form
+    const pollBuilder = document.getElementById('poll-builder-container');
+    if (pollBuilder) {
+        pollBuilder.classList.add('hidden');
+        const list = document.getElementById('poll-options-list');
+        if (list) {
+            list.innerHTML = `
+                <input type="text" class="poll-option-input" placeholder="Option 1" autocomplete="off" style="margin-bottom: 0; padding: 8px; font-size: 0.85rem;">
+                <input type="text" class="poll-option-input" placeholder="Option 2" autocomplete="off" style="margin-bottom: 0; padding: 8px; font-size: 0.85rem;">
+            `;
+        }
+    }
 }
 
 async function navigateToConversation(convId) {
@@ -4466,8 +4532,25 @@ safeAddListener(forumForm, 'submit', async (event) => {
     // Capture text safely before any processing
     const postContent = textBox ? textBox.value.trim() : "";
 
-    if (postContent.length < 2 && !selectedPostPhotoFile) {
-        alert("Please enter a message or attach a photo.");
+    let pollOptionsJSON = null;
+    let pollExpiresAt = null;
+
+    const pollBuilder = document.getElementById('poll-builder-container');
+    if (pollBuilder && !pollBuilder.classList.contains('hidden')) {
+        const inputs = Array.from(document.querySelectorAll('.poll-option-input')).map(i => i.value.trim()).filter(v => v);
+        if (inputs.length < 2) {
+            alert("A poll requires at least 2 options.");
+            return;
+        }
+        pollOptionsJSON = inputs;
+        const days = parseInt(document.getElementById('poll-duration-select').value, 10);
+        const expDate = new Date();
+        expDate.setDate(expDate.getDate() + days);
+        pollExpiresAt = expDate.toISOString();
+    }
+
+    if (postContent.length < 2 && !selectedPostPhotoFile && !pollOptionsJSON) {
+        alert("Please enter a message, attach a photo, or create a poll.");
         return;
     }
 
@@ -4542,7 +4625,9 @@ safeAddListener(forumForm, 'submit', async (event) => {
                 thread: targetThread, 
                 author: currentUsername, 
                 content: postContent,
-                image_url: postImageUrl
+                image_url: postImageUrl,
+                poll_options: pollOptionsJSON,
+                poll_expires_at: pollExpiresAt
             }]);
 
         if (error) {
@@ -5142,4 +5227,72 @@ safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e)
     btn.disabled = false;
     btn.textContent = 'Save Settings';
 });
+
+// --- POLL & PINNING ENGINE ---
+
+document.addEventListener('click', (e) => {
+    // Toggle the UI for building a poll
+    if (e.target.id === 'toggle-poll-btn') {
+        const pollBuilder = document.getElementById('poll-builder-container');
+        if (pollBuilder) pollBuilder.classList.toggle('hidden');
+    }
+    
+    // Add additional option to the poll builder
+    if (e.target.id === 'add-poll-option-btn') {
+        const list = document.getElementById('poll-options-list');
+        if (list && list.children.length >= 6) {
+            alert("Maximum 6 options allowed.");
+            return;
+        }
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'poll-option-input';
+        input.placeholder = `Option ${list.children.length + 1}`;
+        input.autocomplete = 'off';
+        input.style.cssText = 'margin-bottom: 0; padding: 8px; font-size: 0.85rem; margin-top: 8px;';
+        list.appendChild(input);
+    }
+});
+
+async function togglePinPost(post) {
+    if (!currentUser || !db) return;
+    const newPinState = !post.is_pinned;
+    
+    const { error } = await db.from('Posts').update({ is_pinned: newPinState }).eq('id', post.id);
+    if (error) {
+        alert("Error updating pin: " + error.message);
+        return;
+    }
+    
+    post.is_pinned = newPinState;
+    renderCurrentFeed();
+}
+
+async function submitPollVote(postId, optIdx) {
+    if (!currentUser || !currentUsername || !db) {
+        alert("Please log in to vote.");
+        return;
+    }
+    const post = postCacheMap.get(Number(postId));
+    if (!post) return;
+
+    // Grab current votes or init fresh
+    const votes = post.poll_votes || {};
+    if (votes[currentUsername.toLowerCase()] !== undefined) {
+        return; // Security: User already voted
+    }
+    
+    // Record their vote
+    votes[currentUsername.toLowerCase()] = Number(optIdx);
+
+    const { error } = await db.from('Posts').update({ poll_votes: votes }).eq('id', postId);
+    if (error) {
+        alert("Failed to record vote: " + error.message);
+        return;
+    }
+
+    // Refresh UI instantly
+    post.poll_votes = votes;
+    renderCurrentFeed();
+}
 
