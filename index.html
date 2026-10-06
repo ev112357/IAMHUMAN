@@ -177,9 +177,10 @@
         .btn-post-action.danger-text:hover { border-color: #ef4444; color: #ef4444; background: transparent; }
         .no-posts { text-align: center; color: #64748b; padding: 24px; font-style: italic; }
 
-        .clickable-username { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
-        .clickable-username:hover { color: #7dd3fc !important; }
-
+        .clickable-username, .clickable-thread { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+        .clickable-username:hover, .clickable-thread:hover { color: #7dd3fc !important; }
+        .clickable-thread { color: #38bdf8; font-weight: 600; }
+        
         /* Public User Profile Card */
         .profile-card-header { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 16px; }
         .profile-card-pfp { width: 86px; height: 86px; border-radius: 50%; object-fit: cover; border: 3px solid #38bdf8; background-color: #0f172a; }
