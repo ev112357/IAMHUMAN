@@ -3707,31 +3707,101 @@ async function loadCommentsForPost(postId) {
     }
 
     listEl.innerHTML = '';
+
+    // Group comments by parent to create a hierarchy tree
+    const topLevelComments = comments.filter(c => !c.parent_id);
+    const repliesByParent = {};
     comments.forEach(c => {
+        if (c.parent_id) {
+            if (!repliesByParent[c.parent_id]) repliesByParent[c.parent_id] = [];
+            repliesByParent[c.parent_id].push(c);
+        }
+    });
+
+    // Recursive render function for nested replies
+    const renderCommentNode = (c, isReply = false) => {
         const cleanAuthor = (c.author || 'anonymous').toLowerCase().replace('@', '');
         const avatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
-        
-        const div = document.createElement('div');
-        div.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem; background: #0f172a; padding: 8px; border-radius: 6px;";
-        div.innerHTML = `
+
+        const wrap = document.createElement('div');
+        // Indent and add left border if it's a reply
+        wrap.style.cssText = `display: flex; flex-direction: column; gap: 6px; ${isReply ? 'margin-left: 24px; border-left: 2px solid #334155; padding-left: 10px; margin-top: 6px;' : 'background: #0f172a; padding: 8px; border-radius: 6px;'}`;
+
+        const commentBody = document.createElement('div');
+        commentBody.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem;";
+        commentBody.innerHTML = `
             <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; cursor: pointer;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">
             <div style="flex: 1;">
                 <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</div>
                 <div style="color: #e2e8f0; line-height: 1.3;">${escapeHTML(c.content)}</div>
+                <div style="margin-top: 4px;">
+                    <button type="button" class="btn-reply-toggle" style="background:none; border:none; color:#64748b; font-size:0.75rem; cursor:pointer; padding:0; width:auto; text-decoration:underline;">Reply</button>
+                </div>
+                <div class="reply-input-wrap hidden" style="display: flex; gap: 6px; margin-top: 6px;">
+                    <input type="text" class="sub-reply-input" placeholder="Reply to @${escapeHTML(cleanAuthor)}..." style="margin-bottom: 0; padding: 6px; font-size: 0.8rem; flex: 1; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 6px;" autocomplete="off">
+                    <button type="button" class="submit-sub-reply-btn" style="width: auto; padding: 0 10px; font-size: 0.8rem;">Send</button>
+                </div>
             </div>
         `;
-        
-        div.querySelectorAll('.clickable-username').forEach(clickable => {
+
+        wrap.appendChild(commentBody);
+
+        commentBody.querySelectorAll('.clickable-username').forEach(clickable => {
             clickable.addEventListener('click', (e) => {
                 const u = e.currentTarget.getAttribute('data-username');
                 if (u) window.openUserProfileCard(u);
             });
         });
-        listEl.appendChild(div);
+
+        const replyToggle = commentBody.querySelector('.btn-reply-toggle');
+        const replyWrap = commentBody.querySelector('.reply-input-wrap');
+        if (replyToggle && replyWrap) {
+            replyToggle.addEventListener('click', () => {
+                if (!currentUser) {
+                    alert("Please log in to reply.");
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    if (document.getElementById('auth-email')) document.getElementById('auth-email').focus();
+                    return;
+                }
+                replyWrap.classList.toggle('hidden');
+                if (!replyWrap.classList.contains('hidden')) replyWrap.querySelector('input').focus();
+            });
+        }
+
+        const submitSubReplyBtn = commentBody.querySelector('.submit-sub-reply-btn');
+        const subReplyInput = commentBody.querySelector('.sub-reply-input');
+        if (submitSubReplyBtn && subReplyInput) {
+            const handleSubReply = () => {
+                submitComment(postId, cleanAuthor, subReplyInput.value, c.id);
+                subReplyInput.value = '';
+                replyWrap.classList.add('hidden');
+            };
+            submitSubReplyBtn.addEventListener('click', handleSubReply);
+            subReplyInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); handleSubReply(); }
+            });
+        }
+
+        // Recursively call and append any child replies directly under this wrapper
+        const children = repliesByParent[c.id] || [];
+        if (children.length > 0) {
+            const childContainer = document.createElement('div');
+            childContainer.style.cssText = "display: flex; flex-direction: column; gap: 6px;";
+            children.forEach(child => {
+                childContainer.appendChild(renderCommentNode(child, true));
+            });
+            wrap.appendChild(childContainer);
+        }
+
+        return wrap;
+    };
+
+    topLevelComments.forEach(c => {
+        listEl.appendChild(renderCommentNode(c, false));
     });
 }
 
-async function submitComment(postId, postAuthorUsername, content) {
+async function submitComment(postId, postAuthorUsername, content, parentId = null) {
     if (!currentUser) {
         alert("Please log in to comment.");
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3747,7 +3817,8 @@ async function submitComment(postId, postAuthorUsername, content) {
     const { error } = await db.from('post_comments').insert([{
         post_id: postId,
         author: currentUsername,
-        content: content.trim()
+        content: content.trim(),
+        parent_id: parentId
     }]);
 
     if (error) {
