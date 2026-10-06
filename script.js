@@ -2354,7 +2354,13 @@ function renderFormattedContent(text) {
         }
     });
 
-    return withBareUrls.replace(/\n/g, '<br>');
+    // NEW: Parse T/Thread_Name formatting (replaces underscores with spaces)
+    const withThreadLinks = withBareUrls.replace(/(^|\s)T\/([a-zA-Z0-9_.-]+)/g, (_match, space, threadRaw) => {
+        const actualName = threadRaw.replace(/_/g, ' ');
+        return `${space}<span class="clickable-thread" data-thread="${escapeHTML(actualName)}" title="Go to ${escapeHTML(actualName)}">T/${threadRaw}</span>`;
+    });
+
+    return withThreadLinks.replace(/\n/g, '<br>');
 }
 
 // --- PHOTO ATTACHMENTS ---
@@ -4497,6 +4503,36 @@ safeAddListener(forumForm, 'submit', async (event) => {
         }
     }
 });
+
+// --- THREAD LINK NAVIGATION (T/Thread_Name) ---
+document.addEventListener('click', async (e) => {
+    const threadLink = e.target.closest('.clickable-thread');
+    if (threadLink) {
+        const targetThread = threadLink.getAttribute('data-thread');
+        if (!targetThread) return;
+
+        // 1. Close active modals if clicked from a DM, Profile, or Fab modal
+        if (typeof closeMessagesModal === 'function') closeMessagesModal();
+        if (typeof closeFabModal === 'function') closeFabModal();
+        if (dmModal) dmModal.classList.add('hidden');
+        if (userProfileModal) userProfileModal.classList.add('hidden');
+
+        // 2. Switch thread directly if not already active
+        if (activeThread !== targetThread) {
+            activeThread = targetThread;
+            cachedPosts = [];
+            postCacheMap.clear();
+            if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
+            renderJoinedThreadsSidebar();
+            updateThreadControlsUI();
+            await loadForumPosts();
+        }
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+});
+
 // --- THREAD BANNER LOGIC ---
 function renderThreadBanner() {
     const container = document.getElementById('thread-banner-container');
