@@ -633,6 +633,7 @@ function openSettingsModal() {
     }
     syncPrivacyDesc();
     switchSettingsTab('profile');
+    if (typeof loadUserInvites === 'function') loadUserInvites(); // Sync active invites
     
     if (notificationsModal) notificationsModal.classList.add('hidden');
     if (userProfileModal) userProfileModal.classList.add('hidden');
@@ -1550,7 +1551,33 @@ safeAddListener(authForm, 'submit', async (e) => {
             alert("Username already taken. Please choose another.");
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = "Sign Up";
-            if (window.turnstile) turnstile.reset(); // Reset widget for fresh token
+            if (window.turnstile) turnstile.reset();
+            return;
+        }
+
+        // --- NEW: Web of Trust Invite Check ---
+        const inviteCodeInput = document.getElementById('auth-invite-code');
+        const inviteCode = inviteCodeInput ? inviteCodeInput.value.trim() : "";
+        if (!inviteCode) {
+            alert("A Golden Invite Code is required to join Turing's Gate.");
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = "Sign Up";
+            if (window.turnstile) turnstile.reset();
+            return;
+        }
+
+        const { data: inviteData, error: inviteErr } = await db
+            .from('invitations')
+            .select('id, status')
+            .eq('code', inviteCode)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+        if (inviteErr || !inviteData) {
+            alert("Invalid or already claimed invite code.");
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = "Sign Up";
+            if (window.turnstile) turnstile.reset();
             return;
         }
 
@@ -1572,7 +1599,14 @@ safeAddListener(authForm, 'submit', async (e) => {
             return;
         }
 
-        alert("Account created successfully!");
+        // Mark invite as claimed securely from the client side
+        if (inviteCode) {
+            await db.from('invitations')
+                .update({ status: 'claimed' })
+                .eq('code', inviteCode);
+        }
+
+        alert("Account created successfully! Welcome to the network.");
         authForm.reset();
         if (window.turnstile) turnstile.reset();
     } else {
@@ -3865,6 +3899,7 @@ function renderCurrentFeed() {
 
 async function loadForumPosts() {
     updateThreadControlsUI();
+    if (typeof syncLiveThread === 'function') syncLiveThread(activeThread); // Join Realtime Chat Room
     if (!db || !forumFeed) return;
 
     const thisFetchId = ++currentFetchId;
@@ -4658,3 +4693,186 @@ async function initLiveUserCount() {
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'profiles' }, updateCount)
         .subscribe();
 }
+
+
+// --- WEB OF TRUST: INVITES LOGIC ---
+async function loadUserInvites() {
+    const container = document.getElementById('invites-container');
+    const btn = document.getElementById('generate-invite-btn');
+    if (!container || !btn || !currentUser || !db) return;
+
+    const { data: invites } = await db.from('invitations')
+        .select('*')
+        .eq('inviter_id', currentUser.id)
+        .order('created_at', { ascending: false });
+
+    container.innerHTML = '';
+    const inviteList = invites || [];
+    
+    // Hard Limit to 3 active invites per human to manufacture scarcity
+    if (inviteList.length >= 3) {
+        btn.style.display = 'none';
+    } else {
+        btn.style.display = 'block';
+        btn.textContent = `+ Generate Invite Link (${3 - inviteList.length} remaining)`;
+    }
+
+    if (inviteList.length === 0) {
+        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">No invites generated yet.</div>';
+        return;
+    }
+
+    inviteList.forEach(inv => {
+        const div = document.createElement('div');
+        div.className = 'invite-code-box';
+        const isClaimed = inv.status === 'claimed';
+        div.innerHTML = `
+            <span style="opacity: ${isClaimed ? '0.5' : '1'}; text-decoration: ${isClaimed ? 'line-through' : 'none'};">${inv.code}</span>
+            <button type="button" class="btn-copy-invite" ${isClaimed ? 'disabled style="background:#475569;"' : ''}>
+                ${isClaimed ? 'Claimed' : 'Copy'}
+            </button>
+        `;
+        
+        if (!isClaimed) {
+            const copyBtn = div.querySelector('.btn-copy-invite');
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(inv.code);
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+            });
+        }
+        container.appendChild(div);
+    });
+}
+
+safeAddListener(document.getElementById('generate-invite-btn'), 'click', async () => {
+    if (!currentUser || !db) return;
+    const btn = document.getElementById('generate-invite-btn');
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    // Generate a random 8-character hex code
+    const newCode = 'TG-' + Math.random().toString(16).substr(2, 8).toUpperCase();
+
+    const { error } = await db.from('invitations').insert([{
+        inviter_id: currentUser.id,
+        code: newCode,
+        status: 'pending'
+    }]);
+
+    if (error) {
+        alert("Could not generate invite: " + error.message);
+    }
+    
+    btn.disabled = false;
+    await loadUserInvites();
+});
+
+
+// --- SYNCHRONOUS LIVE EVENTS LOGIC ---
+let liveThreadSubscription = null;
+const liveChatModal = document.getElementById('live-chat-modal');
+const liveChatInput = document.getElementById('live-chat-input');
+const liveChatHistory = document.getElementById('live-chat-history');
+
+safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
+    if (!currentUser) {
+        alert("Please log in to join the live chat.");
+        return;
+    }
+    document.getElementById('live-chat-thread-name').textContent = activeThread;
+    liveChatModal.classList.remove('hidden');
+    setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+    scrollToBottomLiveChat();
+});
+
+safeAddListener(document.getElementById('close-live-chat-btn'), 'click', () => {
+    liveChatModal.classList.add('hidden');
+});
+
+function scrollToBottomLiveChat() {
+    if (liveChatHistory) {
+        liveChatHistory.scrollTop = liveChatHistory.scrollHeight;
+    }
+}
+
+function renderLiveChatBubble(username, avatarUrl, message) {
+    if (!liveChatHistory) return;
+    const isMine = username === currentUsername;
+    const div = document.createElement('div');
+    div.style.cssText = `display: flex; gap: 8px; margin-bottom: 6px; align-items: flex-start; justify-content: ${isMine ? 'flex-end' : 'flex-start'};`;
+    
+    const avatarHtml = `<img src="${avatarUrl || DEFAULT_AVATAR}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">`;
+    const bubbleHtml = `
+        <div style="background: ${isMine ? '#10b981' : '#1e293b'}; color: ${isMine ? '#0f172a' : '#e2e8f0'}; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; max-width: 85%; word-wrap: break-word;">
+            ${!isMine ? `<div style="font-size:0.7rem; font-weight:bold; color:#38bdf8; margin-bottom:2px;">@${escapeHTML(username)}</div>` : ''}
+            ${escapeHTML(message)}
+        </div>
+    `;
+
+    div.innerHTML = isMine ? bubbleHtml + avatarHtml : avatarHtml + bubbleHtml;
+    liveChatHistory.appendChild(div);
+    scrollToBottomLiveChat();
+}
+
+async function syncLiveThread(threadName) {
+    if (!db) return;
+    
+    // Cleanup old subscription to prevent dual-broadcasting
+    if (liveThreadSubscription) {
+        await liveThreadSubscription.unsubscribe();
+        db.removeChannel(liveThreadSubscription);
+    }
+    
+    const safeName = threadName.replace(/[^a-zA-Z0-9]/g, '_');
+    const userIdentifier = currentUsername || 'guest_' + Math.floor(Math.random() * 10000);
+
+    liveThreadSubscription = db.channel(`live_watercooler_${safeName}`, {
+        config: {
+            presence: { key: userIdentifier },
+            broadcast: { self: true } // receive our own messages back to render them
+        }
+    });
+
+    liveThreadSubscription
+        .on('presence', { event: 'sync' }, () => {
+            const state = liveThreadSubscription.presenceState();
+            const count = Object.keys(state).length;
+            const badge = document.getElementById('live-viewers-badge');
+            const modalBadge = document.getElementById('live-chat-viewer-count');
+            if (badge) badge.textContent = count;
+            if (modalBadge) modalBadge.textContent = count;
+        })
+        .on('broadcast', { event: 'chat_msg' }, (payload) => {
+            renderLiveChatBubble(payload.payload.username, payload.payload.avatar, payload.payload.text);
+        })
+        .subscribe(async (status) => {
+            if (status === 'SUBSCRIBED' && currentUser) {
+                await liveThreadSubscription.track({ online_at: new Date().toISOString() });
+            }
+        });
+        
+    // Clear ephemeral history visually when switching threads
+    if (liveChatHistory) {
+        liveChatHistory.innerHTML = '<div class="no-posts" style="font-size: 0.8rem;">Welcome to the ephemeral live chat. Messages are not saved.</div>';
+    }
+}
+
+safeAddListener(document.getElementById('live-chat-form'), 'submit', (e) => {
+    e.preventDefault();
+    const text = liveChatInput.value.trim();
+    if (!text || !liveThreadSubscription || !currentUser) return;
+
+    // Send payload via Supabase Realtime (No database row gets written)
+    liveThreadSubscription.send({
+        type: 'broadcast',
+        event: 'chat_msg',
+        payload: {
+            username: currentUsername,
+            avatar: currentAvatarUrl,
+            text: text
+        }
+    });
+
+    liveChatInput.value = '';
+});
