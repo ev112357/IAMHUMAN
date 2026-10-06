@@ -346,6 +346,11 @@
         .profile-section { border-top: 1px solid #334155; padding-top: 16px; margin-top: 16px; }
         .hidden { display: none !important; }
         .hidden-honeypot { display: none !important; visibility: hidden !important; }
+        .invite-code-box { background: #0f172a; border: 1px dashed #38bdf8; padding: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-family: monospace; font-size: 0.9rem; color: #e2e8f0; }
+        .btn-copy-invite { background: #38bdf8; color: #0f172a; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: bold; }
+        .live-chat-btn { background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; color: #10b981; border-radius: 20px; padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; margin-left: 6px; }
+        .live-chat-btn:hover { background: #10b981; color: #0f172a; }
+        .live-pulse { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; animation: pulse 2s infinite; }
         /* UI Upgrades CSS */
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .skeleton-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
@@ -490,6 +495,8 @@ img, video, canvas, pre, code {
                         <div id="username-field-group" class="hidden">
                             <label for="auth-username">Unique Username</label>
                             <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
+                            <label for="auth-invite-code" style="margin-top:10px; color:#10b981;">Golden Invite Code (Required)</label>
+                            <input type="text" id="auth-invite-code" placeholder="Enter your invite code" autocomplete="off">
                         </div>
 
                         <label for="auth-email">Email</label>
@@ -533,6 +540,7 @@ img, video, canvas, pre, code {
                     <div class="thread-badge-wrap">
                         <h2 style="margin-bottom: 0; font-size: 1.25rem;">📜 <span id="current-thread-title">Welcome & Security</span></h2>
                         <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
+                        <button type="button" id="open-live-chat-btn" class="live-chat-btn"><div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)</button>
                     </div>
                     <div class="thread-actions-bar">
                         <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
@@ -776,6 +784,13 @@ img, video, canvas, pre, code {
                     <button type="button" id="settings-logout-btn" class="secondary" style="margin-top: 10px; border-color: #ef4444; color: #ef4444;">Log Out</button>
                 </div>
 
+                <div class="profile-section" style="border-top: 1px solid #10b981; margin-top: 20px; padding-top: 14px;">
+                    <label style="color: #10b981; font-weight: 700;">Golden Invites (Web of Trust)</label>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">You are responsible for the humans you invite. If they spam, your human score drops.</p>
+                    <div id="invites-container" style="margin-bottom: 10px;"></div>
+                    <button type="button" id="generate-invite-btn" style="background: #10b981; color: #0f172a;">+ Generate Invite Link</button>
+                </div>
+
                 <div class="profile-section" style="border-top: 1px solid #ef4444; margin-top: 20px; padding-top: 14px;">
                     <label style="color: #ef4444; font-weight: 700;">Danger Zone</label>
                     <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">Permanently delete your human profile and erase credentials.</p>
@@ -953,6 +968,26 @@ img, video, canvas, pre, code {
                 <button id="final-delete-thread-btn" class="danger" style="flex: 1;">Confirm Delete</button>
                 <button id="cancel-delete-thread-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
             </div>
+        </div>
+    </div>
+
+    <!-- LIVE CHAT MODAL -->
+    <div id="live-chat-modal" class="modal-overlay hidden" style="z-index: 10008;">
+        <div class="modal-box" style="height: 80vh; max-height: 700px; display: flex; flex-direction: column; padding: 16px;">
+            <div class="modal-header" style="margin-bottom: 8px; padding-bottom: 8px;">
+                <h2 style="font-size: 1.15rem; color: #10b981;">🔴 Live: <span id="live-chat-thread-name"></span></h2>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <span style="font-size: 0.8rem; color: #94a3b8;"><strong id="live-chat-viewer-count" style="color:#10b981;">1</strong> online</span>
+                    <button id="close-live-chat-btn" class="close-btn">&times;</button>
+                </div>
+            </div>
+            <div id="live-chat-history" class="chat-history" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 8px; background: #020617; border-radius: 8px; border: 1px solid #1e293b;">
+                <div class="no-posts" style="font-size: 0.8rem;">Welcome to the ephemeral live chat. Messages are not saved.</div>
+            </div>
+            <form id="live-chat-form" style="display: flex; gap: 8px; flex-shrink: 0;">
+                <input type="text" id="live-chat-input" placeholder="Send a live message..." autocomplete="off" style="margin-bottom: 0; flex: 1;">
+                <button type="submit" style="width: auto; padding: 0 16px; background: #10b981; color: #0f172a;">Send</button>
+            </form>
         </div>
     </div>
 
