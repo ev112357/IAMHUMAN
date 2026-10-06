@@ -4820,9 +4820,31 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
         alert("Please log in to join the live chat.");
         return;
     }
+    
+    const role = getThreadRole(activeThread);
+    const canBypassLock = (role === 'Owner' || role === 'Site Admin');
+
+    const chatForm = document.getElementById('live-chat-form');
+    const lockedMsg = document.getElementById('live-chat-locked-msg');
+
+    // If chat is locked AND the user isn't an admin/owner, hide the form and show the lock
+    if (!window.currentLiveChatIsOpen && !canBypassLock) {
+        if (chatForm) chatForm.classList.add('hidden');
+        if (lockedMsg) lockedMsg.classList.remove('hidden');
+    } else {
+        // Otherwise, show the typing bar
+        if (chatForm) chatForm.classList.remove('hidden');
+        if (lockedMsg) lockedMsg.classList.add('hidden');
+    }
+
     document.getElementById('live-chat-thread-name').textContent = activeThread;
     liveChatModal.classList.remove('hidden');
-    setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+    
+    // Only auto-focus the input if they are allowed to type
+    if (window.currentLiveChatIsOpen || canBypassLock) {
+        setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+    }
+    
     scrollToBottomLiveChat();
 });
 
@@ -4902,6 +4924,12 @@ safeAddListener(document.getElementById('live-chat-form'), 'submit', (e) => {
     e.preventDefault();
     const text = liveChatInput.value.trim();
     if (!text || !liveThreadSubscription || !currentUser) return;
+
+    const role = getThreadRole(activeThread);
+    if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
+        alert("Chat is currently locked. Message blocked.");
+        return;
+    }
 
     // Send payload via Supabase Realtime (No database row gets written)
     liveThreadSubscription.send({
@@ -5041,46 +5069,7 @@ function evaluateLiveChatStatus(threadData) {
     }
 }
 
-// Override original live chat click listener to handle locked state UI
-const oldLiveBtn = document.getElementById('open-live-chat-btn');
-if (oldLiveBtn) {
-    // Clone and replace to kill the old event listener
-    const newLiveBtn = oldLiveBtn.cloneNode(true);
-    oldLiveBtn.parentNode.replaceChild(newLiveBtn, oldLiveBtn);
-    
-    newLiveBtn.addEventListener('click', () => {
-        if (!currentUser) {
-            alert("Please log in to join the live chat.");
-            return;
-        }
-        
-        const role = getThreadRole(activeThread);
-        const canBypassLock = (role === 'Owner' || role === 'Site Admin');
 
-        const chatForm = document.getElementById('live-chat-form');
-        const lockedMsg = document.getElementById('live-chat-locked-msg');
-
-        // If chat is locked AND the user isn't an admin/owner, hide the form and show the lock
-        if (!window.currentLiveChatIsOpen && !canBypassLock) {
-            if (chatForm) chatForm.classList.add('hidden');
-            if (lockedMsg) lockedMsg.classList.remove('hidden');
-        } else {
-            // Otherwise, show the typing bar
-            if (chatForm) chatForm.classList.remove('hidden');
-            if (lockedMsg) lockedMsg.classList.add('hidden');
-        }
-
-        document.getElementById('live-chat-thread-name').textContent = activeThread;
-        liveChatModal.classList.remove('hidden');
-        
-        // Only auto-focus the input if they are allowed to type
-        if (window.currentLiveChatIsOpen || canBypassLock) {
-            setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
-        }
-        
-        scrollToBottomLiveChat();
-    });
-}
 // Configuration Modal UI
 safeAddListener(scheduleCheckbox, 'change', (e) => {
     scheduleOptionsBox.style.opacity = e.target.checked ? '1' : '0.5';
@@ -5154,29 +5143,3 @@ safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e)
     btn.textContent = 'Save Settings';
 });
 
-// Hijack realtime chat send so it fails if user tries to bypass UI via console
-const oldLiveChatForm = document.getElementById('live-chat-form');
-if (oldLiveChatForm) {
-    const newLiveChatForm = oldLiveChatForm.cloneNode(true);
-    oldLiveChatForm.parentNode.replaceChild(newLiveChatForm, oldLiveChatForm);
-    
-    newLiveChatForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const text = document.getElementById('live-chat-input').value.trim();
-        if (!text || !liveThreadSubscription || !currentUser) return;
-
-        const role = getThreadRole(activeThread);
-        if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
-            alert("Chat is currently locked. Message blocked.");
-            return;
-        }
-
-        liveThreadSubscription.send({
-            type: 'broadcast',
-            event: 'chat_msg',
-            payload: { username: currentUsername, avatar: currentAvatarUrl, text: text }
-        });
-
-        document.getElementById('live-chat-input').value = '';
-    });
-}
