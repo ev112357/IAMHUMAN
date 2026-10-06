@@ -351,6 +351,13 @@
         .live-chat-btn { background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; color: #10b981; border-radius: 20px; padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; margin-left: 6px; }
         .live-chat-btn:hover { background: #10b981; color: #0f172a; }
         .live-pulse { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; animation: pulse 2s infinite; }
+        .live-chat-btn.locked { background: rgba(220, 38, 38, 0.1); border-color: #dc2626; color: #dc2626; }
+        .live-chat-btn.locked:hover { background: #dc2626; color: #0f172a; }
+        .live-pulse.locked { background: #dc2626; box-shadow: 0 0 8px #dc2626; animation: none; }
+        .edited-badge { background: #1e293b; border: 1px dashed #475569; color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-size: 0.65rem; cursor: pointer; transition: color 0.2s; white-space: nowrap; }
+        .edited-badge:hover { color: #38bdf8; border-color: #38bdf8; }
+        .history-item { background: #0f172a; border-left: 2px solid #38bdf8; padding: 10px; margin-bottom: 8px; font-size: 0.85rem; border-radius: 4px; color: #e2e8f0; }
+        .history-time { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; display: block; }
         /* UI Upgrades CSS */
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .skeleton-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
@@ -545,6 +552,7 @@ img, video, canvas, pre, code {
                     <div class="thread-actions-bar">
                         <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
                         <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
+                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
                         <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden">🗑 Delete</button>
                     </div>
                 </div>
@@ -968,6 +976,88 @@ img, video, canvas, pre, code {
                 <button id="final-delete-thread-btn" class="danger" style="flex: 1;">Confirm Delete</button>
                 <button id="cancel-delete-thread-btn" class="secondary" style="margin-top: 0; flex: 1;">Cancel</button>
             </div>
+        </div>
+    </div>
+
+    <!-- POST EDIT MODAL -->
+    <div id="post-edit-modal" class="modal-overlay hidden" style="z-index: 10009;">
+        <div class="modal-box modal-box-small">
+            <div class="modal-header">
+                <h2>✏️ Edit Post</h2>
+                <button id="close-post-edit-btn" class="close-btn">&times;</button>
+            </div>
+            <form id="post-edit-form" style="display: flex; flex-direction: column; flex: 1;">
+                <input type="hidden" id="edit-post-id">
+                <textarea id="edit-post-text" required style="min-height: 140px; margin-bottom: 12px;"></textarea>
+                <button type="submit" id="submit-edit-btn">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- EDIT HISTORY MODAL -->
+    <div id="edit-history-modal" class="modal-overlay hidden" style="z-index: 10010;">
+        <div class="modal-box modal-box-small" style="max-height: 70vh;">
+            <div class="modal-header">
+                <h2>🕒 Edit History</h2>
+                <button id="close-edit-history-btn" class="close-btn">&times;</button>
+            </div>
+            <div id="edit-history-list" style="overflow-y: auto; display: flex; flex-direction: column;">
+                <div class="no-posts">Loading history...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE CHAT CONFIG MODAL -->
+    <div id="chat-config-modal" class="modal-overlay hidden" style="z-index: 10011;">
+        <div class="modal-box modal-box-small">
+            <div class="modal-header">
+                <h2 style="color: #10b981;">⚙️️ Live Chat Settings</h2>
+                <button id="close-chat-config-btn" class="close-btn">&times;</button>
+            </div>
+            <form id="chat-config-form" style="display: flex; flex-direction: column;">
+                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; color: #ef4444; font-weight: bold;">
+                    <input type="checkbox" id="chat-manual-lock-chk" style="width: auto; margin: 0;">
+                    Force Lock Chat (Overrides schedule)
+                </label>
+
+                <div style="background: #0f172a; padding: 12px; border-radius: 8px; border: 1px solid #334155; margin-bottom: 16px;">
+                    <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; cursor: pointer; color: #38bdf8;">
+                        <input type="checkbox" id="chat-schedule-enable-chk" style="width: auto; margin: 0;">
+                        Enable Weekly Auto-Schedule
+                    </label>
+                    <div id="schedule-options" style="opacity: 0.5; pointer-events: none; transition: opacity 0.2s;">
+                        <label>Active Days</label>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                            <label><input type="checkbox" class="sched-day" value="Sun"> Sun</label>
+                            <label><input type="checkbox" class="sched-day" value="Mon"> Mon</label>
+                            <label><input type="checkbox" class="sched-day" value="Tue"> Tue</label>
+                            <label><input type="checkbox" class="sched-day" value="Wed"> Wed</label>
+                            <label><input type="checkbox" class="sched-day" value="Thu"> Thu</label>
+                            <label><input type="checkbox" class="sched-day" value="Fri"> Fri</label>
+                            <label><input type="checkbox" class="sched-day" value="Sat"> Sat</label>
+                        </div>
+                        <div style="display: flex; gap: 12px; margin-bottom: 12px;">
+                            <div style="flex: 1;">
+                                <label>Start Time</label>
+                                <input type="time" id="chat-sched-start" value="19:00" style="padding:8px; border-radius:6px; background:#1e293b; color:#fff; border:1px solid #475569; width:100%;">
+                            </div>
+                            <div style="flex: 1;">
+                                <label>End Time</label>
+                                <input type="time" id="chat-sched-end" value="20:00" style="padding:8px; border-radius:6px; background:#1e293b; color:#fff; border:1px solid #475569; width:100%;">
+                            </div>
+                        </div>
+                        <label>Timezone</label>
+                        <select id="chat-sched-tz" style="padding:8px; border-radius:6px; background:#1e293b; border:1px solid #475569; color:#fff;">
+                            <option value="America/Toronto">Eastern Time (EST/EDT)</option>
+                            <option value="America/Chicago">Central Time (CST/CDT)</option>
+                            <option value="America/Denver">Mountain Time (MST/MDT)</option>
+                            <option value="America/Los_Angeles">Pacific Time (PST/PDT)</option>
+                            <option value="Europe/London">London (GMT/BST)</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" id="save-chat-settings-btn" style="background: #10b981;">Save Settings</button>
+            </form>
         </div>
     </div>
 
