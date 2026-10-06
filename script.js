@@ -3493,7 +3493,7 @@ function createPostCardElement(post) {
     let actionButtonsHtml = `
         <div class="post-admin-actions">
             <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
-            <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share</button>
+            <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></button>
             ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑 Delete</button>` : ''}
         </div>
     `;
@@ -3971,6 +3971,22 @@ async function navigateToPost(postId) {
 
 
 // --- SHARING LOGIC ---
+
+async function incrementShareCount(postId) {
+    const post = postCacheMap.get(Number(postId));
+    if (!post) return;
+    
+    // Update local memory and UI immediately
+    post.shares = (Number(post.shares) || 0) + 1;
+    const countSpan = document.getElementById(`share-count-${postId}`);
+    if (countSpan) countSpan.textContent = post.shares;
+
+    // Push update to Supabase silently
+    if (db) {
+        await db.from('Posts').update({ shares: post.shares }).eq('id', postId);
+    }
+}
+
 safeAddListener(closeShareModalBtn, 'click', () => { if(shareModal) shareModal.classList.add('hidden'); });
 safeAddListener(shareModal, 'click', (e) => { if(e.target === shareModal) shareModal.classList.add('hidden'); });
 
@@ -4033,6 +4049,7 @@ safeAddListener(nativeShareBtn, 'click', async () => {
                 text: "Check out this post on Turing's Gate!",
                 url: currentSharePostUrl
             });
+            await incrementShareCount(currentSharePostId);
             if (shareModal) shareModal.classList.add('hidden');
         } catch (err) {
             console.log("Native share cancelled or failed", err);
@@ -4046,6 +4063,7 @@ safeAddListener(nativeShareBtn, 'click', async () => {
 safeAddListener(copyLinkBtn, 'click', async () => {
     try {
         await navigator.clipboard.writeText(currentSharePostUrl);
+        await incrementShareCount(currentSharePostId);
         const originalText = copyLinkBtn.textContent;
         copyLinkBtn.textContent = '✅ Link Copied!';
         setTimeout(() => { copyLinkBtn.textContent = originalText; if(shareModal) shareModal.classList.add('hidden'); }, 1500);
@@ -4087,6 +4105,7 @@ safeAddListener(internalShareBtn, 'click', async () => {
     // Trigger unread notification state for recipients
     await db.from('chat_messages').update({ is_read: false }).eq('conversation_id', selectedConvId).neq('sender_id', currentUser.id);
 
+    await incrementShareCount(currentSharePostId);
     alert("Post shared in your messages!");
     if (shareModal) shareModal.classList.add('hidden');
     internalShareBtn.textContent = 'Send Message';
