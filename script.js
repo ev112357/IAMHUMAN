@@ -1842,8 +1842,28 @@ safeAddListener(threadSearchInput, 'input', () => {
 
         const label = document.createElement('span');
         label.style.fontWeight = '600';
-        label.style.color = '#e2e8f0';
+        label.style.color = '#38bdf8';
+        label.style.cursor = 'pointer';
+        label.style.textDecoration = 'underline';
+        label.style.textUnderlineOffset = '2px';
+        label.title = 'Click to view thread';
         label.textContent = t.name;
+
+        // Allow anyone (guests included) to click the name to view the thread
+        label.addEventListener('click', async () => {
+            activeThread = t.name;
+            threadSearchInput.value = '';
+            threadDiscoveryBox.classList.add('hidden');
+            
+            cachedPosts = [];
+            postCacheMap.clear();
+            if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
+            renderJoinedThreadsSidebar();
+            updateThreadControlsUI();
+            await loadForumPosts();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
 
         const actionBtn = document.createElement('button');
         actionBtn.type = 'button';
@@ -4506,6 +4526,7 @@ async function initLiveUserCount() {
     // Deep Linking: Check if the user arrived via a Shared Link
     const urlParams = new URLSearchParams(window.location.search);
     const targetPostId = urlParams.get('post');
+    const targetThreadName = urlParams.get('thread');
 
     if (targetPostId) {
         if (db) {
@@ -4521,6 +4542,17 @@ async function initLiveUserCount() {
         setTimeout(() => navigateToPost(targetPostId), 600);
         
         // Clean the URL bar so it doesn't look messy after they arrive
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (targetThreadName) {
+        // Deep Link directly to a Thread (e.g., /?thread=Philosophy)
+        const decodedThread = decodeURIComponent(targetThreadName);
+        const matchedThread = allCloudThreads.find(t => t.name.toLowerCase() === decodedThread.toLowerCase());
+        if (matchedThread) {
+            activeThread = matchedThread.name;
+        } else {
+            activeThread = decodedThread;
+        }
+        await loadForumPosts();
         window.history.replaceState({}, document.title, window.location.pathname);
     } else {
         await loadForumPosts();
