@@ -358,6 +358,14 @@
         .edited-badge:hover { color: #38bdf8; border-color: #38bdf8; }
         .history-item { background: #0f172a; border-left: 2px solid #38bdf8; padding: 10px; margin-bottom: 8px; font-size: 0.85rem; border-radius: 4px; color: #e2e8f0; }
         .history-time { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; display: block; }
+        .poll-container { margin-top: 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; }
+        .poll-option-btn { width: 100%; text-align: left; background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 10px 14px; border-radius: 6px; cursor: pointer; transition: all 0.2s; margin-bottom: 8px; font-size: 0.9rem; }
+        .poll-option-btn:hover { background: #334155; border-color: #38bdf8; }
+        .poll-result-bar-wrap { position: relative; background: #1e293b; border-radius: 6px; overflow: hidden; margin-bottom: 8px; border: 1px solid #334155; display: flex; align-items: center; min-height: 38px; }
+        .poll-result-fill { position: absolute; top: 0; left: 0; height: 100%; background: rgba(56, 189, 248, 0.2); z-index: 1; border-right: 2px solid #38bdf8; transition: width 0.5s ease-out; }
+        .poll-result-fill.winner { background: rgba(34, 197, 94, 0.2); border-color: #22c55e; }
+        .poll-result-text { position: relative; z-index: 2; display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0 14px; font-size: 0.9rem; color: #f8fafc; pointer-events: none; }
+        .poll-meta { font-size: 0.75rem; color: #94a3b8; margin-top: 8px; text-align: right; }
         /* UI Upgrades CSS */
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         .skeleton-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
@@ -642,12 +650,31 @@ img, video, canvas, pre, code {
                         <button type="button" id="open-link-modal-btn" class="editor-tool-btn">🔗 Link</button>
                         <label for="post-image-file" class="editor-tool-btn" style="margin-bottom: 0; cursor: pointer;">📷 Photo</label>
                         <input type="file" id="post-image-file" accept="image/*" style="display: none;">
+                        <button type="button" id="toggle-poll-btn" class="editor-tool-btn">📊 Poll</button>
                     </div>
                 </div>
 
                 <div id="post-photo-preview-bar" class="post-photo-preview hidden">
                     <span id="post-photo-filename">📎 Photo attached</span>
                     <button type="button" id="remove-post-photo-btn" style="background: none; border: none; color: #ef4444; width: auto; padding: 0; cursor: pointer; font-size: 0.85rem;">Remove ✕</button>
+                </div>
+
+                <!-- NEW: Poll Builder UI -->
+                <div id="poll-builder-container" class="hidden" style="background: #0f172a; border: 1px solid #334155; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                    <label style="color: #38bdf8; font-size: 0.85rem; margin-bottom: 8px;">Poll Options (Max 6)</label>
+                    <div id="poll-options-list" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;">
+                        <input type="text" class="poll-option-input" placeholder="Option 1" autocomplete="off" style="margin-bottom: 0; padding: 8px; font-size: 0.85rem;">
+                        <input type="text" class="poll-option-input" placeholder="Option 2" autocomplete="off" style="margin-bottom: 0; padding: 8px; font-size: 0.85rem;">
+                    </div>
+                    <button type="button" id="add-poll-option-btn" class="secondary" style="width: auto; padding: 4px 10px; font-size: 0.75rem; margin-top: 0; margin-bottom: 12px;">+ Add Option</button>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <label style="margin-bottom: 0; font-size: 0.8rem;">Duration:</label>
+                        <select id="poll-duration-select" style="margin-bottom: 0; padding: 6px; font-size: 0.8rem; width: auto;">
+                            <option value="1">1 Day</option>
+                            <option value="3">3 Days</option>
+                            <option value="7" selected>7 Days</option>
+                        </select>
+                    </div>
                 </div>
 
                 <textarea id="forum-post" placeholder="Type or paste your thoughts..." style="flex: 1; min-height: 140px;"></textarea>
