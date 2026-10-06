@@ -4744,11 +4744,17 @@ async function loadUserInvites() {
     const inviteList = invites || [];
     
     // Hard Limit to 3 active invites per human to manufacture scarcity
-    if (inviteList.length >= 3) {
+    // Hard Limit to 3 active invites per human (Unlimited for Site Admin)
+    const isAdmin = isSiteAdmin();
+    if (!isAdmin && inviteList.length >= 3) {
         btn.style.display = 'none';
     } else {
         btn.style.display = 'block';
-        btn.textContent = `+ Generate Invite Link (${3 - inviteList.length} remaining)`;
+        if (isAdmin) {
+            btn.textContent = `+ Generate Invite Link (Unlimited Admin)`;
+        } else {
+            btn.textContent = `+ Generate Invite Link (${3 - inviteList.length} remaining)`;
+        }
     }
 
     if (inviteList.length === 0) {
@@ -5035,7 +5041,7 @@ function evaluateLiveChatStatus(threadData) {
     }
 }
 
-// Override original live chat click listener to block if closed
+// Override original live chat click listener to handle locked state UI
 const oldLiveBtn = document.getElementById('open-live-chat-btn');
 if (oldLiveBtn) {
     // Clone and replace to kill the old event listener
@@ -5049,19 +5055,32 @@ if (oldLiveBtn) {
         }
         
         const role = getThreadRole(activeThread);
-        // Only owners/admins can bypass a locked chat
-        if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
-            alert("This live chat is currently locked or outside of its scheduled hours.");
-            return;
+        const canBypassLock = (role === 'Owner' || role === 'Site Admin');
+
+        const chatForm = document.getElementById('live-chat-form');
+        const lockedMsg = document.getElementById('live-chat-locked-msg');
+
+        // If chat is locked AND the user isn't an admin/owner, hide the form and show the lock
+        if (!window.currentLiveChatIsOpen && !canBypassLock) {
+            if (chatForm) chatForm.classList.add('hidden');
+            if (lockedMsg) lockedMsg.classList.remove('hidden');
+        } else {
+            // Otherwise, show the typing bar
+            if (chatForm) chatForm.classList.remove('hidden');
+            if (lockedMsg) lockedMsg.classList.add('hidden');
         }
 
         document.getElementById('live-chat-thread-name').textContent = activeThread;
         liveChatModal.classList.remove('hidden');
-        setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+        
+        // Only auto-focus the input if they are allowed to type
+        if (window.currentLiveChatIsOpen || canBypassLock) {
+            setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
+        }
+        
         scrollToBottomLiveChat();
     });
 }
-
 // Configuration Modal UI
 safeAddListener(scheduleCheckbox, 'change', (e) => {
     scheduleOptionsBox.style.opacity = e.target.checked ? '1' : '0.5';
