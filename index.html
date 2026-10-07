@@ -365,6 +365,8 @@
         .btn-copy-invite { background: #38bdf8; color: #0f172a; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: bold; width: auto !important; margin: 0 !important; }
         .btn-clear-invite { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: bold; width: auto !important; margin: 0 !important; transition: all 0.15s ease; }
         .btn-clear-invite:hover { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.15); }
+        .btn-clear-invite { background: transparent; border: 1px solid #475569; color: #94a3b8; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: bold; width: auto !important; margin: 0 !important; transition: all 0.15s ease; }
+        .btn-clear-invite:hover { border-color: #ef4444; color: #ef4444; background: rgba(239, 68, 68, 0.15); }
         .live-chat-btn { width: auto; flex-shrink: 0; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; color: #10b981; border-radius: 20px; padding: 4px 10px; font-size: 0.75rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; }
         .live-chat-btn:hover { background: #10b981; color: #0f172a; }
         .live-pulse { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981; animation: pulse 2s infinite; }
@@ -572,6 +574,7 @@ img, video, canvas, pre, code {
                     <div class="thread-badge-wrap">
                         <h2 style="margin-bottom: 0; font-size: 1.25rem; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">📜 <span id="current-thread-title">Welcome & Security</span></h2>
                         <div style="display: flex; align-items: center; gap: 8px; margin-left: auto; flex-shrink: 0;">
+                            <span id="thread-member-count-badge" class="thread-role-badge" style="background: #0f172a; border: 1px solid #334155; color: #94a3b8; display: inline-flex; align-items: center; gap: 5px;">👥 <span id="thread-member-count">...</span></span>
                             <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
                             <button type="button" id="open-live-chat-btn" class="live-chat-btn"><div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)</button>
                         </div>
