@@ -551,29 +551,37 @@ img, video, canvas, pre, code {
                     <div class="thread-banner-gradient"></div>
                 </div>
 
-                <div class="thread-header-bar" style="flex-wrap: nowrap;">
+                <div class="thread-header-bar">
                     <!-- LEFT SIDE: Thread Title -->
-                    <div style="flex: 1; min-width: 0; margin-right: 16px;">
-                        <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 6px; min-width: 0;">
-                            <span style="flex-shrink: 0;">📜</span> 
-                            <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Welcome & Security</span>
+                    <div style="flex: 1 1 200px; min-width: 0; margin-right: 16px;">
+                        <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 6px;">
+                            <span style="flex-shrink: 0;">📜</span>
+                            <span id="current-thread-title" style="display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Welcome & Security</span>
                         </h2>
                     </div>
-                
-                    <!-- RIGHT SIDE: Role, Live Chat, and Action Buttons side-by-side -->
-                    <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end;">
-                        <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
-                        <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="margin-left: 0;">
-                            <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
-                        </button>
-                        <div class="thread-actions-bar" style="display: flex; align-items: center; gap: 8px;">
+
+                    <!-- RIGHT SIDE: Badges and Action Buttons -->
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+                        
+                        <!-- Role & Live Chat -->
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
+                            <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="margin-left: 0;">
+                                <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
+                            </button>
+                        </div>
+                        
+                        <!-- Thread Actions -->
+                        <div class="thread-actions-bar">
                             <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
                             <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
                             <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
                             <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden">🗑 Delete</button>
                         </div>
+                        
                     </div>
                 </div>
+                
                 <div id="forum-feed" style="width: 100%;">
                     <div class="no-posts">Loading posts...</div>
                 </div>
