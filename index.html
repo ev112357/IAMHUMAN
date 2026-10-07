@@ -551,26 +551,25 @@ img, video, canvas, pre, code {
                     <div class="thread-banner-gradient"></div>
                 </div>
 
-                <div class="thread-header-bar" style="flex-wrap: nowrap; align-items: flex-start;">
+                <div class="thread-header-bar" style="align-items: flex-start;">
                     
                     <!-- LEFT SIDE: Emoji & Thread Title -->
-                    <div class="thread-title-wrap" style="flex: 1 1 0%; min-width: 0; margin-right: 16px; margin-top: 4px;">
+                    <div style="flex: 1; min-width: 200px; margin-right: 16px;">
                         <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; justify-content: flex-start; gap: 8px;">
                             <span style="flex-shrink: 0;">📜</span>
-                            <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">Welcome & Security</span>
+                            <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Welcome & Security</span>
                         </h2>
                     </div>
 
-                    <!-- RIGHT SIDE: Fluid wrapper for all Badges and Buttons -->
-                    <div style="flex: 2 1 auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                    <!-- RIGHT SIDE: Badges, Chat, and Actions -->
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
                         <span id="current-user-thread-role" class="thread-role-badge badge-blue" style="margin: 0; white-space: nowrap;">Member</span>
                         
                         <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="width: auto !important; margin: 0; white-space: nowrap;">
                             <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
                         </button>
                         
-                        <!-- display: contents strips the wrapper boundaries, letting JS injected buttons flow perfectly side-by-side with Live Chat -->
-                        <div class="thread-actions-bar" style="display: contents;">
+                        <div class="thread-actions-bar" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
                             <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
                             <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
