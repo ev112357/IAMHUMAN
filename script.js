@@ -32,13 +32,16 @@ function safeAddListener(el, event, handler) {
 
 // Share Modal Elements
 const shareModal = document.getElementById('share-modal');
+const shareModalTitle = document.getElementById('share-modal-title');
+const shareThreadBtn = document.getElementById('share-thread-btn');
 const closeShareModalBtn = document.getElementById('close-share-modal-btn');
 const nativeShareBtn = document.getElementById('native-share-btn');
 const copyLinkBtn = document.getElementById('copy-link-btn');
 const shareDmSelect = document.getElementById('share-dm-select');
 const internalShareBtn = document.getElementById('internal-share-btn');
 
-let currentSharePostId = null;
+let currentShareType = 'post'; // 'post' or 'thread'
+let currentShareTarget = null; // Stores either numeric post ID or thread string
 let currentSharePostUrl = null;
 
 // DOM Elements - Auth & Nav
@@ -4265,83 +4268,111 @@ async function navigateToPost(postId) {
 // --- SHARING LOGIC ---
 
 async function incrementShareCount(postId) {
+    if (!postId || isNaN(postId)) return;
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
-    
-    // Update local memory and UI immediately
+
     post.shares = (Number(post.shares) || 0) + 1;
     const countSpan = document.getElementById(`share-count-${postId}`);
     if (countSpan) countSpan.textContent = post.shares;
 
-    // Push update to Supabase silently
     if (db) {
         await db.from('Posts').update({ shares: post.shares }).eq('id', postId);
     }
 }
 
-safeAddListener(closeShareModalBtn, 'click', () => { if(shareModal) shareModal.classList.add('hidden'); });
-safeAddListener(shareModal, 'click', (e) => { if(e.target === shareModal) shareModal.classList.add('hidden'); });
+safeAddListener(closeShareModalBtn, 'click', () => { if (shareModal) shareModal.classList.add('hidden'); });
+safeAddListener(shareModal, 'click', (e) => { if (e.target === shareModal) shareModal.classList.add('hidden'); });
 
+async function populateShareConversations() {
+    if (!shareDmSelect) return;
+    shareDmSelect.innerHTML = '<option value="">Select a friend or group...</option>';
+    if (internalShareBtn) internalShareBtn.disabled = true;
+
+    if (currentUser && db) {
+        const { data: memberships } = await db.from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
+
+        if (memberships && memberships.length > 0) {
+            const convIds = memberships.map(m => m.conversation_id);
+            const { data: convs } = await db.from('conversations').select('id, name, is_group').in('id', convIds);
+            const { data: allMembers } = await db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id);
+
+            const partnerIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
+            const { data: profiles } = partnerIds.length > 0 
+                ? await db.from('profiles').select('id, username').in('id', partnerIds) 
+                : { data: [] };
+
+            (convs || []).forEach(conv => {
+                let displayName = '';
+                if (conv.is_group) {
+                    displayName = `Group: ${conv.name}`;
+                } else {
+                    const partnerMem = (allMembers || []).find(m => m.conversation_id === conv.id);
+                    const pProfile = partnerMem ? (profiles || []).find(p => p.id === partnerMem.user_id) : null;
+                    displayName = pProfile ? `@${pProfile.username}` : 'Direct Message';
+                }
+
+                const option = document.createElement('option');
+                option.value = conv.id;
+                option.textContent = displayName;
+                shareDmSelect.appendChild(option);
+            });
+            shareDmSelect.disabled = false;
+        }
+    } else {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "Log in to share via DM";
+        shareDmSelect.appendChild(option);
+        shareDmSelect.disabled = true;
+    }
+}
+
+// Opens modal to share an individual post
 async function openShareModal(postId) {
-    currentSharePostId = postId;
-    // Construct the deep-link URL 
+    currentShareType = 'post';
+    currentShareTarget = postId;
     currentSharePostUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
 
-    if (shareDmSelect) {
-        shareDmSelect.innerHTML = '<option value="">Select a friend or group...</option>';
-        internalShareBtn.disabled = true;
-
-        if (currentUser && db) {
-            // Load conversations for the dropdown
-            const { data: memberships } = await db.from('conversation_members')
-                .select('conversation_id').eq('user_id', currentUser.id);
-
-            if (memberships && memberships.length > 0) {
-                const convIds = memberships.map(m => m.conversation_id);
-                const { data: convs } = await db.from('conversations').select('id, name, is_group').in('id', convIds);
-                const { data: allMembers } = await db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id);
-                
-                const partnerIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
-                const { data: profiles } = partnerIds.length > 0 ? await db.from('profiles').select('id, username').in('id', partnerIds) : { data: [] };
-
-                (convs || []).forEach(conv => {
-                    let displayName = '';
-                    if (conv.is_group) {
-                        displayName = `Group: ${conv.name}`;
-                    } else {
-                        const partnerMem = (allMembers || []).find(m => m.conversation_id === conv.id);
-                        const pProfile = partnerMem ? (profiles || []).find(p => p.id === partnerMem.user_id) : null;
-                        displayName = pProfile ? `@${pProfile.username}` : 'Empty Chat';
-                    }
-
-                    const option = document.createElement('option');
-                    option.value = conv.id;
-                    option.textContent = displayName;
-                    shareDmSelect.appendChild(option);
-                });
-            }
-        } else {
-            const option = document.createElement('option');
-            option.value = "";
-            option.textContent = "Log in to share via DM";
-            shareDmSelect.appendChild(option);
-            shareDmSelect.disabled = true;
-        }
-    }
-
+    if (shareModalTitle) shareModalTitle.textContent = '📤 Share Post';
+    await populateShareConversations();
     if (shareModal) shareModal.classList.remove('hidden');
 }
 
-// 1. Native OS Sharing (Triggers iOS/Android share drawer for iMessage, Insta, WhatsApp)
+// Opens modal to share an entire thread
+async function openShareThreadModal(threadName) {
+    currentShareType = 'thread';
+    currentShareTarget = threadName;
+    currentSharePostUrl = `${window.location.origin}${window.location.pathname}?thread=${encodeURIComponent(threadName)}`;
+
+    if (shareModalTitle) shareModalTitle.textContent = `📤 Share Thread: #${threadName}`;
+    await populateShareConversations();
+    if (shareModal) shareModal.classList.remove('hidden');
+}
+
+safeAddListener(shareThreadBtn, 'click', () => {
+    openShareThreadModal(activeThread);
+});
+
+// 1. Native OS Sharing
 safeAddListener(nativeShareBtn, 'click', async () => {
     if (navigator.share) {
         try {
+            const shareText = currentShareType === 'thread'
+                ? `Check out the #${currentShareTarget} thread on Turing's Gate!`
+                : "Check out this post on Turing's Gate!";
+
             await navigator.share({
                 title: "Turing's Gate",
-                text: "Check out this post on Turing's Gate!",
+                text: shareText,
                 url: currentSharePostUrl
             });
-            await incrementShareCount(currentSharePostId);
+
+            if (currentShareType === 'post') {
+                await incrementShareCount(currentShareTarget);
+            }
             if (shareModal) shareModal.classList.add('hidden');
         } catch (err) {
             console.log("Native share cancelled or failed", err);
@@ -4351,33 +4382,39 @@ safeAddListener(nativeShareBtn, 'click', async () => {
     }
 });
 
-// 2. Fallback Copy to Clipboard
+// 2. Clipboard Copy
 safeAddListener(copyLinkBtn, 'click', async () => {
     try {
         await navigator.clipboard.writeText(currentSharePostUrl);
-        await incrementShareCount(currentSharePostId);
+        if (currentShareType === 'post') {
+            await incrementShareCount(currentShareTarget);
+        }
         const originalText = copyLinkBtn.textContent;
         copyLinkBtn.textContent = '✅ Link Copied!';
-        setTimeout(() => { copyLinkBtn.textContent = originalText; if(shareModal) shareModal.classList.add('hidden'); }, 1500);
+        setTimeout(() => { 
+            copyLinkBtn.textContent = originalText; 
+            if (shareModal) shareModal.classList.add('hidden'); 
+        }, 1500);
     } catch (err) {
         alert("Failed to copy link.");
     }
 });
 
 safeAddListener(shareDmSelect, 'change', () => {
-    internalShareBtn.disabled = !shareDmSelect.value;
+    if (internalShareBtn) internalShareBtn.disabled = !shareDmSelect.value;
 });
 
-// 3. Send Internal DM
+// 3. Send via Internal DM
 safeAddListener(internalShareBtn, 'click', async () => {
     const selectedConvId = shareDmSelect.value;
-    if (!selectedConvId || !currentSharePostId || !currentUser) return;
+    if (!selectedConvId || !currentShareTarget || !currentUser) return;
 
     internalShareBtn.disabled = true;
     internalShareBtn.textContent = 'Sending...';
 
-    // Formats it so your existing Markdown renderer turns it into a clickable button/link
-    const formattedLink = `Check out this post: [View Post](${currentSharePostUrl})`;
+    const formattedLink = currentShareType === 'thread'
+        ? `Check out the #${currentShareTarget} community: [Open Thread](${currentSharePostUrl})`
+        : `Check out this post: [View Post](${currentSharePostUrl})`;
 
     const { error } = await db.from('chat_messages').insert([{
         conversation_id: selectedConvId,
@@ -4388,17 +4425,22 @@ safeAddListener(internalShareBtn, 'click', async () => {
     }]);
 
     if (error) {
-        alert(`Error sharing post: ${error.message}`);
+        alert(`Error sharing: ${error.message}`);
         internalShareBtn.disabled = false;
         internalShareBtn.textContent = 'Send Message';
         return;
     }
 
-    // Trigger unread notification state for recipients
-    await db.from('chat_messages').update({ is_read: false }).eq('conversation_id', selectedConvId).neq('sender_id', currentUser.id);
+    await db.from('chat_messages')
+        .update({ is_read: false })
+        .eq('conversation_id', selectedConvId)
+        .neq('sender_id', currentUser.id);
 
-    await incrementShareCount(currentSharePostId);
-    alert("Post shared in your messages!");
+    if (currentShareType === 'post') {
+        await incrementShareCount(currentShareTarget);
+    }
+
+    alert(currentShareType === 'thread' ? "Thread shared in your messages!" : "Post shared in your messages!");
     if (shareModal) shareModal.classList.add('hidden');
     internalShareBtn.textContent = 'Send Message';
 });
