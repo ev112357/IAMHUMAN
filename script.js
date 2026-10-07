@@ -1790,7 +1790,8 @@ async function syncCloudThreads() {
     allCloudThreads = mergedThreads;
     
     if (currentUser) {
-        myJoinedThreadNames = new Set(MANDATORY_THREADS);
+        // Guarantee Trending is always in the sidebar alongside mandatory threads
+        myJoinedThreadNames = new Set([...MANDATORY_THREADS, "Trending"]);
         
         const { data: memberships, error: memErr } = await db
             .from('forum_thread_members')
@@ -1801,7 +1802,7 @@ async function syncCloudThreads() {
         
         const dbJoinedNames = (memberships || []).map(m => m.thread_name);
         dbJoinedNames.forEach(name => myJoinedThreadNames.add(name));
-
+        
         // Migration / Auto-Join for Default Threads (v2 includes Trending)
         const autoJoinFlag = `has_auto_joined_defaults_v2_${currentUser.id}`;
         if (!localStorage.getItem(autoJoinFlag)) {
@@ -1820,50 +1821,143 @@ async function syncCloudThreads() {
         myJoinedThreadNames = new Set([...MANDATORY_THREADS, ...DEFAULT_THREADS]);
     }
 
+    // Fallback: If localStorage saved a thread that was deleted, reset gracefully to Welcome
+    if (allCloudThreads.length > 0 && !allCloudThreads.some(t => t.name.toLowerCase() === activeThread.toLowerCase())) {
+        activeThread = "Welcome & Security";
+        localStorage.setItem('forum_active_thread', activeThread);
+    }
+
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
 }
+
+function saveSidebarThreadOrder() {
+    if (!joinedThreadsContainer) return;
+    const items = Array.from(joinedThreadsContainer.querySelectorAll('.thread-nav-btn'));
+    const order = items.map(el => el.getAttribute('data-thread')).filter(Boolean);
+    const storageKey = currentUser ? `forum_thread_order_${currentUser.id}` : 'forum_thread_order_guest';
+    localStorage.setItem(storageKey, JSON.stringify(order));
+}
+
 function renderJoinedThreadsSidebar() {
     if (!joinedThreadsContainer) return;
     joinedThreadsContainer.innerHTML = '';
 
-    const joinedList = Array.from(myJoinedThreadNames);
+    const storageKey = currentUser ? `forum_thread_order_${currentUser.id}` : 'forum_thread_order_guest';
+    const savedOrder = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    let joinedList = Array.from(myJoinedThreadNames);
+
     if (joinedList.length === 0) {
         joinedThreadsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No threads joined.</div>';
         return;
     }
 
+    // Sort according to custom user preference
+    joinedList.sort((a, b) => {
+        const idxA = savedOrder.indexOf(a);
+        const idxB = savedOrder.indexOf(b);
+        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+        if (idxA !== -1) return -1;
+        if (idxB !== -1) return 1;
+        return 0;
+    });
+
     joinedList.forEach(tName => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
-        
+        const item = document.createElement('div');
+        item.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
+        item.setAttribute('data-thread', tName);
+        item.setAttribute('draggable', 'true');
+
         const isMandatory = MANDATORY_THREADS.includes(tName) || tName === "Trending";
         const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : (tName === "Trending" ? "⚡" : "💬"));
 
-        btn.innerHTML = `
-            <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>
-            ${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7;">Default</span>' : ''}
+        item.innerHTML = `
+            <div class="thread-nav-content">
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7; margin-left: 6px;">Default</span>' : ''}
+            </div>
+            <span class="thread-drag-handle" title="Drag to reorder">⋮⋮</span>
         `;
 
-        btn.addEventListener('click', async () => {
-            if (activeThread === tName) return;
-            activeThread = tName;
-            localStorage.setItem('forum_active_thread', activeThread);
-            
-            cachedPosts = [];
-            postCacheMap.clear();
-            if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+        // Click to switch active thread
+        const contentArea = item.querySelector('.thread-nav-content');
+        if (contentArea) {
+            contentArea.addEventListener('click', async () => {
+                if (activeThread === tName) return;
+                activeThread = tName;
+                localStorage.setItem('forum_active_thread', activeThread);
 
-            renderJoinedThreadsSidebar();
-            updateThreadControlsUI();
-            
-            await loadForumPosts();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+                cachedPosts = [];
+                postCacheMap.clear();
+                if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
+                renderJoinedThreadsSidebar();
+                updateThreadControlsUI();
+
+                await loadForumPosts();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        }
+
+        // --- DESKTOP DRAG & DROP ---
+        item.addEventListener('dragstart', (e) => {
+            item.classList.add('is-dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', tName);
         });
 
-        joinedThreadsContainer.appendChild(btn);
+        item.addEventListener('dragend', () => {
+            item.classList.remove('is-dragging');
+            saveSidebarThreadOrder();
+        });
+
+        // --- MOBILE TOUCH DRAG & DROP ---
+        const handle = item.querySelector('.thread-drag-handle');
+        if (handle) {
+            handle.addEventListener('touchstart', (e) => {
+                item.classList.add('is-dragging');
+            }, { passive: true });
+
+            handle.addEventListener('touchmove', (e) => {
+                e.preventDefault(); // Stop screen scrolling while dragging
+                const touch = e.touches[0];
+                
+                // Compare touch position directly against sibling items for fluid mobile swapping
+                const siblings = [...joinedThreadsContainer.querySelectorAll('.thread-nav-btn:not(.is-dragging)')];
+                const overSibling = siblings.find(sib => {
+                    const rect = sib.getBoundingClientRect();
+                    return touch.clientY >= rect.top && touch.clientY <= rect.bottom;
+                });
+
+                if (overSibling) {
+                    const rect = overSibling.getBoundingClientRect();
+                    const isAfter = touch.clientY > rect.top + rect.height / 2;
+                    joinedThreadsContainer.insertBefore(item, isAfter ? overSibling.nextSibling : overSibling);
+                }
+            }, { passive: false });
+
+            handle.addEventListener('touchend', () => {
+                item.classList.remove('is-dragging');
+                saveSidebarThreadOrder();
+            });
+        }
+
+        joinedThreadsContainer.appendChild(item);
     });
+
+    // Sidebar Container Dragover for Desktop
+    joinedThreadsContainer.ondragover = (e) => {
+        e.preventDefault();
+        const draggingEl = joinedThreadsContainer.querySelector('.is-dragging');
+        if (!draggingEl) return;
+
+        const siblings = [...joinedThreadsContainer.querySelectorAll('.thread-nav-btn:not(.is-dragging)')];
+        const nextSibling = siblings.find(sibling => {
+            const box = sibling.getBoundingClientRect();
+            return e.clientY <= box.top + box.height / 2;
+        });
+
+        joinedThreadsContainer.insertBefore(draggingEl, nextSibling || null);
+    };
 }
 
 // --- THREAD DISCOVERY ---
@@ -3581,7 +3675,8 @@ function sortPosts(posts) {
 
     let filtered = [...posts];
 
-    if (sortMode === 'trending') {
+    // Only apply the 7-day cutoff filter when not on the compiled Trending thread
+    if (sortMode === 'trending' && activeThread !== 'Trending') {
         filtered = filtered.filter(p => {
             if (p.is_pinned) return true;
             if (!p.created_at) return true;
@@ -3589,7 +3684,7 @@ function sortPosts(posts) {
             return postAge <= sevenDaysMs;
         });
     }
-
+    
     return filtered.sort((a, b) => {
         if (a.is_pinned && !b.is_pinned) return -1;
         if (!a.is_pinned && b.is_pinned) return 1;
@@ -3738,6 +3833,8 @@ function createPostCardElement(post) {
         ? `<span class="badge" style="font-size:0.65rem; background: #1e293b; border: 1px solid #475569; color: #94a3b8; margin-left: 4px;">${escapeHTML(authorFlair)}</span>` 
         : '';
 
+    const titleHtml = post.title ? `<div class="post-title-text">${escapeHTML(post.title)}</div>` : '';
+
     item.innerHTML = `
         <div class="vote-box">
             <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
@@ -3755,10 +3852,9 @@ function createPostCardElement(post) {
                     <span>${dateFormatted}</span>${post.is_edited ? `<span class="edited-badge view-edit-history" data-post-id="${post.id}">Edited 🕒</span>` : ''}
                 </div>
             </div>
-            <div class="post-content" id="post-text-${post.id}">${renderedBody}</div>
-            ${pollHtml}
-            ${photoHtml}
-            ${actionButtonsHtml}
+            ${titleHtml}
+            <div class="post-content" id="post-text-${post.id}">${renderedBody}</div>${pollHtml}
+            ${photoHtml}${actionButtonsHtml}
             
             <div id="comments-section-${post.id}" class="comments-section hidden" style="margin-top: 12px; border-top: 1px solid #334155; padding-top: 12px;">
                 <div id="comments-list-${post.id}" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; max-height: 200px; overflow-y: auto;"></div>
@@ -4241,6 +4337,8 @@ function resetTelemetryConsole() {
     mouseMovementsRecorded = 0;
     lastKeyTime = null;
     if (textBox) textBox.value = '';
+    const titleInput = document.getElementById('post-title-input');
+    if (titleInput) titleInput.value = '';
     selectedPostPhotoFile = null;
     if (postImageFile) postImageFile.value = '';
     if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
@@ -4668,7 +4766,9 @@ safeAddListener(forumForm, 'submit', async (event) => {
         return;
     }
 
-    // Capture text safely before any processing
+    // Capture title & body text safely before any processing
+    const postTitleInput = document.getElementById('post-title-input');
+    const postTitle = postTitleInput ? postTitleInput.value.trim() : "";
     const postContent = textBox ? textBox.value.trim() : "";
 
     let pollOptionsJSON = null;
@@ -4688,7 +4788,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
         pollExpiresAt = expDate.toISOString();
     }
 
-    if (postContent.length < 2 && !selectedPostPhotoFile && !pollOptionsJSON) {
+    if (postContent.length < 2 && !selectedPostPhotoFile && !pollOptionsJSON && !postTitle) {
         alert("Please enter a message, attach a photo, or create a poll.");
         return;
     }
@@ -4757,18 +4857,26 @@ safeAddListener(forumForm, 'submit', async (event) => {
             }
         }
 
-        // Insert into database
-        const { error } = await db
-            .from('Posts')
-            .insert([{ 
-                thread: targetThread, 
-                author: currentUsername, 
-                content: postContent,
-                image_url: postImageUrl,
-                poll_options: pollOptionsJSON,
-                poll_expires_at: pollExpiresAt
-            }]);
+        // Build payload with optional title
+        const insertPayload = { 
+            thread: targetThread, 
+            author: currentUsername, 
+            content: postContent,
+            image_url: postImageUrl,
+            poll_options: pollOptionsJSON,
+            poll_expires_at: pollExpiresAt
+        };
+        if (postTitle) insertPayload.title = postTitle;
 
+        // Insert into database with fallback in case 'title' column has not yet been added in Supabase
+        let { error } = await db.from('Posts').insert([insertPayload]);
+        if (error && error.message && error.message.toLowerCase().includes('title')) {
+            delete insertPayload.title;
+            insertPayload.content = postTitle ? `### ${postTitle}\n\n${postContent}` : postContent;
+            const retry = await db.from('Posts').insert([insertPayload]);
+            error = retry.error;
+        }
+        
         if (error) {
             alert(`Database Error: ${error.message}`);
             return;
