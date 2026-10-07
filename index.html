@@ -552,16 +552,29 @@ img, video, canvas, pre, code {
                 </div>
 
                 <div class="thread-header-bar">
-                    <div class="thread-badge-wrap">
-                        <h2 style="margin-bottom: 0; font-size: 1.25rem;">📜 <span id="current-thread-title">Welcome & Security</span></h2>
-                        <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
-                        <button type="button" id="open-live-chat-btn" class="live-chat-btn"><div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)</button>
+                    <!-- LEFT SIDE: Thread Title -->
+                    <div class="thread-title-wrap" style="flex: 1 1 200px; min-width: 0; padding-right: 12px;">
+                        <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 6px; min-width: 0;">
+                            <span style="flex-shrink: 0;">📜</span> 
+                            <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Welcome & Security</span>
+                        </h2>
                     </div>
-                    <div class="thread-actions-bar">
-                        <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
-                        <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
-                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
-                        <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden">🗑 Delete</button>
+                
+                    <!-- RIGHT SIDE: Badges, Live Chat, and Action Buttons -->
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
+                            <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="margin-left: 0;">
+                                <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
+                            </button>
+                        </div>
+                
+                        <div class="thread-actions-bar">
+                            <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
+                            <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
+                            <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
+                            <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden">🗑 Delete</button>
+                        </div>
                     </div>
                 </div>
 
