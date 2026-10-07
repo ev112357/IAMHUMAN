@@ -105,17 +105,18 @@
         .thread-header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
         .thread-badge-wrap { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
         .thread-role-badge { font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 700; white-space: nowrap; }
-        .thread-actions-bar { display: flex; gap: 8px; }
+        .thread-actions-bar { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; }
         .btn-thread-action { 
-            width: 125px !important; 
-            padding: 0 8px; 
-            font-size: 0.8rem; 
-            height: 36px; 
+            width: 98px !important; 
+            padding: 0 6px; 
+            font-size: 0.76rem; 
+            height: 34px; 
             white-space: nowrap; 
             margin-top: 0 !important; 
             display: inline-flex; 
             align-items: center; 
             justify-content: center; 
+            flex-shrink: 0;
         }
 
         .feed-toolbar { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; background-color: #0f172a; padding: 14px; border-radius: 10px; border: 1px solid #334155; }
@@ -823,7 +824,7 @@ img, video, canvas, pre, code {
 
                 <div class="profile-section" style="border-top: 1px solid #10b981; margin-top: 20px; padding-top: 14px;">
                     <label style="color: #10b981; font-weight: 700;">Golden Invites (Web of Trust)</label>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">You are responsible for the humans you invite. If they spam, your human score drops.</p>
+                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">You are allocated strictly <strong>3 lifetime invites</strong>. You are directly accountable for the humans you vouch for—if an invitee spams or automates, your human score drops.</p>
                     <div id="invites-container" style="margin-bottom: 10px;"></div>
                     <button type="button" id="generate-invite-btn" style="background: #10b981; color: #0f172a;">+ Generate Invite Link</button>
                 </div>
@@ -1179,9 +1180,12 @@ img, video, canvas, pre, code {
                 <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">3. Secure Row-Level State (RLS)</h3>
                 <p style="margin-bottom: 16px;">Direct API spam is nullified. All backend tables strictly enforce Row Level Security, rejecting any insertions from unauthenticated, unverified connections.</p>
                 
+                <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">4. Web of Trust & Lifetime Invites</h3>
+                <p style="margin-bottom: 16px;">Community growth is strictly bounded: each verified member receives only <strong>three lifetime invites</strong>. Inviting accounts binds your reputation ledger to theirs—if an invited user is flagged for automated posting, your human score drops accordingly. This model prevents Sybil farm creation.</p>
+
                 <div style="background: #0f172a; border: 1px dashed #475569; padding: 16px; border-radius: 8px; margin-top: 24px; text-align: center;">
                     <strong style="color: #38bdf8;">Current Status:</strong> You are protected by the Turing's Gate Defense Protocol.
-                </div>
+      </div>
             </div>
         </div>
     </div>
