@@ -2,6 +2,7 @@
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
 
+
 const db = (window.supabase && typeof window.supabase.createClient === 'function')
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
@@ -19,16 +20,20 @@ const db = (window.supabase && typeof window.supabase.createClient === 'function
     })
     : null;
 
+
 if (!db) console.error("Critical: window.supabase is not initialized.");
+
 
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["New User Discussion"];
 const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Trending"];
 
+
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
 }
+
 
 // Share Modal Elements
 const shareModal = document.getElementById('share-modal');
@@ -40,9 +45,11 @@ const copyLinkBtn = document.getElementById('copy-link-btn');
 const shareDmSelect = document.getElementById('share-dm-select');
 const internalShareBtn = document.getElementById('internal-share-btn');
 
+
 let currentShareType = 'post'; // 'post' or 'thread'
 let currentShareTarget = null; // Stores either numeric post ID or thread string
 let currentSharePostUrl = null;
+
 
 // DOM Elements - Auth & Nav
 const authPanelWrapper = document.getElementById('auth-panel-wrapper');
@@ -58,10 +65,12 @@ const authToggleBtn = document.getElementById('auth-toggle-btn');
 const currentUserTag = document.getElementById('current-user-tag');
 const logoutBtn = document.getElementById('logout-btn');
 
+
 // Security Whitepaper Elements
 const openSecurityBtn = document.getElementById('open-security-btn');
 const securityModal = document.getElementById('security-modal');
 const closeSecurityModalBtn = document.getElementById('close-security-modal-btn');
+
 
 // FAB Modal & Wrappers
 const desktopFab = document.getElementById('desktop-fab');
@@ -72,11 +81,13 @@ const closeFabModalBtn = document.getElementById('close-fab-modal-btn');
 const threadSearchSelect = document.getElementById('thread-search-select');
 const threadSuggestDropdown = document.getElementById('thread-suggest-dropdown');
 
+
 // Header Nav & Settings Triggers
 const openSettingsBtn = document.getElementById('open-settings-btn') || document.getElementById('open-profile-btn');
 const headerAvatarImg = document.getElementById('header-avatar-img');
 const headerAvatarFallback = document.getElementById('header-avatar-fallback');
 const postBarAvatar = document.getElementById('post-bar-avatar');
+
 
 // Notifications Tab Elements
 const openNotifBtn = document.getElementById('open-notif-btn');
@@ -86,12 +97,14 @@ const closeNotificationsBtn = document.getElementById('close-notifications-btn')
 const clearActivityNotifsBtn = document.getElementById('clear-activity-notifs-btn');
 const notificationsList = document.getElementById('notifications-list');
 
+
 // Mobile Bottom Navigation Elements
 const mobileTabBar = document.getElementById('mobile-tab-bar');
 const tabNavFeed = document.getElementById('tab-nav-feed');
 const tabNavMessages = document.getElementById('tab-nav-messages');
 const tabNavNotifs = document.getElementById('tab-nav-notifs');
 const tabNavSettings = document.getElementById('tab-nav-settings') || document.getElementById('tab-nav-profile');
+
 
 // FIX: Declare missing DOM variables to prevent ReferenceError crashes
 const mobileMsgBadge = document.getElementById('mobile-msg-badge');
@@ -105,14 +118,17 @@ const updatesModal = document.getElementById('updates-modal');
 const closeUpdatesModalBtn = document.getElementById('close-updates-modal-btn');
 const updatesModalFeed = document.getElementById('updates-modal-feed');
 
+
 // Security Whitepaper Listeners
 safeAddListener(openSecurityBtn, 'click', () => {
     if (securityModal) securityModal.classList.remove('hidden');
 });
 
+
 safeAddListener(closeSecurityModalBtn, 'click', () => {
     if (securityModal) securityModal.classList.add('hidden');
 });
+
 
 // Allow closing by clicking the dark background overlay
 safeAddListener(securityModal, 'click', (e) => {
@@ -121,6 +137,7 @@ safeAddListener(securityModal, 'click', (e) => {
     }
 });
 
+
 // Thread Sidebar & Discovery Elements
 const joinedThreadsContainer = document.getElementById('joined-threads-container');
 const sidebarNewThreadBtn = document.getElementById('sidebar-new-thread-btn');
@@ -128,6 +145,7 @@ const threadSearchInput = document.getElementById('thread-search-input');
 const threadDiscoveryBox = document.getElementById('thread-discovery-box');
 const postSortSelect = document.getElementById('post-sort-select');
 const joinLeaveActiveThreadBtn = document.getElementById('join-leave-active-thread-btn');
+
 
 // Forum & Active Thread Elements
 const forumForm = document.getElementById('forumForm');
@@ -139,12 +157,14 @@ const currentUserThreadRole = document.getElementById('current-user-thread-role'
 const managePermsBtn = document.getElementById('manage-perms-btn');
 const deleteThreadBtn = document.getElementById('delete-thread-btn');
 
+
 // Photo Attachment in Posts
 const postImageFile = document.getElementById('post-image-file');
 const postPhotoPreviewBar = document.getElementById('post-photo-preview-bar');
 const postPhotoFilename = document.getElementById('post-photo-filename');
 const removePostPhotoBtn = document.getElementById('remove-post-photo-btn');
 let selectedPostPhotoFile = null;
+
 
 // Safe Link Insertion Modal
 const openLinkModalBtn = document.getElementById('open-link-modal-btn');
@@ -154,17 +174,20 @@ const insertLinkForm = document.getElementById('insertLinkForm');
 const linkUrlInput = document.getElementById('link-url-input');
 const linkTextInput = document.getElementById('link-text-input');
 
+
 // Thread Creation Modal Elements
 const threadModal = document.getElementById('thread-modal');
 const closeThreadModalBtn = document.getElementById('close-thread-modal-btn');
 const createThreadForm = document.getElementById('createThreadForm');
 const newThreadTitleInput = document.getElementById('new-thread-title');
 
+
 // Thread Permissions Modal Elements
 const permsModal = document.getElementById('perms-modal');
 const closePermsModalBtn = document.getElementById('close-perms-modal-btn');
 const permsThreadName = document.getElementById('perms-thread-name');
 const permsUserList = document.getElementById('perms-user-list');
+
 
 // Thread Delete Confirmation Modal Elements
 const threadDeleteModal = document.getElementById('thread-delete-modal');
@@ -173,6 +196,7 @@ const cancelDeleteThreadBtn = document.getElementById('cancel-delete-thread-btn'
 const finalDeleteThreadBtn = document.getElementById('final-delete-thread-btn');
 const deleteThreadTargetName = document.getElementById('delete-thread-target-name');
 const deleteThreadConfirmInput = document.getElementById('delete-thread-confirm-input');
+
 
 // Settings Modal Elements
 const profileModal = document.getElementById('profile-modal');
@@ -184,12 +208,14 @@ const paneSettingsPrivacy = document.getElementById('pane-settings-privacy');
 const privacyToggleChk = document.getElementById('privacy-toggle-chk');
 const accountPrivacyDesc = document.getElementById('account-privacy-desc');
 
+
 const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
 const profileAvatarFile = document.getElementById('profile-avatar-file');
 const currentPasswordInput = document.getElementById('current-password-input');
 const newPasswordInput = document.getElementById('new-password-input');
 const confirmPasswordInput = document.getElementById('confirm-password-input');
 const updatePasswordBtn = document.getElementById('update-password-btn');
+
 
 const openDeleteModalBtn = document.getElementById('open-delete-modal-btn');
 const deleteConfirmModal = document.getElementById('delete-confirm-modal');
@@ -198,6 +224,7 @@ const deleteConfirmUserTag = document.getElementById('delete-confirm-user-tag');
 const deleteUsernameInput = document.getElementById('delete-username-input');
 const finalDeleteBtn = document.getElementById('final-delete-btn');
 const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
 
 // Public User Profile Card Elements
 const userProfileModal = document.getElementById('user-profile-modal');
@@ -211,6 +238,7 @@ const unaddConfirmBox = document.getElementById('unadd-confirm-box');
 const confirmUnaddBtn = document.getElementById('confirm-unadd-btn');
 const cancelUnaddBtn = document.getElementById('cancel-unadd-btn');
 
+
 // Profile History Tabs & Containers
 const userHistoryTabPosts = document.getElementById('user-history-tab-posts');
 const userHistoryTabComments = document.getElementById('user-history-tab-comments');
@@ -220,10 +248,12 @@ const userHistoryPrivateNotice = document.getElementById('user-history-private-n
 const userPostsCount = document.getElementById('user-posts-count');
 const userCommentsCount = document.getElementById('user-comments-count');
 
+
 let targetProfileUsername = null;
 let targetProfileId = null;
 let targetFriendshipRecord = null;
 let targetProfileIsPrivate = false;
+
 
 // Floating Telemetry HUD Elements
 const telemetryPill = document.getElementById('telemetry-pill');
@@ -235,6 +265,7 @@ const statTimer = document.getElementById('stat-timer');
 const statKeys = document.getElementById('stat-keys');
 const statSuspicion = document.getElementById('stat-suspicion');
 
+
 // CAPTCHA Suspension Modal Elements
 const captchaSuspensionModal = document.getElementById('captcha-suspension-modal');
 const captchaCanvas = document.getElementById('captchaCanvas');
@@ -243,6 +274,7 @@ const submitCaptchaBtn = document.getElementById('submit-captcha-btn');
 const refreshCaptchaBtn = document.getElementById('refresh-captcha-btn');
 const captchaStatusMsg = document.getElementById('captcha-status-msg');
 let currentCaptchaSecret = "";
+
 
 // Direct Messages & Groups Elements
 const openDmBtn = document.getElementById('open-dm-btn');
@@ -254,6 +286,7 @@ const topModalBar = document.getElementById('top-modal-bar');
 const sidebarPane = document.getElementById('sidebar-pane');
 const chatPane = document.getElementById('chat-pane');
 const backToListBtn = document.getElementById('back-to-list-btn');
+
 
 const addFriendInput = document.getElementById('add-friend-input');
 const addFriendBtn = document.getElementById('add-friend-btn');
@@ -267,11 +300,36 @@ const chatHeader = document.getElementById('chat-header');
 const chatMessages = document.getElementById('chat-messages');
 const chatPendingBanner = document.getElementById('chat-pending-banner');
 
+// --- 1-ON-1 AUDIO CALL DOM ELEMENTS ---
+const startCallBtn = document.getElementById('start-call-btn');
+const activeCallBar = document.getElementById('active-call-bar');
+const callPulseIndicator = document.getElementById('call-pulse-indicator');
+const callStatusText = document.getElementById('call-status-text');
+const callDurationText = document.getElementById('call-duration-text');
+const callMuteBtn = document.getElementById('call-mute-btn');
+const callHangupBtn = document.getElementById('call-hangup-btn');
+const incomingCallModal = document.getElementById('incoming-call-modal');
+const incomingCallerName = document.getElementById('incoming-caller-name');
+const acceptCallBtn = document.getElementById('accept-call-btn');
+const declineCallBtn = document.getElementById('decline-call-btn');
+const remoteAudioEl = document.getElementById('remote-audio');
+
+// --- 1-ON-1 AUDIO CALL STATE ---
+let activeCall = null; // { peerConnection, localStream, conversationId, partnerId, partnerUsername, isCaller, callChannel, callTimerInterval, callStartTime }
+let isMicMuted = false;
+let incomingCallData = null; // { callerId, callerUsername, conversationId }
+let userCallSignalingChannel = null;
+let ringtoneAudioCtx = null;
+let ringtoneInterval = null;
+let queuedIceCandidates = [];
+
+
 // DM Form Inputs
 const dmForm = document.getElementById('dm-form');
 const dmText = document.getElementById('dm-text');
 const dmImageInput = document.getElementById('dm-image-input');
 const dmSendBtn = document.getElementById('dm-send-btn');
+
 
 // Group Creator Elements
 const toggleGroupCreateBtn = document.getElementById('toggle-group-create-btn');
@@ -281,7 +339,9 @@ const groupFriendsChecklist = document.getElementById('group-friends-checklist')
 const createGroupConfirmBtn = document.getElementById('create-group-confirm-btn');
 const cancelGroupBtn = document.getElementById('cancel-group-btn');
 
+
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90' fill='%2364748b' viewBox='0 0 24 24'><circle cx='12' cy='8' r='4'/><path d='M12 14c-4.42 0-8 2.69-8 6v1h16v-1c0-3.31-3.58-6-8-6z'/></svg>";
+
 
 // App State
 let currentUser = null;
@@ -299,17 +359,20 @@ let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
 let notifPollInterval = null;
 
+
 // Thread State
 let allCloudThreads = []; 
 let myJoinedThreadNames = new Set(MANDATORY_THREADS);
 let activeThread = localStorage.getItem('forum_active_thread') || "Welcome & Security";
 let currentFetchId = 0;
 
+
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
 if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["New User Discussion"]) threadMetaMap["New User Discussion"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Trending"]) threadMetaMap["Trending"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+
 
 // Voting Cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
@@ -318,6 +381,7 @@ let cachedPosts = [];
 let cachedUpdates = [];
 let postCacheMap = new Map();
 let threadFlairMap = new Map();
+
 
 // Telemetry State
 let pageLoadTime = null; 
@@ -328,16 +392,19 @@ let mouseMovementsRecorded = 0;
 let timerInterval = null; 
 let isTimerRunning = false; 
 
+
 // Suspicion Ledger
 let suspicionScore = 0;
 let isSuspended = false;
 let lastPostTimestamp = 0;
+
 
 // IMAGE COMPRESSION MODULE
 // --- GLOBAL IMAGE COMPRESSION UTILITY ---
 async function compressImage(file, maxWidth = 1200, quality = 0.75) {
     // Exempt GIFs to preserve animation
     if (file.type === 'image/gif') return file;
+
 
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -350,15 +417,18 @@ async function compressImage(file, maxWidth = 1200, quality = 0.75) {
                 let width = img.width;
                 let height = img.height;
 
+
                 if (width > maxWidth) {
                     height = (maxWidth / width) * height;
                     width = maxWidth;
                 }
 
+
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
+
 
                 canvas.toBlob((blob) => {
                     if (!blob) { reject(new Error('Canvas empty')); return; }
@@ -375,6 +445,7 @@ async function compressImage(file, maxWidth = 1200, quality = 0.75) {
     });
 }
 
+
 // Setup Tab Text
 if (openSettingsBtn) {
     openSettingsBtn.title = "Settings";
@@ -388,7 +459,9 @@ if (tabNavSettings) {
     if (iconSpan) iconSpan.textContent = "⚙️";
 }
 
+
 // --- SETTINGS SUB-TABS (PROFILE & PRIVACY) ---
+
 
 function switchSettingsTab(tab) {
     if (tab === 'profile') {
@@ -420,8 +493,10 @@ function switchSettingsTab(tab) {
     }
 }
 
+
 safeAddListener(tabBtnSettingsProfile, 'click', () => switchSettingsTab('profile'));
 safeAddListener(tabBtnSettingsPrivacy, 'click', () => switchSettingsTab('privacy'));
+
 
 function syncPrivacyDesc() {
     if (!accountPrivacyDesc) return;
@@ -432,11 +507,13 @@ function syncPrivacyDesc() {
     }
 }
 
+
 safeAddListener(privacyToggleChk, 'change', async () => {
     if (!currentUser || !db) return;
     const newIsPrivate = privacyToggleChk.checked;
     currentUserIsPrivate = newIsPrivate;
     syncPrivacyDesc();
+
 
     const { error } = await db.from('profiles').update({ is_private: newIsPrivate }).eq('id', currentUser.id);
     if (error) {
@@ -447,7 +524,9 @@ safeAddListener(privacyToggleChk, 'change', async () => {
     }
 });
 
+
 // --- PUBLIC PROFILE HISTORY TABS (POSTS VS. COMMENTS) ---
+
 
 function switchUserHistoryTab(tab) {
     if (tab === 'posts') {
@@ -479,11 +558,14 @@ function switchUserHistoryTab(tab) {
     }
 }
 
+
 safeAddListener(userHistoryTabPosts, 'click', () => switchUserHistoryTab('posts'));
 safeAddListener(userHistoryTabComments, 'click', () => switchUserHistoryTab('comments'));
 
+
 async function loadProfileUserActivity(username, isPrivate) {
     if (!userPostsContainer || !userCommentsContainer) return;
+
 
     if (isPrivate) {
         if (userHistoryPrivateNotice) userHistoryPrivateNotice.classList.remove('hidden');
@@ -494,11 +576,14 @@ async function loadProfileUserActivity(username, isPrivate) {
         return;
     }
 
+
     if (userHistoryPrivateNotice) userHistoryPrivateNotice.classList.add('hidden');
     switchUserHistoryTab('posts');
 
+
     userPostsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading posts...</div>';
     userCommentsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">Loading comments...</div>';
+
 
     // 1. Fetch Posts
     const { data: posts } = await db
@@ -508,8 +593,10 @@ async function loadProfileUserActivity(username, isPrivate) {
         .order('id', { ascending: false })
         .limit(20);
 
+
     const postList = posts || [];
     if (userPostsCount) userPostsCount.textContent = postList.length;
+
 
     if (postList.length === 0) {
         userPostsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic; padding: 4px;">No posts yet.</div>';
@@ -538,6 +625,7 @@ async function loadProfileUserActivity(username, isPrivate) {
         });
     }
 
+
     // 2. Fetch Comments
     const { data: comments } = await db
         .from('post_comments')
@@ -546,8 +634,10 @@ async function loadProfileUserActivity(username, isPrivate) {
         .order('id', { ascending: false })
         .limit(20);
 
+
     const commentList = comments || [];
     if (userCommentsCount) userCommentsCount.textContent = commentList.length;
+
 
     if (commentList.length === 0) {
         userCommentsContainer.innerHTML = '<div style="font-size:0.8rem; color:#64748b; font-style:italic; padding: 4px;">No comments yet.</div>';
@@ -577,7 +667,9 @@ async function loadProfileUserActivity(username, isPrivate) {
     }
 }
 
+
 // --- DIRECT MODAL & VIEW OPENERS ---
+
 
 function openMessagesModal() {
     if (!currentUser) { 
@@ -593,10 +685,12 @@ function openMessagesModal() {
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'none';
 
+
     showSidebarViewOnMobile();
     refreshMessagingHub();
     setMobileTabActive('messages');
 }
+
 
 function openNotificationsModal() {
     if (!currentUser) { 
@@ -618,6 +712,7 @@ function openNotificationsModal() {
     setMobileTabActive('notifs');
 }
 
+
 function openSettingsModal() {
     if (!currentUser) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -626,11 +721,13 @@ function openSettingsModal() {
         return;
     }
 
+
     // Refresh avatar preview in settings
     const avatarPreview = document.getElementById('profile-preview-avatar');
     if (avatarPreview) {
         avatarPreview.src = currentAvatarUrl || DEFAULT_AVATAR;
     }
+
 
     if (privacyToggleChk) {
         privacyToggleChk.checked = currentUserIsPrivate;
@@ -646,6 +743,7 @@ function openSettingsModal() {
     setMobileTabActive('profile');
 }
 
+
 function closeMessagesModal() {
     if (dmModal) dmModal.classList.add('hidden');
     if (window.chatSubscription && db) {
@@ -656,14 +754,17 @@ function closeMessagesModal() {
     activeConversationPartnerId = null;
     activeConversationPartnerUsername = null;
 
+
     // Restore floating telemetry HUD
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'flex';
+
 
     showSidebarViewOnMobile();
     setMobileTabActive('feed');
     checkNotifications();
 }
+
 
 function setMobileTabActive(tabName) {
     [tabNavFeed, tabNavMessages, tabNavNotifs, tabNavSettings].forEach(btn => {
@@ -675,6 +776,7 @@ function setMobileTabActive(tabName) {
     else if (tabName === 'profile' && tabNavSettings) tabNavSettings.classList.add('active');
 }
 
+
 safeAddListener(tabNavFeed, 'click', () => {
     closeMessagesModal();
     if (notificationsModal) notificationsModal.classList.add('hidden');
@@ -684,13 +786,16 @@ safeAddListener(tabNavFeed, 'click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 
+
 safeAddListener(tabNavMessages, 'click', openMessagesModal);
 safeAddListener(tabNavNotifs, 'click', openNotificationsModal);
 safeAddListener(tabNavSettings, 'click', openSettingsModal);
 
+
 safeAddListener(openDmBtn, 'click', openMessagesModal);
 safeAddListener(openNotifBtn, 'click', openNotificationsModal);
 safeAddListener(openSettingsBtn, 'click', openSettingsModal);
+
 
 // Close button on messaging modal
 safeAddListener(closeDmBtn, 'click', (e) => {
@@ -698,12 +803,14 @@ safeAddListener(closeDmBtn, 'click', (e) => {
     closeMessagesModal();
 });
 
+
 // Click background backdrop to close messaging modal
 safeAddListener(dmModal, 'click', (e) => {
     if (e.target === dmModal) {
         closeMessagesModal();
     }
 });
+
 
 safeAddListener(closeNotificationsBtn, 'click', () => {
     if (notificationsModal) notificationsModal.classList.add('hidden');
@@ -714,22 +821,27 @@ safeAddListener(closeProfileBtn, 'click', () => {
     setMobileTabActive('feed');
 });
 
+
 safeAddListener(chatHeader, 'click', () => {
     if (activeConversationPartnerUsername) {
         window.openUserProfileCard(activeConversationPartnerUsername);
     }
 });
 
+
 safeAddListener(telemetryPill, 'click', () => {
     if (telemetryDrawer) telemetryDrawer.classList.toggle('hidden');
 });
+
 
 safeAddListener(closeHudBtn, 'click', (e) => {
     e.stopPropagation();
     if (telemetryDrawer) telemetryDrawer.classList.add('hidden');
 });
 
+
 // --- CAPTCHA CHALLENGE GATE ---
+
 
 function generateCaptchaCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -740,6 +852,7 @@ function generateCaptchaCode() {
     return code;
 }
 
+
 function drawCaptcha(code) {
     if (!captchaCanvas) return;
     const ctx = captchaCanvas.getContext('2d');
@@ -748,6 +861,7 @@ function drawCaptcha(code) {
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, captchaCanvas.width, captchaCanvas.height);
 
+
     for (let i = 0; i < 6; i++) {
         ctx.strokeStyle = `rgba(56, 189, 248, ${0.2 + Math.random() * 0.3})`;
         ctx.beginPath();
@@ -755,6 +869,7 @@ function drawCaptcha(code) {
         ctx.lineTo(Math.random() * captchaCanvas.width, Math.random() * captchaCanvas.height);
         ctx.stroke();
     }
+
 
     ctx.font = "bold 32px monospace";
     for (let i = 0; i < code.length; i++) {
@@ -767,13 +882,16 @@ function drawCaptcha(code) {
     }
 }
 
+
 function triggerSuspensionGate() {
     isSuspended = true;
     suspicionScore = Math.max(5, suspicionScore);
 
+
     // 1. Immediately dismiss posting & messaging modals
     closeFabModal();
     if (dmModal) dmModal.classList.add('hidden');
+
 
     // 2. Generate and display the CAPTCHA challenge on top of everything
     currentCaptchaSecret = generateCaptchaCode();
@@ -790,6 +908,7 @@ function triggerSuspensionGate() {
         captchaSuspensionModal.style.display = "flex";
     }
 
+
     // 3. Persist suspension lock to Supabase securely
     if (currentUser && db) {
         (async () => {
@@ -805,6 +924,7 @@ function triggerSuspensionGate() {
     }
 }
 
+
 safeAddListener(submitCaptchaBtn, 'click', async () => {
     const entered = (captchaInput ? captchaInput.value : "").trim().toUpperCase();
     
@@ -812,10 +932,12 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
         submitCaptchaBtn.disabled = true;
         submitCaptchaBtn.textContent = "Verifying...";
 
+
         try {
             isSuspended = false;
             suspicionScore = 0;
             updateSuspicionUI();
+
 
             if (currentUser && db) {
                 await db.from('profiles').update({ 
@@ -823,6 +945,7 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
                     suspicion_score: 0 
                 }).eq('id', currentUser.id);
             }
+
 
             if (captchaSuspensionModal) {
                 captchaSuspensionModal.classList.add('hidden');
@@ -853,6 +976,7 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
     }
 });
 
+
 function updateSuspicionUI() {
     if (statSuspicion) statSuspicion.textContent = `${suspicionScore} / 5`;
     if (pillSuspicionTag) {
@@ -866,11 +990,13 @@ function updateSuspicionUI() {
         }
     }
 
+
     if (statSuspicion) {
         if (suspicionScore === 0) statSuspicion.className = "badge badge-green";
         else if (suspicionScore < 5) statSuspicion.className = "badge badge-yellow";
         else statSuspicion.className = "badge badge-red";
     }
+
 
     // Immediately trigger CAPTCHA the instant the 5-point threshold is met
     if (suspicionScore >= 5 && !isSuspended) {
@@ -879,15 +1005,18 @@ function updateSuspicionUI() {
 }
 // --- PERMISSIONS HELPERS ---
 
+
 function isSiteAdmin(username = currentUsername) {
     if (!username) return false;
     return username.toLowerCase().replace('@', '') === SITE_ADMIN_USERNAME.toLowerCase();
 }
 
+
 function getThreadRole(threadName = activeThread, username = currentUsername) {
     if (!username) return "Guest";
     const cleanUser = username.toLowerCase().replace('@', '');
     if (cleanUser === SITE_ADMIN_USERNAME.toLowerCase()) return "Site Admin";
+
 
     const meta = threadMetaMap[threadName] || { owner: '', moderators: [], banned: [] };
     if (meta.owner && meta.owner.toLowerCase() === cleanUser) return "Owner";
@@ -895,6 +1024,7 @@ function getThreadRole(threadName = activeThread, username = currentUsername) {
     if (meta.banned && meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) return "Banned";
     return "Member";
 }
+
 
 function canDeletePost(post) {
     if (!currentUsername) return false;
@@ -905,12 +1035,14 @@ function canDeletePost(post) {
     return role === "Owner" || role === "Moderator";
 }
 
+
 function canDeleteThread(threadName = activeThread) {
     if (!currentUsername) return false;
     if (MANDATORY_THREADS.includes(threadName) || DEFAULT_THREADS.includes(threadName) || threadName === "Trending") return false;
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner";
 }
+
 
 function canManagePermissions(threadName = activeThread) {
     if (!currentUsername) return false;
@@ -919,11 +1051,13 @@ function canManagePermissions(threadName = activeThread) {
     return isSiteAdmin() || role === "Owner";
 }
 
+
 function canRevokePosting(threadName = activeThread) {
     if (!currentUsername) return false;
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner" || role === "Moderator";
 }
+
 
 function isUserBannedFromThread(threadName = activeThread, username = currentUsername) {
     if (!username) return false;
@@ -933,11 +1067,14 @@ function isUserBannedFromThread(threadName = activeThread, username = currentUse
     return meta.banned.map(u => u.toLowerCase()).includes(username.toLowerCase().replace('@', ''));
 }
 
+
 function saveThreadMeta() {
     localStorage.setItem('forum_thread_metadata', JSON.stringify(threadMetaMap));
 }
 
+
 // --- NOTIFICATIONS DISPATCHER & MANAGER ---
+
 
 async function sendNotification(targetUserId, type, entityId, message) {
     if (!db || !currentUser || !targetUserId || targetUserId === currentUser.id) return;
@@ -955,8 +1092,10 @@ async function sendNotification(targetUserId, type, entityId, message) {
     }
 }
 
+
 async function loadUserNotifications() {
     if (!currentUser || !db || !notificationsList) return;
+
 
     try {
         const { data: notifs, error } = await db
@@ -966,6 +1105,7 @@ async function loadUserNotifications() {
             .order('id', { ascending: false })
             .limit(40);
 
+
         // FIX: Expose hidden database blocks so notifications don't silently fail
         if (error) {
             console.error("Notifications Blocked:", error.message);
@@ -973,12 +1113,14 @@ async function loadUserNotifications() {
             return;
         }
 
+
         if (!notifs || notifs.length === 0) {
             notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
             if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
             if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
             return;
         }
+
 
         const unreadCount = notifs.filter(n => !n.is_read).length;
         if (unreadCount > 0) {
@@ -995,6 +1137,7 @@ async function loadUserNotifications() {
             if (activityNotifBadge) activityNotifBadge.classList.add('hidden');
             if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
         }
+
 
         notificationsList.innerHTML = '';
         notifs.forEach(n => {
@@ -1029,6 +1172,7 @@ async function loadUserNotifications() {
                 });
             }
 
+
             const clickUser = div.querySelector('.clickable-username');
             if (clickUser) {
                 clickUser.addEventListener('click', (e) => {
@@ -1037,8 +1181,10 @@ async function loadUserNotifications() {
                 });
             }
 
+
             notificationsList.appendChild(div);
         });
+
 
     } catch (e) {
         console.warn("Error loading activity notifications:", e);
@@ -1052,11 +1198,14 @@ safeAddListener(clearActivityNotifsBtn, 'click', async () => {
     if (mobileActivityBadge) mobileActivityBadge.classList.add('hidden');
 });
 
+
 // --- USER SCORE & PUBLIC PROFILE LOGIC ---
+
 
 async function calculateUserScore(username) {
     if (!username || !db) return 0;
     const cleanUser = username.toLowerCase().replace('@', '');
+
 
     try {
         const { data: posts } = await db
@@ -1064,19 +1213,23 @@ async function calculateUserScore(username) {
             .select('likes, dislikes')
             .ilike('author', cleanUser);
 
+
         let total = 0;
         (posts || []).forEach(p => {
             total += (Number(p.likes || 0) - Number(p.dislikes || 0));
         });
+
 
         const { data: comments } = await db
             .from('post_comments')
             .select('likes, dislikes')
             .ilike('author', cleanUser);
 
+
         (comments || []).forEach(c => {
             total += (Number(c.likes || 0) - Number(c.dislikes || 0));
         });
+
 
         return total;
     } catch (e) {
@@ -1085,11 +1238,14 @@ async function calculateUserScore(username) {
     }
 }
 
+
 async function updateProfileFriendButtonUI() {
     if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
     targetFriendshipRecord = null;
 
+
     const isOwnProfile = !currentUser || !targetProfileId || targetProfileUsername === currentUsername.toLowerCase().replace('@', '');
+
 
     if (isOwnProfile) {
         if (userCardAddFriendBtn) userCardAddFriendBtn.classList.add('hidden');
@@ -1097,8 +1253,10 @@ async function updateProfileFriendButtonUI() {
         return;
     }
 
+
     if (userCardAddFriendBtn) userCardAddFriendBtn.classList.remove('hidden');
     if (userCardMsgBtn) userCardMsgBtn.classList.remove('hidden');
+
 
     try {
         const { data: friendship } = await db
@@ -1107,7 +1265,9 @@ async function updateProfileFriendButtonUI() {
             .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfileId}),and(user_id.eq.${targetProfileId},friend_id.eq.${currentUser.id})`)
             .maybeSingle();
 
+
         targetFriendshipRecord = friendship;
+
 
         if (userCardAddFriendBtn) {
             if (friendship && friendship.status === 'accepted') {
@@ -1140,14 +1300,17 @@ async function updateProfileFriendButtonUI() {
     }
 }
 
+
 window.openUserProfileCard = async function(username) {
     if (!username || !userProfileModal) return;
     const cleanUser = username.toLowerCase().replace('@', '');
     targetProfileUsername = cleanUser;
 
+
     if (userCardUsername) userCardUsername.textContent = `@${cleanUser}`;
     if (userCardScore) userCardScore.textContent = '...';
     if (userCardPfp) userCardPfp.src = DEFAULT_AVATAR;
+
 
     try {
         const { data: profile } = await db
@@ -1155,6 +1318,7 @@ window.openUserProfileCard = async function(username) {
             .select('id, username, avatar_url, is_private')
             .ilike('username', cleanUser)
             .maybeSingle();
+
 
         if (profile) {
             targetProfileId = profile.id;
@@ -1172,18 +1336,23 @@ window.openUserProfileCard = async function(username) {
         targetProfileIsPrivate = false;
     }
 
+
     await updateProfileFriendButtonUI();
     userProfileModal.classList.remove('hidden');
+
 
     const score = await calculateUserScore(cleanUser);
     if (userCardScore) userCardScore.textContent = score > 0 ? `+${score}` : `${score}`;
 
+
     await loadProfileUserActivity(cleanUser, targetProfileIsPrivate);
 };
+
 
 safeAddListener(closeUserProfileBtn, 'click', () => {
     if (userProfileModal) userProfileModal.classList.add('hidden');
 });
+
 
 safeAddListener(userCardMsgBtn, 'click', async () => {
     if (!currentUser) {
@@ -1195,20 +1364,25 @@ safeAddListener(userCardMsgBtn, 'click', async () => {
     }
     if (!targetProfileId || !targetProfileUsername) return;
 
+
     if (userProfileModal) userProfileModal.classList.add('hidden');
     if (dmModal) dmModal.classList.remove('hidden');
+
 
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'none';
 
+
     showChatViewOnMobile();
     setMobileTabActive('messages');
+
 
     await startOrOpenDirectChat({
         id: targetProfileId,
         username: targetProfileUsername
     });
 });
+
 
 safeAddListener(userCardAddFriendBtn, 'click', async () => {
     if (!currentUser) {
@@ -1219,11 +1393,13 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
         return;
     }
 
+
     // 1. If already friends, toggle the unadd confirmation dialog
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'accepted') {
         if (unaddConfirmBox) unaddConfirmBox.classList.toggle('hidden');
         return;
     }
+
 
     // 2. If a request is already pending
     if (targetFriendshipRecord && targetFriendshipRecord.status === 'pending') {
@@ -1236,18 +1412,22 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
             userCardAddFriendBtn.disabled = true;
             userCardAddFriendBtn.textContent = 'Canceling...';
 
+
             const { error: delErr } = await db
                 .from('friendships')
                 .delete()
                 .eq('id', targetFriendshipRecord.id);
 
+
             userCardAddFriendBtn.disabled = false;
+
 
             if (delErr) {
                 alert(`Could not rescind request: ${delErr.message}`);
                 await updateProfileFriendButtonUI();
                 return;
             }
+
 
             targetFriendshipRecord = null;
             await updateProfileFriendButtonUI();
@@ -1256,11 +1436,14 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
         return;
     }
 
+
     if (!targetProfileId) return;
+
 
     // 3. Send new friend request
     userCardAddFriendBtn.disabled = true;
     userCardAddFriendBtn.innerHTML = `⏳ Pending`;
+
 
     const { data: newReq, error: insertErr } = await db
         .from('friendships')
@@ -1272,7 +1455,9 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
         .select()
         .single();
 
+
     userCardAddFriendBtn.disabled = false;
+
 
     if (insertErr) {
         alert(`Could not send request: ${insertErr.message}`);
@@ -1280,9 +1465,11 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
         return;
     }
 
+
     targetFriendshipRecord = newReq;
     await updateProfileFriendButtonUI();
     alert("friend request sent");
+
 
     await sendNotification(
         targetProfileId,
@@ -1291,8 +1478,10 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
         'sent you a friend request.'
     );
 
+
     refreshMessagingHub();
 });
+
 
 safeAddListener(confirmUnaddBtn, 'click', async () => {
     if (!targetFriendshipRecord) return;
@@ -1300,10 +1489,12 @@ safeAddListener(confirmUnaddBtn, 'click', async () => {
     const { error } = await db.from('friendships').delete().eq('id', targetFriendshipRecord.id);
     confirmUnaddBtn.disabled = false;
 
+
     if (error) {
         alert(`Error removing friend: ${error.message}`);
         return;
     }
+
 
     alert(`@${targetProfileUsername} has been removed from your friends.`);
     if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
@@ -1311,16 +1502,20 @@ safeAddListener(confirmUnaddBtn, 'click', async () => {
     refreshMessagingHub();
 });
 
+
 safeAddListener(cancelUnaddBtn, 'click', () => {
     if (unaddConfirmBox) unaddConfirmBox.classList.add('hidden');
 });
 
+
 // --- SESSION & AUTHENTICATION ---
+
 
 async function syncUserState(user) {
     if (user) {
         currentUser = user;
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
+
 
         // LINK DEVICE TO ONESIGNAL (Capacitor & Web compatible)
         try {
@@ -1335,6 +1530,7 @@ async function syncUserState(user) {
             console.warn("OneSignal login notice:", e);
         }
 
+
         if (currentUserTag) currentUserTag.textContent = `@${currentUsername}`;
         if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
@@ -1343,12 +1539,14 @@ async function syncUserState(user) {
         if (openDmBtn) openDmBtn.classList.remove('hidden');
         if (openSettingsBtn) openSettingsBtn.classList.remove('hidden');
 
+
         try {
             const { data: profile } = await db
                 .from('profiles')
                 .select('*')
                 .eq('id', currentUser.id)
                 .maybeSingle();
+
 
             if (profile) {
                 if (profile.username) {
@@ -1361,12 +1559,14 @@ async function syncUserState(user) {
                     userAvatarCache.set(currentUser.id, currentAvatarUrl);
                     usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
                     renderUserAvatar(currentAvatarUrl);
+        initUserCallSignaling();
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
                 if (privacyToggleChk) {
                     privacyToggleChk.checked = currentUserIsPrivate;
                 }
                 syncPrivacyDesc();
+
 
                 if (profile.suspicion_score != null) {
                     suspicionScore = profile.suspicion_score;
@@ -1380,11 +1580,17 @@ async function syncUserState(user) {
             console.warn("Profile synchronization notice:", err);
         }
 
+
         renderUserAvatar(currentAvatarUrl);
         await syncCloudThreads();
         checkNotifications();
         loadUserNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
+        cleanupCall();
+        if (userCallSignalingChannel && db) {
+            try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
+            userCallSignalingChannel = null;
+        }
         notifPollInterval = setInterval(() => {
             checkNotifications();
             loadUserNotifications();
@@ -1397,6 +1603,7 @@ async function syncUserState(user) {
         currentUserIsPrivate = false;
         suspicionScore = 0;
         updateSuspicionUI();
+
 
         // UNLINK DEVICE ON LOGOUT (Capacitor & Web compatible)
         try {
@@ -1411,11 +1618,13 @@ async function syncUserState(user) {
             console.warn("OneSignal logout notice:", e);
         }
 
+
         if (window.chatSubscription && db) {
             db.removeChannel(window.chatSubscription);
             window.chatSubscription = null;
         }
         if (notifPollInterval) clearInterval(notifPollInterval);
+
 
         if (openNotifBtn) openNotifBtn.classList.add('hidden');
         if (openDmBtn) openDmBtn.classList.add('hidden');
@@ -1435,21 +1644,26 @@ async function syncUserState(user) {
         if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
         if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
 
+
         await syncCloudThreads();
     }
+
 
     updateThreadControlsUI();
     loadForumPosts();
 }
 
+
 function renderUserAvatar(url) {
     const avatarEl = document.getElementById('profile-preview-avatar') || profilePreviewAvatar;
     const finalUrl = url || DEFAULT_AVATAR;
+
 
     if (avatarEl) {
         avatarEl.src = finalUrl;
         avatarEl.style.display = "block";
     }
+
 
     if (url) {
         if (headerAvatarImg) { headerAvatarImg.src = url; headerAvatarImg.classList.remove('hidden'); }
@@ -1466,7 +1680,9 @@ function renderUserAvatar(url) {
     }
 }
 
+
 let hasBooted = false;
+
 
 if (db) {
     db.auth.getSession().then(async ({ data: { session } }) => {
@@ -1478,9 +1694,11 @@ if (db) {
             initLiveUserCount();
             loadProminentUpdates();
 
+
             const urlParams = new URLSearchParams(window.location.search);
             const targetPostId = urlParams.get('post');
             const targetThreadName = urlParams.get('thread');
+
 
             if (targetPostId) {
                 await navigateToPost(targetPostId);
@@ -1496,12 +1714,14 @@ if (db) {
         }
     }).catch(e => console.warn("Session check error:", e));
 
+
     db.auth.onAuthStateChange(async (_event, session) => {
         if (hasBooted) {
             await syncUserState(session?.user || null);
         }
     });
 }
+
 
 safeAddListener(authToggleBtn, 'click', () => {
     isSignUpMode = !isSignUpMode;
@@ -1520,6 +1740,7 @@ safeAddListener(authToggleBtn, 'click', () => {
     }
 });
 
+
 safeAddListener(authForm, 'submit', async (e) => {
     e.preventDefault();
     const email = authEmailInput.value.trim();
@@ -1528,14 +1749,17 @@ safeAddListener(authForm, 'submit', async (e) => {
     // Grab the Cloudflare Turnstile token from the hidden input it generates
     const captchaToken = document.querySelector('[name="cf-turnstile-response"]')?.value;
 
+
     if (!captchaToken) {
         alert("Please complete the security check.");
         if (window.turnstile) turnstile.reset(); // ADD THIS LINE
         return;
     }
 
+
     authSubmitBtn.disabled = true;
     authSubmitBtn.textContent = isSignUpMode ? "Signing up..." : "Logging in...";
+
 
     if (isSignUpMode) {
         const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
@@ -1546,11 +1770,13 @@ safeAddListener(authForm, 'submit', async (e) => {
             return;
         }
 
+
         const { data: existingUser } = await db
             .from('profiles')
             .select('username')
             .eq('username', username)
             .maybeSingle();
+
 
         if (existingUser) {
             alert("Username already taken. Please choose another.");
@@ -1559,6 +1785,7 @@ safeAddListener(authForm, 'submit', async (e) => {
             if (window.turnstile) turnstile.reset();
             return;
         }
+
 
         // --- NEW: Web of Trust Invite Check ---
         const inviteCodeInput = document.getElementById('auth-invite-code');
@@ -1571,12 +1798,14 @@ safeAddListener(authForm, 'submit', async (e) => {
             return;
         }
 
+
         const { data: inviteData, error: inviteErr } = await db
             .from('invitations')
             .select('id, status')
             .eq('code', inviteCode)
             .eq('status', 'pending')
             .maybeSingle();
+
 
         if (inviteErr || !inviteData) {
             alert("Invalid or already claimed invite code.");
@@ -1585,6 +1814,7 @@ safeAddListener(authForm, 'submit', async (e) => {
             if (window.turnstile) turnstile.reset();
             return;
         }
+
 
         const { error } = await db.auth.signUp({
             email,
@@ -1595,8 +1825,10 @@ safeAddListener(authForm, 'submit', async (e) => {
             }
         });
 
+
         authSubmitBtn.disabled = false;
         authSubmitBtn.textContent = "Sign Up";
+
 
         if (error) {
             alert(`Sign up error: ${error.message}`);
@@ -1604,12 +1836,14 @@ safeAddListener(authForm, 'submit', async (e) => {
             return;
         }
 
+
         // Mark invite as claimed securely from the client side
         if (inviteCode) {
             await db.from('invitations')
                 .update({ status: 'claimed' })
                 .eq('code', inviteCode);
         }
+
 
         alert("Account created successfully! Welcome to the network.");
         authForm.reset();
@@ -1623,6 +1857,7 @@ safeAddListener(authForm, 'submit', async (e) => {
         
         authSubmitBtn.disabled = false;
         authSubmitBtn.textContent = "Log In";
+
 
         if (error) {
             alert(`Login error: ${error.message}`);
@@ -1639,7 +1874,9 @@ safeAddListener(logoutBtn, 'click', async () => {
     setMobileTabActive('feed');
 });
 
+
 // --- PROFILE SETTINGS PASSWORD & AVATAR LOGIC ---
+
 
 safeAddListener(profileAvatarFile, 'change', async () => {
     const rawFile = profileAvatarFile.files[0];
@@ -1648,30 +1885,37 @@ safeAddListener(profileAvatarFile, 'change', async () => {
     // Compress avatars heavily (max width 400px, 80% quality)
     const file = await compressImage(rawFile, 400, 0.8);
 
+
     const fileExt = file.name.split('.').pop();
     const filePath = `${currentUser.id}/avatar_${Date.now()}.${fileExt}`;
+
 
     const { error: uploadErr } = await db.storage
         .from('avatars')
         .upload(filePath, file, { upsert: true });
+
 
     if (uploadErr) {
         alert(`Avatar upload failed: ${uploadErr.message}`);
         return;
     }
 
+
     const { data: publicData } = db.storage.from('avatars').getPublicUrl(filePath);
     const newAvatarUrl = publicData.publicUrl;
+
 
     const { error: updateErr } = await db
         .from('profiles')
         .update({ avatar_url: newAvatarUrl })
         .eq('id', currentUser.id);
 
+
     if (updateErr) {
         alert(`Error updating profile: ${updateErr.message}`);
         return;
     }
+
 
     currentAvatarUrl = newAvatarUrl;
     userAvatarCache.set(currentUser.id, currentAvatarUrl);
@@ -1681,10 +1925,12 @@ safeAddListener(profileAvatarFile, 'change', async () => {
     alert("Avatar updated successfully!");
 });
 
+
 safeAddListener(updatePasswordBtn, 'click', async () => {
     const currentPassword = currentPasswordInput.value;
     const newPassword = newPasswordInput.value;
     const confirmPassword = confirmPasswordInput.value;
+
 
     if (!currentPassword) {
         alert("Please enter your current password.");
@@ -1699,13 +1945,16 @@ safeAddListener(updatePasswordBtn, 'click', async () => {
         return;
     }
 
+
     updatePasswordBtn.disabled = true;
     updatePasswordBtn.textContent = 'Verifying...';
+
 
     const { error: authErr } = await db.auth.signInWithPassword({
         email: currentUser.email,
         password: currentPassword
     });
+
 
     if (authErr) {
         updatePasswordBtn.disabled = false;
@@ -1714,11 +1963,14 @@ safeAddListener(updatePasswordBtn, 'click', async () => {
         return;
     }
 
+
     updatePasswordBtn.textContent = 'Updating...';
     const { error: updateErr } = await db.auth.updateUser({ password: newPassword });
 
+
     updatePasswordBtn.disabled = false;
     updatePasswordBtn.textContent = 'Update Password';
+
 
     if (updateErr) {
         alert(`Password change failed: ${updateErr.message}`);
@@ -1729,6 +1981,7 @@ safeAddListener(updatePasswordBtn, 'click', async () => {
         confirmPasswordInput.value = '';
     }
 });
+
 
 safeAddListener(openDeleteModalBtn, 'click', () => {
     if (deleteConfirmModal) deleteConfirmModal.classList.remove('hidden');
@@ -1745,27 +1998,33 @@ safeAddListener(finalDeleteBtn, 'click', async () => {
     const entered = (deleteUsernameInput ? deleteUsernameInput.value : "").trim().toLowerCase().replace('@', '');
     const expected = currentUsername.toLowerCase().replace('@', '');
 
+
     if (entered !== expected) {
         alert(`Username does not match. Please enter "@${currentUsername}" to confirm deletion.`);
         return;
     }
 
+
     finalDeleteBtn.disabled = true;
     finalDeleteBtn.textContent = 'Deleting...';
+
 
     await db.from('profiles').delete().eq('id', currentUser.id);
     await db.auth.signOut();
     alert("Your account has been deleted.");
 });
 
+
 // --- CLOUD THREADS & MEMBERSHIP SYNC ---
 async function syncCloudThreads() {
     if (!db) return;
+
 
     const { data: threads, error: threadErr } = await db
         .from('forum_threads')
         .select('*')
         .order('id', { ascending: true });
+
 
     // Ensure core threads are always present, even if DB is empty
     const coreThreads = [
@@ -1774,6 +2033,7 @@ async function syncCloudThreads() {
         { name: "New User Discussion", owner_username: "gemini" },
         { name: "Trending", owner_username: "gemini" }
     ];
+
 
     let mergedThreads = [];
     if (!threadErr && threads && threads.length > 0) {
@@ -1787,6 +2047,7 @@ async function syncCloudThreads() {
         mergedThreads = coreThreads;
     }
 
+
     allCloudThreads = mergedThreads;
     
     if (currentUser) {
@@ -1797,6 +2058,7 @@ async function syncCloudThreads() {
             .from('forum_thread_members')
             .select('thread_name')
             .eq('user_id', currentUser.id);
+
 
         if (memErr) console.error("Threads Blocked:", memErr.message);
         
@@ -1821,15 +2083,18 @@ async function syncCloudThreads() {
         myJoinedThreadNames = new Set([...MANDATORY_THREADS, ...DEFAULT_THREADS]);
     }
 
+
     // Fallback: If localStorage saved a thread that was deleted, reset gracefully to Welcome
     if (allCloudThreads.length > 0 && !allCloudThreads.some(t => t.name.toLowerCase() === activeThread.toLowerCase())) {
         activeThread = "Welcome & Security";
         localStorage.setItem('forum_active_thread', activeThread);
     }
 
+
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
 }
+
 
 function saveSidebarThreadOrder() {
     if (!joinedThreadsContainer) return;
@@ -1839,18 +2104,22 @@ function saveSidebarThreadOrder() {
     localStorage.setItem(storageKey, JSON.stringify(order));
 }
 
+
 function renderJoinedThreadsSidebar() {
     if (!joinedThreadsContainer) return;
     joinedThreadsContainer.innerHTML = '';
+
 
     const storageKey = currentUser ? `forum_thread_order_${currentUser.id}` : 'forum_thread_order_guest';
     const savedOrder = JSON.parse(localStorage.getItem(storageKey) || '[]');
     let joinedList = Array.from(myJoinedThreadNames);
 
+
     if (joinedList.length === 0) {
         joinedThreadsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No threads joined.</div>';
         return;
     }
+
 
     // Sort according to custom user preference
     joinedList.sort((a, b) => {
@@ -1862,14 +2131,17 @@ function renderJoinedThreadsSidebar() {
         return 0;
     });
 
+
     joinedList.forEach(tName => {
         const item = document.createElement('div');
         item.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
         item.setAttribute('data-thread', tName);
         item.setAttribute('draggable', 'true');
 
+
         const isMandatory = MANDATORY_THREADS.includes(tName) || tName === "Trending";
         const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : (tName === "Trending" ? "⚡" : "💬"));
+
 
         item.innerHTML = `
             <div class="thread-nav-content">
@@ -1877,6 +2149,7 @@ function renderJoinedThreadsSidebar() {
             </div>
             <span class="thread-drag-handle" title="Drag to reorder">⋮⋮</span>
         `;
+
 
         // Click to switch active thread
         const contentArea = item.querySelector('.thread-nav-content');
@@ -1886,17 +2159,21 @@ function renderJoinedThreadsSidebar() {
                 activeThread = tName;
                 localStorage.setItem('forum_active_thread', activeThread);
 
+
                 cachedPosts = [];
                 postCacheMap.clear();
                 if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
+
                 renderJoinedThreadsSidebar();
                 updateThreadControlsUI();
+
 
                 await loadForumPosts();
                 window.scrollTo({ top: 0, behavior: 'smooth' });
             });
         }
+
 
         // --- DESKTOP DRAG & DROP ---
         item.addEventListener('dragstart', (e) => {
@@ -1905,10 +2182,12 @@ function renderJoinedThreadsSidebar() {
             e.dataTransfer.setData('text/plain', tName);
         });
 
+
         item.addEventListener('dragend', () => {
             item.classList.remove('is-dragging');
             saveSidebarThreadOrder();
         });
+
 
         // --- MOBILE TOUCH DRAG & DROP ---
         const handle = item.querySelector('.thread-drag-handle');
@@ -1916,6 +2195,7 @@ function renderJoinedThreadsSidebar() {
             handle.addEventListener('touchstart', (e) => {
                 item.classList.add('is-dragging');
             }, { passive: true });
+
 
             handle.addEventListener('touchmove', (e) => {
                 e.preventDefault(); // Stop screen scrolling while dragging
@@ -1928,6 +2208,7 @@ function renderJoinedThreadsSidebar() {
                     return touch.clientY >= rect.top && touch.clientY <= rect.bottom;
                 });
 
+
                 if (overSibling) {
                     const rect = overSibling.getBoundingClientRect();
                     const isAfter = touch.clientY > rect.top + rect.height / 2;
@@ -1935,14 +2216,17 @@ function renderJoinedThreadsSidebar() {
                 }
             }, { passive: false });
 
+
             handle.addEventListener('touchend', () => {
                 item.classList.remove('is-dragging');
                 saveSidebarThreadOrder();
             });
         }
 
+
         joinedThreadsContainer.appendChild(item);
     });
+
 
     // Sidebar Container Dragover for Desktop
     joinedThreadsContainer.ondragover = (e) => {
@@ -1950,23 +2234,28 @@ function renderJoinedThreadsSidebar() {
         const draggingEl = joinedThreadsContainer.querySelector('.is-dragging');
         if (!draggingEl) return;
 
+
         const siblings = [...joinedThreadsContainer.querySelectorAll('.thread-nav-btn:not(.is-dragging)')];
         const nextSibling = siblings.find(sibling => {
             const box = sibling.getBoundingClientRect();
             return e.clientY <= box.top + box.height / 2;
         });
 
+
         joinedThreadsContainer.insertBefore(draggingEl, nextSibling || null);
     };
 }
 
+
 // --- THREAD DISCOVERY ---
+
 
 function fuzzyMatch(str, pattern) {
     const s = str.toLowerCase();
     const p = pattern.toLowerCase().trim();
     if (!p) return true;
     if (s.includes(p)) return true;
+
 
     let pIdx = 0;
     for (let char of s) {
@@ -1975,6 +2264,7 @@ function fuzzyMatch(str, pattern) {
     }
     return false;
 }
+
 
 safeAddListener(threadSearchInput, 'input', () => {
     if (!threadDiscoveryBox) return;
@@ -1985,8 +2275,10 @@ safeAddListener(threadSearchInput, 'input', () => {
         return;
     }
 
+
     const matches = allCloudThreads.filter(t => fuzzyMatch(t.name, q));
     threadDiscoveryBox.innerHTML = '';
+
 
     if (matches.length === 0) {
         threadDiscoveryBox.innerHTML = `<div style="font-size:0.8rem; color:#94a3b8; padding:4px;">No matching threads found. Click "+ New" in the sidebar to create one!</div>`;
@@ -1994,12 +2286,15 @@ safeAddListener(threadSearchInput, 'input', () => {
         return;
     }
 
+
     matches.forEach(t => {
         const isJoined = myJoinedThreadNames.has(t.name);
         const isMandatory = MANDATORY_THREADS.includes(t.name) || t.name === "Trending";
 
+
         const row = document.createElement('div');
         row.className = 'discovery-item';
+
 
         const label = document.createElement('span');
         label.style.fontWeight = '600';
@@ -2009,6 +2304,7 @@ safeAddListener(threadSearchInput, 'input', () => {
         label.style.textUnderlineOffset = '2px';
         label.title = 'Click to view thread';
         label.textContent = t.name;
+
 
         // Allow anyone (guests included) to click the name to view the thread
         label.addEventListener('click', async () => {
@@ -2021,17 +2317,20 @@ safeAddListener(threadSearchInput, 'input', () => {
             postCacheMap.clear();
             if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
 
+
             renderJoinedThreadsSidebar();
             updateThreadControlsUI();
             await loadForumPosts();
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
 
+
         const actionBtn = document.createElement('button');
         actionBtn.type = 'button';
         actionBtn.className = `btn-join-toggle ${isJoined ? 'secondary' : ''}`;
         actionBtn.textContent = isMandatory ? 'Default' : (isJoined ? 'Joined ✓' : '+ Join');
         actionBtn.disabled = isMandatory;
+
 
         actionBtn.addEventListener('click', async () => {
             if (!currentUser) {
@@ -2047,18 +2346,22 @@ safeAddListener(threadSearchInput, 'input', () => {
         threadDiscoveryBox.appendChild(row);
     });
 
+
     threadDiscoveryBox.classList.remove('hidden');
 });
+
 
 async function toggleThreadMembership(tName) {
     if (!currentUser || !db) return;
     if (MANDATORY_THREADS.includes(tName) || tName === "Trending") return;
+
 
     if (myJoinedThreadNames.has(tName)) {
         await db.from('forum_thread_members')
             .delete()
             .eq('user_id', currentUser.id)
             .eq('thread_name', tName);
+
 
         myJoinedThreadNames.delete(tName);
         if (activeThread === tName) {
@@ -2069,20 +2372,24 @@ async function toggleThreadMembership(tName) {
         await db.from('forum_thread_members')
             .insert([{ user_id: currentUser.id, thread_name: tName }]);
 
+
         myJoinedThreadNames.add(tName);
         activeThread = tName;
         localStorage.setItem('forum_active_thread', activeThread);
     }
 
+
     cachedPosts = [];
     postCacheMap.clear();
     if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
 
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
     await loadForumPosts();
     if (threadSearchInput) threadSearchInput.dispatchEvent(new Event('input'));
 }
+
 
 safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
     if (!currentUser) {
@@ -2094,7 +2401,9 @@ safeAddListener(joinLeaveActiveThreadBtn, 'click', async () => {
     await toggleThreadMembership(activeThread);
 });
 
+
 // --- CREATE & DELETE THREADS ---
+
 
 function openCreateThreadModal() {
     if (!currentUser) { 
@@ -2106,8 +2415,10 @@ function openCreateThreadModal() {
     if (threadModal) threadModal.classList.remove('hidden');
 }
 
+
 safeAddListener(sidebarNewThreadBtn, 'click', openCreateThreadModal);
 safeAddListener(closeThreadModalBtn, 'click', () => { if (threadModal) threadModal.classList.add('hidden'); });
+
 
 safeAddListener(createThreadForm, 'submit', async (e) => {
     e.preventDefault();
@@ -2116,19 +2427,24 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
         return;
     }
 
+
     const newName = newThreadTitleInput.value.trim();
     if (!newName) return;
+
 
     if (allCloudThreads.some(t => t.name.toLowerCase() === newName.toLowerCase())) {
         alert("A thread with this name already exists.");
         return;
     }
 
+
     const submitBtn = document.getElementById('create-thread-submit-btn');
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating...'; }
 
+
     const isPrivateChk = document.getElementById('new-thread-private-chk');
     const isPrivate = isPrivateChk ? isPrivateChk.checked : false;
+
 
     const { error } = await db
         .from('forum_threads')
@@ -2139,43 +2455,54 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
             is_private: isPrivate
         }]);
 
+
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create & Join Thread'; }
+
 
     if (error) {
         alert(`Could not create thread: ${error.message}`);
         return;
     }
 
+
     await db.from('forum_thread_members').insert([{
         user_id: currentUser.id,
         thread_name: newName
     }]);
 
+
     threadMetaMap[newName] = { owner: currentUsername, moderators: [], banned: [] };
     saveThreadMeta();
 
+
     newThreadTitleInput.value = '';
     if (threadModal) threadModal.classList.add('hidden');
+
 
     await syncCloudThreads();
     activeThread = newName;
     localStorage.setItem('forum_active_thread', activeThread);
 
+
     cachedPosts = [];
     postCacheMap.clear();
     if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
 
     renderJoinedThreadsSidebar();
     updateThreadControlsUI();
     await loadForumPosts();
 });
 
+
 safeAddListener(postSortSelect, 'change', () => { renderCurrentFeed(); });
+
 
 // --- THREAD MEMBER COUNT LOADER ---
 async function updateThreadMemberCount() {
     const countEl = document.getElementById('thread-member-count');
     if (!countEl || !db) return;
+
 
     try {
         if (MANDATORY_THREADS.includes(activeThread) || activeThread === "Trending") {
@@ -2201,6 +2528,7 @@ async function updateThreadMemberCount() {
     }
 }
 
+
 function updateThreadControlsUI() {
     if (currentThreadTitle) currentThreadTitle.textContent = activeThread;
     const role = getThreadRole(activeThread);
@@ -2219,8 +2547,10 @@ function updateThreadControlsUI() {
         }
     }
 
+
     const isMandatory = MANDATORY_THREADS.includes(activeThread) || activeThread === "Trending";
     const isJoined = myJoinedThreadNames.has(activeThread);
+
 
     if (joinLeaveActiveThreadBtn) {
         if (!isMandatory && currentUser) {
@@ -2231,6 +2561,7 @@ function updateThreadControlsUI() {
             joinLeaveActiveThreadBtn.classList.add('hidden');
         }
     }
+
 
     // Community Flair Button (Database Synced)
     let flairBtn = document.getElementById('set-flair-btn');
@@ -2266,7 +2597,9 @@ function updateThreadControlsUI() {
                 const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
                 if (input === null) return;
 
+
                 const trimmed = input.trim().substring(0, 18);
+
 
                 if (trimmed === '') {
                     await db
@@ -2284,6 +2617,7 @@ function updateThreadControlsUI() {
                             flair: trimmed
                         });
 
+
                     if (error) {
                         alert(`Could not save flair: ${error.message}`);
                         return;
@@ -2291,22 +2625,26 @@ function updateThreadControlsUI() {
                     threadFlairMap.set(currentUsername.toLowerCase(), trimmed);
                 }
 
+
                 renderCurrentFeed();
             };
             actionsBar.prepend(flairBtn);
         }
     }
 
+
     if (managePermsBtn) {
         if (canManagePermissions(activeThread)) managePermsBtn.classList.remove('hidden');
         else managePermsBtn.classList.add('hidden');
     }
+
 
     const manageChatBtn = document.getElementById('manage-chat-btn');
     if (manageChatBtn) {
         if (canManagePermissions(activeThread)) manageChatBtn.classList.remove('hidden');
         else manageChatBtn.classList.add('hidden');
     }
+
 
     // Evaluate Live Chat Schedule / Lock
     const tData = allCloudThreads.find(t => t.name === activeThread);
@@ -2322,6 +2660,7 @@ function updateThreadControlsUI() {
         }
     }
 
+
     if (deleteThreadBtn) {
         if (canDeleteThread(activeThread)) deleteThreadBtn.classList.remove('hidden');
         else deleteThreadBtn.classList.add('hidden');
@@ -2330,11 +2669,13 @@ function updateThreadControlsUI() {
     // Update live member count for the active thread
     updateThreadMemberCount();
 
+
     // Renders the banner once UI and DB sync is complete
     if (typeof renderThreadBanner === 'function') {
         renderThreadBanner();
     }
 }
+
 
 safeAddListener(deleteThreadBtn, 'click', () => {
     if (!canDeleteThread(activeThread)) {
@@ -2346,8 +2687,10 @@ safeAddListener(deleteThreadBtn, 'click', () => {
     if (threadDeleteModal) threadDeleteModal.classList.remove('hidden');
 });
 
+
 safeAddListener(closeThreadDeleteModalBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
 safeAddListener(cancelDeleteThreadBtn, 'click', () => { if (threadDeleteModal) threadDeleteModal.classList.add('hidden'); });
+
 
 safeAddListener(finalDeleteThreadBtn, 'click', async () => {
     const inputVal = deleteThreadConfirmInput ? deleteThreadConfirmInput.value.trim() : '';
@@ -2356,20 +2699,25 @@ safeAddListener(finalDeleteThreadBtn, 'click', async () => {
         return;
     }
 
+
     finalDeleteThreadBtn.disabled = true;
     finalDeleteThreadBtn.textContent = 'Deleting...';
+
 
     if (db) {
         await db.from('Posts').delete().eq('thread', activeThread);
         await db.from('forum_threads').delete().eq('name', activeThread);
     }
 
+
     delete threadMetaMap[activeThread];
     saveThreadMeta();
+
 
     if (threadDeleteModal) threadDeleteModal.classList.add('hidden');
     finalDeleteThreadBtn.disabled = false;
     finalDeleteThreadBtn.textContent = 'Confirm Delete';
+
 
     alert(`Thread "${inputVal}" has been permanently removed.`);
     activeThread = "Welcome & Security";
@@ -2381,11 +2729,14 @@ safeAddListener(finalDeleteThreadBtn, 'click', async () => {
     await loadForumPosts();
 });
 
+
 // --- PERMISSIONS MANAGEMENT UI ---
+
 
 safeAddListener(managePermsBtn, 'click', () => openPermissionsManager());
 safeAddListener(closePermsModalBtn, 'click', () => { if (permsModal) permsModal.classList.add('hidden'); });
 safeAddListener(permsModal, 'click', (e) => { if (e.target === permsModal) permsModal.classList.add('hidden'); });
+
 
 function openPermissionsManager() {
     if (permsThreadName) permsThreadName.textContent = activeThread;
@@ -2393,10 +2744,12 @@ function openPermissionsManager() {
     if (permsModal) permsModal.classList.remove('hidden');
 }
 
+
 function renderPermissionsUserList() {
     if (!permsUserList) return;
     const meta = threadMetaMap[activeThread] || { owner: '', moderators: [], banned: [] };
     permsUserList.innerHTML = '';
+
 
     const trackedUsers = new Set();
     if (meta.owner) trackedUsers.add(meta.owner);
@@ -2404,18 +2757,22 @@ function renderPermissionsUserList() {
     (meta.banned || []).forEach(u => trackedUsers.add(u));
     cachedPosts.forEach(p => { if (p.author) trackedUsers.add(p.author); });
 
+
     if (trackedUsers.size === 0) {
         permsUserList.innerHTML = '<div class="no-posts" style="padding: 10px;">No members active in this thread yet.</div>';
         return;
     }
+
 
     trackedUsers.forEach(uname => {
         const cleanUser = uname.toLowerCase().replace('@', '');
         const role = getThreadRole(activeThread, cleanUser);
         const isBanned = (meta.banned || []).map(u => u.toLowerCase()).includes(cleanUser);
 
+
         const row = document.createElement('div');
         row.className = 'perm-user-row';
+
 
         let badgeClass = 'badge-blue';
         if (role === 'Site Admin') badgeClass = 'badge-purple';
@@ -2423,16 +2780,20 @@ function renderPermissionsUserList() {
         else if (role === 'Moderator') badgeClass = 'badge-green';
         else if (role === 'Banned') badgeClass = 'badge-red';
 
+
         const nameCol = document.createElement('div');
         nameCol.className = 'perm-user-name';
         nameCol.innerHTML = `<span class="clickable-username" data-username="${escapeHTML(cleanUser)}">@${escapeHTML(cleanUser)}</span> <span class="badge ${badgeClass}">${role}</span>`;
+
 
         nameCol.querySelector('.clickable-username').addEventListener('click', () => {
             window.openUserProfileCard(cleanUser);
         });
 
+
         const btnCol = document.createElement('div');
         btnCol.style.cssText = "display: flex; gap: 6px;";
+
 
         if (canManagePermissions(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (role === 'Moderator') {
@@ -2464,6 +2825,7 @@ function renderPermissionsUserList() {
             }
         }
 
+
         if (canRevokePosting(activeThread) && role !== 'Owner' && role !== 'Site Admin') {
             if (isBanned) {
                 const unbanBtn = document.createElement('button');
@@ -2494,13 +2856,16 @@ function renderPermissionsUserList() {
             }
         }
 
+
         row.appendChild(nameCol);
         row.appendChild(btnCol);
         permsUserList.appendChild(row);
     });
 }
 
+
 // --- LINK INSERTION ---
+
 
 safeAddListener(openLinkModalBtn, 'click', () => {
     if (linkUrlInput) linkUrlInput.value = '';
@@ -2508,17 +2873,21 @@ safeAddListener(openLinkModalBtn, 'click', () => {
     if (linkModal) linkModal.classList.remove('hidden');
 });
 
+
 safeAddListener(closeLinkModalBtn, 'click', () => { if (linkModal) linkModal.classList.add('hidden'); });
+
 
 safeAddListener(insertLinkForm, 'submit', (e) => {
     e.preventDefault();
     let url = linkUrlInput ? linkUrlInput.value.trim() : '';
     const text = linkTextInput ? linkTextInput.value.trim() : '';
 
+
     if (!url) return;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
     }
+
 
     const formattedLink = text ? `[${text}](${url})` : url;
     const curVal = textBox.value;
@@ -2531,13 +2900,16 @@ safeAddListener(insertLinkForm, 'submit', (e) => {
     textBox.focus();
 });
 
+
 function renderFormattedContent(text) {
     if (!text) return '';
     const escaped = escapeHTML(text);
 
+
     const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, href) => {
         return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline;">${label}</a>`;
     });
+
 
     // UI UPGRADE: Rich Link Previews
     const withBareUrls = withMdLinks.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, (_match, space, href) => {
@@ -2555,16 +2927,20 @@ function renderFormattedContent(text) {
         }
     });
 
+
     // NEW: Parse T/Thread_Name formatting (replaces underscores with spaces)
     const withThreadLinks = withBareUrls.replace(/(^|\s)T\/([a-zA-Z0-9_.-]+)/g, (_match, space, threadRaw) => {
         const actualName = threadRaw.replace(/_/g, ' ');
         return `${space}<span class="clickable-thread" data-thread="${escapeHTML(actualName)}" title="Go to ${escapeHTML(actualName)}">T/${threadRaw}</span>`;
     });
 
+
     return withThreadLinks.replace(/\n/g, '<br>');
 }
 
+
 // --- PHOTO ATTACHMENTS ---
+
 
 safeAddListener(postImageFile, 'change', () => {
     const file = postImageFile.files[0];
@@ -2575,13 +2951,16 @@ safeAddListener(postImageFile, 'change', () => {
     }
 });
 
+
 safeAddListener(removePostPhotoBtn, 'click', () => {
     selectedPostPhotoFile = null;
     if (postImageFile) postImageFile.value = '';
     if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
 });
 
+
 // --- MESSAGING & CHATS HUB ---
+
 
 function showSidebarViewOnMobile() {
     if (window.innerWidth <= 768) {
@@ -2594,6 +2973,7 @@ function showSidebarViewOnMobile() {
     if (topModalBar) topModalBar.classList.remove('hidden');
 }
 
+
 function showChatViewOnMobile() {
     if (window.innerWidth <= 768) {
         if (sidebarPane) sidebarPane.classList.add('mobile-hidden');
@@ -2604,6 +2984,7 @@ function showChatViewOnMobile() {
     }
     if (topModalBar) topModalBar.classList.remove('hidden');
 }
+
 
 safeAddListener(backToListBtn, 'click', () => {
     if (window.chatSubscription && db) {
@@ -2617,6 +2998,7 @@ safeAddListener(backToListBtn, 'click', () => {
     refreshMessagingHub();
 });
 
+
 async function refreshMessagingHub() {
     await Promise.all([
         loadFriendRequests(),
@@ -2627,8 +3009,10 @@ async function refreshMessagingHub() {
     updateSidebarBadges();
 }
 
+
 async function loadMessageRequests() {
     if (!currentUser || !db || !msgRequestsContainer) return;
+
 
     try {
         const { data: myMemberships } = await db
@@ -2636,13 +3020,16 @@ async function loadMessageRequests() {
             .select('conversation_id')
             .eq('user_id', currentUser.id);
 
+
         if (!myMemberships || myMemberships.length === 0) {
             if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
             msgRequestsContainer.innerHTML = '';
             return;
         }
 
+
         const myConvIds = myMemberships.map(m => m.conversation_id);
+
 
         const { data: convs } = await db
             .from('conversations')
@@ -2650,13 +3037,16 @@ async function loadMessageRequests() {
             .in('id', myConvIds)
             .eq('is_group', false);
 
+
         if (!convs || convs.length === 0) {
             if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
             msgRequestsContainer.innerHTML = '';
             return;
         }
 
+
         const oneOnOneIds = convs.map(c => c.id);
+
 
         const { data: otherMembers } = await db
             .from('conversation_members')
@@ -2664,11 +3054,13 @@ async function loadMessageRequests() {
             .in('conversation_id', oneOnOneIds)
             .neq('user_id', currentUser.id);
 
+
         if (!otherMembers || otherMembers.length === 0) {
             if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
             msgRequestsContainer.innerHTML = '';
             return;
         }
+
 
         const { data: friendships } = await db
             .from('friendships')
@@ -2676,11 +3068,14 @@ async function loadMessageRequests() {
             .eq('status', 'accepted')
             .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
 
+
         const acceptedFriendIds = new Set(
             (friendships || []).map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id)
         );
 
+
         const nonFriendMembers = otherMembers.filter(m => !acceptedFriendIds.has(m.user_id));
+
 
         if (nonFriendMembers.length === 0) {
             if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
@@ -2688,13 +3083,16 @@ async function loadMessageRequests() {
             return;
         }
 
+
         const partnerIds = Array.from(new Set(nonFriendMembers.map(m => m.user_id)));
         const { data: profiles } = await db
             .from('profiles')
             .select('id, username, avatar_url')
             .in('id', partnerIds);
 
+
         const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
 
         const nonFriendConvIds = nonFriendMembers.map(m => m.conversation_id);
         const { data: msgs } = await db
@@ -2703,8 +3101,10 @@ async function loadMessageRequests() {
             .in('conversation_id', nonFriendConvIds)
             .limit(100);
 
+
         const convsWithMessages = new Set((msgs || []).map(m => m.conversation_id));
         const activeRequests = nonFriendMembers.filter(m => convsWithMessages.has(m.conversation_id));
+
 
         if (activeRequests.length === 0) {
             if (msgRequestsHeader) msgRequestsHeader.classList.add('hidden');
@@ -2712,8 +3112,10 @@ async function loadMessageRequests() {
             return;
         }
 
+
         if (msgRequestsHeader) msgRequestsHeader.classList.remove('hidden');
         msgRequestsContainer.innerHTML = '';
+
 
         activeRequests.forEach(req => {
             const partner = profileMap.get(req.user_id) || { id: req.user_id, username: 'user' };
@@ -2721,10 +3123,12 @@ async function loadMessageRequests() {
             div.className = `conv-item ${activeConversationId === req.conversation_id ? 'active' : ''}`;
             div.setAttribute('data-conv-id', req.conversation_id);
 
+
             const unreadCount = unreadCountsByConv.get(req.conversation_id) || 0;
             const badgeHtml = unreadCount > 0 
                 ? `<span class="conv-badge">${unreadCount}</span>` 
                 : `<span class="badge badge-yellow" style="font-size:0.65rem;">Request</span>`;
+
 
             div.innerHTML = `
                 <div class="conv-item-label">
@@ -2733,9 +3137,11 @@ async function loadMessageRequests() {
                 ${badgeHtml}
             `;
 
+
             div.addEventListener('click', () => {
                 selectConversation(req.conversation_id, `@${partner.username}`, partner.id, partner.username, false);
             });
+
 
             msgRequestsContainer.appendChild(div);
         });
@@ -2744,8 +3150,10 @@ async function loadMessageRequests() {
     }
 }
 
+
 async function loadFriendRequests() {
     if (!currentUser || !db || !requestsContainer) return;
+
 
     const { data: requests, error } = await db
         .from('friendships')
@@ -2753,11 +3161,13 @@ async function loadFriendRequests() {
         .eq('friend_id', currentUser.id)
         .eq('status', 'pending');
 
+
     if (error || !requests || requests.length === 0) {
         if (requestsHeader) requestsHeader.classList.add('hidden');
         requestsContainer.innerHTML = '';
         return;
     }
+
 
     const requesterIds = requests.map(r => r.user_id);
     const { data: profiles } = await db
@@ -2765,10 +3175,13 @@ async function loadFriendRequests() {
         .select('id, username')
         .in('id', requesterIds);
 
+
     const profileMap = new Map((profiles || []).map(p => [p.id, p.username]));
+
 
     if (requestsHeader) requestsHeader.classList.remove('hidden');
     requestsContainer.innerHTML = '';
+
 
     requests.forEach(req => {
         const username = profileMap.get(req.user_id) || 'unknown';
@@ -2782,15 +3195,18 @@ async function loadFriendRequests() {
             </div>
         `;
 
+
         item.querySelector('.clickable-username').addEventListener('click', () => {
             window.openUserProfileCard(username);
         });
+
 
         item.querySelector('.btn-accept').addEventListener('click', () => handleRequest(req.id, true));
         item.querySelector('.btn-deny').addEventListener('click', () => handleRequest(req.id, false));
         requestsContainer.appendChild(item);
     });
 }
+
 
 async function handleRequest(requestId, accept) {
     if (!db) return;
@@ -2801,6 +3217,7 @@ async function handleRequest(requestId, accept) {
             .eq('id', requestId)
             .select()
             .single();
+
 
         if (error) {
             alert(`Error accepting request: ${error.message}`);
@@ -2819,8 +3236,10 @@ async function handleRequest(requestId, accept) {
     checkNotifications();
 }
 
+
 async function loadFriends() {
     if (!currentUser || !db || !friendsContainer) return;
+
 
     const { data: friendships, error } = await db
         .from('friendships')
@@ -2828,12 +3247,15 @@ async function loadFriends() {
         .eq('status', 'accepted')
         .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
 
+
     if (error) {
         console.warn("Error loading friends:", error);
         return;
     }
 
+
     const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
+
 
     if (friendIds.length === 0) {
         friendsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No friends yet. Add one above!</div>';
@@ -2841,10 +3263,12 @@ async function loadFriends() {
         return;
     }
 
+
     const { data: profiles } = await db
         .from('profiles')
         .select('id, username, avatar_url')
         .in('id', friendIds);
+
 
     myFriendsList = profiles || [];
     myFriendsList.forEach(p => {
@@ -2852,10 +3276,12 @@ async function loadFriends() {
         if (p.username && p.avatar_url) usernameAvatarMap.set(p.username.toLowerCase(), p.avatar_url);
     });
 
+
     const { data: myMemberships } = await db
         .from('conversation_members')
         .select('conversation_id, user_id')
         .in('user_id', [currentUser.id, ...friendIds]);
+
 
     const userConvMap = new Map();
     (myMemberships || []).forEach(m => {
@@ -2863,7 +3289,9 @@ async function loadFriends() {
         userConvMap.get(m.user_id).add(m.conversation_id);
     });
 
+
     const myConvs = userConvMap.get(currentUser.id) || new Set();
+
 
     friendsContainer.innerHTML = '';
     myFriendsList.forEach(friend => {
@@ -2876,13 +3304,16 @@ async function loadFriends() {
             }
         }
 
+
         const div = document.createElement('div');
         div.className = 'conv-item';
         div.id = `friend-item-${friend.id}`;
         if (directConvId) div.setAttribute('data-conv-id', directConvId);
 
+
         const unreadCount = directConvId ? (unreadCountsByConv.get(directConvId) || 0) : 0;
         const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
 
         div.innerHTML = `
             <div class="conv-item-label">
@@ -2891,9 +3322,11 @@ async function loadFriends() {
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
 
+
         div.addEventListener('click', () => startOrOpenDirectChat(friend));
         friendsContainer.appendChild(div);
     });
+
 
     if (groupFriendsChecklist) {
         groupFriendsChecklist.innerHTML = '';
@@ -2912,15 +3345,18 @@ async function loadFriends() {
     }
 }
 
+
 safeAddListener(addFriendBtn, 'click', async () => {
     if (!db || !addFriendInput) return;
     const targetUsername = addFriendInput.value.trim().toLowerCase().replace('@', '');
     if (!targetUsername) return;
 
+
     if (targetUsername === currentUsername.toLowerCase()) {
         alert("You cannot add yourself as a friend.");
         return;
     }
+
 
     const { data: targetProfile, error: profileErr } = await db
         .from('profiles')
@@ -2928,16 +3364,19 @@ safeAddListener(addFriendBtn, 'click', async () => {
         .ilike('username', targetUsername)
         .maybeSingle();
 
+
     if (profileErr || !targetProfile) {
         alert("User not found.");
         return;
     }
+
 
     const { data: existing } = await db
         .from('friendships')
         .select('id, status, user_id')
         .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${targetProfile.id}),and(user_id.eq.${targetProfile.id},friend_id.eq.${currentUser.id})`)
         .maybeSingle();
+
 
     if (existing) {
         if (existing.status === 'accepted') alert("You are already friends with this user.");
@@ -2946,16 +3385,19 @@ safeAddListener(addFriendBtn, 'click', async () => {
         return;
     }
 
+
     const { error: insertErr } = await db.from('friendships').insert([{ 
         user_id: currentUser.id, 
         friend_id: targetProfile.id, 
         status: 'pending' 
     }]);
 
+
     if (insertErr) {
         alert(`Could not send request: ${insertErr.message}`);
         return;
     }
+
 
     await sendNotification(targetProfile.id, 'friend_request', null, 'sent you a friend request.');
     addFriendInput.value = '';
@@ -2963,18 +3405,22 @@ safeAddListener(addFriendBtn, 'click', async () => {
     refreshMessagingHub();
 });
 
+
 async function loadConversations() {
     if (!currentUser || !db || !groupsContainer) return;
+
 
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
         .eq('user_id', currentUser.id);
 
+
     if (!memberships || memberships.length === 0) {
         groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
         return;
     }
+
 
     const convIds = memberships.map(m => m.conversation_id);
     const { data: convs } = await db
@@ -2983,19 +3429,23 @@ async function loadConversations() {
         .in('id', convIds)
         .eq('is_group', true);
 
+
     groupsContainer.innerHTML = '';
     if (!convs || convs.length === 0) {
         groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
         return;
     }
 
+
     convs.forEach(conv => {
         const div = document.createElement('div');
         div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
         div.setAttribute('data-conv-id', conv.id);
 
+
         const unreadCount = unreadCountsByConv.get(conv.id) || 0;
         const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+
 
         div.innerHTML = `
             <div class="conv-item-label">
@@ -3004,13 +3454,16 @@ async function loadConversations() {
             <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
         `;
 
+
         div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, null, true));
         groupsContainer.appendChild(div);
     });
 }
 
+
 async function startOrOpenDirectChat(friend) {
     if (!db || !currentUser || !friend?.id) return;
+
 
     try {
         // Check if accepted friends
@@ -3020,7 +3473,9 @@ async function startOrOpenDirectChat(friend) {
             .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
             .maybeSingle();
 
+
         const isFriend = friendship && friendship.status === 'accepted';
+
 
         // Check for an existing 1-on-1 conversation
         const { data: myMemberships } = await db
@@ -3028,8 +3483,10 @@ async function startOrOpenDirectChat(friend) {
             .select('conversation_id')
             .eq('user_id', currentUser.id);
 
+
         const myConvIds = (myMemberships || []).map(m => m.conversation_id);
         let existingConvId = null;
+
 
         if (myConvIds.length > 0) {
             const { data: sharedMemberships } = await db
@@ -3037,6 +3494,7 @@ async function startOrOpenDirectChat(friend) {
                 .select('conversation_id')
                 .in('conversation_id', myConvIds)
                 .eq('user_id', friend.id);
+
 
             if (sharedMemberships && sharedMemberships.length > 0) {
                 const sharedIds = sharedMemberships.map(s => s.conversation_id);
@@ -3048,14 +3506,17 @@ async function startOrOpenDirectChat(friend) {
                     .limit(1)
                     .maybeSingle();
 
+
                 if (conv) existingConvId = conv.id;
             }
         }
+
 
         if (existingConvId) {
             selectConversation(existingConvId, `@${friend.username}`, friend.id, friend.username, isFriend);
             return;
         }
+
 
         // Create new conversation
         const { data: newConv, error: convErr } = await db
@@ -3064,15 +3525,18 @@ async function startOrOpenDirectChat(friend) {
             .select()
             .single();
 
+
         if (convErr) {
             alert(`Error creating chat: ${convErr.message}`);
             return;
         }
 
+
         await db.from('conversation_members').insert([
             { conversation_id: newConv.id, user_id: currentUser.id },
             { conversation_id: newConv.id, user_id: friend.id }
         ]);
+
 
         selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
     } catch (err) {
@@ -3081,12 +3545,14 @@ async function startOrOpenDirectChat(friend) {
     }
 }
 
+
 safeAddListener(toggleGroupCreateBtn, 'click', () => {
     if (groupCreatorBox) groupCreatorBox.classList.toggle('hidden');
 });
 safeAddListener(cancelGroupBtn, 'click', () => {
     if (groupCreatorBox) groupCreatorBox.classList.add('hidden');
 });
+
 
 safeAddListener(createGroupConfirmBtn, 'click', async () => {
     if (!db || !groupNameInput) return;
@@ -3096,13 +3562,16 @@ safeAddListener(createGroupConfirmBtn, 'click', async () => {
         return;
     }
 
+
     const checkedBoxes = document.querySelectorAll('.group-friend-chk:checked');
     const selectedFriendIds = Array.from(checkedBoxes).map(b => b.value);
+
 
     if (selectedFriendIds.length === 0) {
         alert("Please select at least one friend to add.");
         return;
     }
+
 
     const { data: newGroup, error: groupErr } = await db
         .from('conversations')
@@ -3114,22 +3583,27 @@ safeAddListener(createGroupConfirmBtn, 'click', async () => {
         .select()
         .single();
 
+
     if (groupErr) {
         alert(`Error creating group: ${groupErr.message}`);
         return;
     }
+
 
     const membersToInsert = [
         { conversation_id: newGroup.id, user_id: currentUser.id },
         ...selectedFriendIds.map(fId => ({ conversation_id: newGroup.id, user_id: fId }))
     ];
 
+
     const { error: membersErr } = await db.from('conversation_members').insert(membersToInsert);
+
 
     if (membersErr) {
         alert(`Error adding group members: ${membersErr.message}`);
         return;
     }
+
 
     groupNameInput.value = '';
     if (groupCreatorBox) groupCreatorBox.classList.add('hidden');
@@ -3137,12 +3611,22 @@ safeAddListener(createGroupConfirmBtn, 'click', async () => {
     selectConversation(newGroup.id, `Group: ${groupName}`, null, null, true);
 });
 
+
 function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
     if (!db) return;
     activeConversationId = conversationId;
     activeConversationPartnerId = partnerId;
     activeConversationPartnerUsername = partnerUsername;
     activeConversationIsFriend = isFriend;
+
+
+    if (startCallBtn) {
+        if (partnerId) {
+            startCallBtn.classList.remove('hidden');
+        } else {
+            startCallBtn.classList.add('hidden');
+        }
+    }
 
     if (chatHeader) {
         if (partnerUsername) {
@@ -3152,17 +3636,21 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
         }
     }
 
+
     if (dmText) dmText.disabled = false;
     if (dmImageInput) dmImageInput.disabled = false;
     if (dmSendBtn) dmSendBtn.disabled = false;
+
 
     if (chatPendingBanner) {
         if (!isFriend && partnerId) chatPendingBanner.classList.remove('hidden');
         else chatPendingBanner.classList.add('hidden');
     }
 
+
     showChatViewOnMobile();
     document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+
 
     const activeEl = document.querySelector(`[data-conv-id="${conversationId}"]`);
     if (activeEl) {
@@ -3171,11 +3659,14 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
         if (badge) badge.classList.add('hidden');
     }
 
+
     loadMessages(true);
+
 
     if (window.chatSubscription) {
         db.removeChannel(window.chatSubscription);
     }
+
 
     window.chatSubscription = db.channel(`chat_${activeConversationId}`)
         .on(
@@ -3207,6 +3698,7 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
         .subscribe();
 }
 
+
 function scrollToBottom(force = false) {
     if (!chatMessages) return;
     const isNearBottom = chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 120;
@@ -3218,20 +3710,24 @@ function scrollToBottom(force = false) {
     }
 }
 
+
 async function ensureAvatarsCached(userIds) {
     if (!db) return;
     const missing = userIds.filter(id => !userAvatarCache.has(id));
     if (missing.length === 0) return;
+
 
     const { data: profiles } = await db
         .from('profiles')
         .select('id, avatar_url')
         .in('id', missing);
 
+
     (profiles || []).forEach(p => {
         userAvatarCache.set(p.id, p.avatar_url || null);
     });
 }
+
 
 function createMessageElement(msg) {
     const isMine = currentUser && msg.sender_id === currentUser.id;
@@ -3239,10 +3735,12 @@ function createMessageElement(msg) {
     const isPending = msg.pending_approval;
     const isOptimistic = Boolean(msg.is_optimistic);
 
+
     const row = document.createElement('div');
     row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
     row.id = `msg-${msg.id}`;
     if (isOptimistic) row.style.opacity = '0.75';
+
 
     const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
     const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
@@ -3263,12 +3761,15 @@ function createMessageElement(msg) {
         </div>
     `;
 
+
     row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
+
 
     const attachedImg = row.querySelector('.chat-img-thumb');
     if (attachedImg) {
         attachedImg.onload = () => scrollToBottom(false);
     }
+
 
     row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
         clickable.addEventListener('click', (e) => {
@@ -3277,23 +3778,29 @@ function createMessageElement(msg) {
         });
     });
 
+
     return row;
 }
 
+
 function appendChatMessage(msg, forceScroll = true) {
     if (!chatMessages) return;
+
 
     // Remove empty notice if present
     const emptyNotice = chatMessages.querySelector('.no-posts');
     if (emptyNotice) emptyNotice.remove();
 
+
     // Check if element with this ID already exists
     const existing = document.getElementById(`msg-${msg.id}`);
     if (existing) return;
 
+
     const row = createMessageElement(msg);
     chatMessages.appendChild(row);
     scrollToBottom(forceScroll);
+
 
     if (msg.sender_id && !userAvatarCache.has(msg.sender_id)) {
         ensureAvatarsCached([msg.sender_id]).then(() => {
@@ -3306,8 +3813,10 @@ function appendChatMessage(msg, forceScroll = true) {
     }
 }
 
+
 async function loadMessages(forceScroll = false) {
     if (!currentUser || !activeConversationId || !db || !chatMessages) return;
+
 
     // Fetch latest 50 messages for optimal initial load time
     const { data: messages, error } = await db
@@ -3317,19 +3826,24 @@ async function loadMessages(forceScroll = false) {
         .order('id', { ascending: false })
         .limit(50);
 
+
     if (error) {
         console.warn("Error loading chat messages:", error);
         return;
     }
 
+
     const visibleMessages = (messages || []).reverse();
+
 
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
     if (!forceScroll && visibleMessages.length === currentMsgCount) return;
 
+
     // Check for pending messages
     const pendingFromPartner = visibleMessages.filter(m => m.pending_approval && m.sender_id !== currentUser.id);
     const pendingFromMe = visibleMessages.filter(m => m.pending_approval && m.sender_id === currentUser.id);
+
 
     // Update banner for chat request approval
     if (chatPendingBanner) {
@@ -3345,6 +3859,7 @@ async function loadMessages(forceScroll = false) {
             `;
             chatPendingBanner.classList.remove('hidden');
 
+
             const acceptBtn = document.getElementById('accept-chat-request-btn');
             if (acceptBtn) {
                 acceptBtn.onclick = async () => {
@@ -3359,6 +3874,7 @@ async function loadMessages(forceScroll = false) {
                     refreshMessagingHub();
                 };
             }
+
 
             const denyBtn = document.getElementById('deny-chat-request-btn');
             if (denyBtn) {
@@ -3380,14 +3896,17 @@ async function loadMessages(forceScroll = false) {
         }
     }
 
+
     chatMessages.innerHTML = '';
     if (!visibleMessages || visibleMessages.length === 0) {
         chatMessages.innerHTML = '<div class="no-posts">No messages in this chat yet. Start the conversation!</div>';
         return;
     }
 
+
     const senderIds = Array.from(new Set(visibleMessages.map(m => m.sender_id)));
     await ensureAvatarsCached(senderIds);
+
 
     const fragment = document.createDocumentFragment();
     visibleMessages.forEach(msg => {
@@ -3395,7 +3914,9 @@ async function loadMessages(forceScroll = false) {
     });
     chatMessages.appendChild(fragment);
 
+
     scrollToBottom(forceScroll);
+
 
     db.from('chat_messages')
         .update({ is_read: true })
@@ -3404,9 +3925,11 @@ async function loadMessages(forceScroll = false) {
         .eq('is_read', false)
         .catch(() => {});
 
+
     unreadCountsByConv.delete(activeConversationId);
     checkNotifications();
 }
+
 
 safeAddListener(dmImageInput, 'change', () => {
     const file = dmImageInput.files[0];
@@ -3421,6 +3944,7 @@ safeAddListener(dmImageInput, 'change', () => {
     }
 });
 
+
 safeAddListener(dmForm, 'submit', async (e) => {
     e.preventDefault();
     if (!db) return;
@@ -3429,11 +3953,14 @@ safeAddListener(dmForm, 'submit', async (e) => {
         return;
     }
 
+
     const messageText = dmText.value.trim();
     const rawFile = dmImageInput.files[0];
 
+
     if (!messageText && !rawFile) return;
     if (!activeConversationId) return;
+
 
     // Reset input fields immediately for instant response
     dmText.value = '';
@@ -3443,6 +3970,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
         label.style.borderColor = '#475569';
         label.title = 'Attach Photo';
     }
+
 
     // Check if the chat was already approved previously
     let isPendingApproval = false;
@@ -3454,8 +3982,10 @@ safeAddListener(dmForm, 'submit', async (e) => {
             .eq('pending_approval', false)
             .limit(1);
 
+
         isPendingApproval = !approvedMsg || approvedMsg.length === 0;
     }
+
 
     // Instant Optimistic UI append
     const tempId = 'temp_' + Date.now();
@@ -3463,6 +3993,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
     if (rawFile) {
         localPreviewUrl = URL.createObjectURL(rawFile);
     }
+
 
     const optimisticMsg = {
         id: tempId,
@@ -3476,8 +4007,10 @@ safeAddListener(dmForm, 'submit', async (e) => {
     };
     appendChatMessage(optimisticMsg, true);
 
+
     dmSendBtn.disabled = true;
     dmSendBtn.textContent = '...';
+
 
     try {
         let uploadedImageUrl = null;
@@ -3487,9 +4020,11 @@ safeAddListener(dmForm, 'submit', async (e) => {
             const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
             const filePath = `${activeConversationId}/${fileName}`;
 
+
             const { error: uploadError } = await db.storage
                 .from('chat-images')
                 .upload(filePath, file);
+
 
             if (uploadError) {
                 alert(`Photo upload failed: ${uploadError.message}`);
@@ -3498,9 +4033,11 @@ safeAddListener(dmForm, 'submit', async (e) => {
                 return;
             }
 
+
             const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
             uploadedImageUrl = publicUrlData.publicUrl;
         }
+
 
         // If recipient replies to incoming pending chat, auto-approve
         if (activeConversationPartnerId) {
@@ -3511,6 +4048,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
                 .neq('sender_id', currentUser.id)
                 .eq('pending_approval', true);
         }
+
 
         const { data: insertedMsg, error } = await db
             .from('chat_messages')
@@ -3525,12 +4063,14 @@ safeAddListener(dmForm, 'submit', async (e) => {
             .select()
             .single();
 
+
         if (error) {
             alert(`Error sending message: ${error.message}`);
             const tempEl = document.getElementById(`msg-${tempId}`);
             if (tempEl) tempEl.remove();
             return;
         }
+
 
         // Confirm optimistic bubble with real server ID
         const tempEl = document.getElementById(`msg-${tempId}`);
@@ -3552,6 +4092,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
                 if (img) img.src = uploadedImageUrl;
             }
         }
+
 
         // Background notification dispatching
         if (isPendingApproval && activeConversationPartnerId) {
@@ -3578,10 +4119,12 @@ safeAddListener(dmForm, 'submit', async (e) => {
                     .eq('conversation_id', activeConversationId)
                     .neq('user_id', currentUser.id);
 
+
                 if (members && members.length > 0) {
                     recipientIds = members.map(m => m.user_id);
                 }
             }
+
 
             if (recipientIds.length > 0) {
                 let snippet = 'sent a photo.';
@@ -3589,6 +4132,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
                     const cleanText = messageText.length > 50 ? `${messageText.substring(0, 47)}...` : messageText;
                     snippet = `: "${cleanText}"`;
                 }
+
 
                 const notifsToInsert = recipientIds.map(rId => ({
                     user_id: rId,
@@ -3598,6 +4142,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
                     message: snippet,
                     is_read: false
                 }));
+
 
                 db.from('user_notifications').insert(notifsToInsert).catch(err => {
                     const fallbackNotifs = notifsToInsert.map(n => ({ ...n, entity_id: null }));
@@ -3613,10 +4158,13 @@ safeAddListener(dmForm, 'submit', async (e) => {
     }
 });
 
+
 // --- NOTIFICATION BADGES ---
+
 
 async function checkNotifications() {
     if (!currentUser || !db) return;
+
 
     try {
         const { count: pendingReqs } = await db
@@ -3625,13 +4173,16 @@ async function checkNotifications() {
             .eq('friend_id', currentUser.id)
             .eq('status', 'pending');
 
+
         const { data: memberships } = await db
             .from('conversation_members')
             .select('conversation_id')
             .eq('user_id', currentUser.id);
 
+
         let unreadTotal = 0;
         unreadCountsByConv.clear();
+
 
         if (memberships && memberships.length > 0) {
             const convIds = memberships.map(m => m.conversation_id);
@@ -3643,6 +4194,7 @@ async function checkNotifications() {
                 .eq('is_read', false)
                 .eq('pending_approval', false);
 
+
             if (unreadMsgs) {
                 unreadTotal = unreadMsgs.length;
                 unreadMsgs.forEach(m => {
@@ -3651,6 +4203,7 @@ async function checkNotifications() {
                 });
             }
         }
+
 
         const total = (pendingReqs || 0) + unreadTotal;
         if (total > 0) {
@@ -3662,6 +4215,7 @@ async function checkNotifications() {
             if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
         }
 
+
         if (dmModal && !dmModal.classList.contains('hidden')) {
             updateSidebarBadges();
         }
@@ -3670,11 +4224,13 @@ async function checkNotifications() {
     }
 }
 
+
 function updateSidebarBadges() {
     document.querySelectorAll('[data-conv-id]').forEach(el => {
         const cId = el.getAttribute('data-conv-id');
         const badge = el.querySelector('.conv-badge');
         const count = unreadCountsByConv.get(cId) || 0;
+
 
         if (badge) {
             if (count > 0 && cId !== activeConversationId) {
@@ -3687,12 +4243,14 @@ function updateSidebarBadges() {
     });
 }
 
+
 safeAddListener(clearAllNotifsBtn, 'click', async () => {
     if (!currentUser || !db) return;
     const { data: memberships } = await db
         .from('conversation_members')
         .select('conversation_id')
         .eq('user_id', currentUser.id);
+
 
     if (memberships && memberships.length > 0) {
         const convIds = memberships.map(m => m.conversation_id);
@@ -3704,19 +4262,23 @@ safeAddListener(clearAllNotifsBtn, 'click', async () => {
             .eq('is_read', false);
     }
 
+
     unreadCountsByConv.clear();
     if (notifBadge) notifBadge.classList.add('hidden');
     if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
     updateSidebarBadges();
 });
 
+
 // --- VOTING & FEED ENGINE ---
+
 
 function getPostScore(post) {
     const dbLikes = Number(post.likes || 0);
     const dbDislikes = Number(post.dislikes || 0);
     return dbLikes - dbDislikes;
 }
+
 
 async function handleVote(postId, direction) {
     if (!currentUser) {
@@ -3730,17 +4292,21 @@ async function handleVote(postId, direction) {
         return;
     }
 
+
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
     
     const currentVote = userVotes[postId] || 0;
     let newVote = currentVote === direction ? 0 : direction;
 
+
     userVotes[postId] = newVote;
     localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
 
+
     let newLikes = Number(post.likes || 0);
     let newDislikes = Number(post.dislikes || 0);
+
 
     if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
     if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
@@ -3748,24 +4314,30 @@ async function handleVote(postId, direction) {
     if (newVote === 1) newLikes += 1;
     if (newVote === -1) newDislikes += 1;
 
+
     post.likes = newLikes;
     post.dislikes = newDislikes;
     renderCurrentFeed();
+
 
     const { error } = await db
         .from('Posts')
         .update({ likes: newLikes, dislikes: newDislikes })
         .eq('id', postId);
 
+
     if (error) console.error("Failed to save vote to database:", error);
 }
+
 
 function sortPosts(posts) {
     const sortMode = postSortSelect ? postSortSelect.value : 'top';
     const now = Date.now();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
 
+
     let filtered = [...posts];
+
 
     // Only apply the 7-day cutoff filter when not on the compiled Trending thread
     if (sortMode === 'trending' && activeThread !== 'Trending') {
@@ -3781,14 +4353,17 @@ function sortPosts(posts) {
         if (a.is_pinned && !b.is_pinned) return -1;
         if (!a.is_pinned && b.is_pinned) return 1;
 
+
         const scoreA = getPostScore(a);
         const scoreB = getPostScore(b);
+
 
         // Ensure the Trending feed orders by highest score first by default
         if (activeThread === 'Trending' && (sortMode === 'top' || sortMode === 'trending')) {
             if (scoreB !== scoreA) return scoreB - scoreA;
             return Number(b.id) - Number(a.id);
         }
+
 
         if (sortMode === 'top' || sortMode === 'trending') {
             if (scoreB !== scoreA) return scoreB - scoreA;
@@ -3802,6 +4377,7 @@ function sortPosts(posts) {
     });
 }
 
+
 function getWelcomeSecurityPost() {
     return {
         id: 'welcome-seed',
@@ -3813,7 +4389,9 @@ function getWelcomeSecurityPost() {
         dislikes: 0,
         content: `### Welcome to Turing's Gate: The Verified Human Community
 
+
 Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry, cryptographic perimeter defense, and an accountable Web of Trust.
+
 
 <div class="welcome-diagram">
     <div class="diagram-step">
@@ -3842,9 +4420,11 @@ Turing's Gate is built to protect organic human discussions from automated AI cr
     </div>
 </div>
 
+
 Explore topics, participate in discussions, and enjoy an authenticated bot-free community!`
     };
 }
+
 
 function createPostCardElement(post) {
     const item = document.createElement('div');
@@ -3856,15 +4436,18 @@ function createPostCardElement(post) {
     const myVote = userVotes[post.id] || 0;
     const postAuthorRole = getThreadRole(post.thread, post.author);
 
+
     let roleBadge = '';
     if (post.is_pinned) roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">PINNED GUIDE</span>`;
     else if (postAuthorRole === 'Site Admin') roleBadge = `<span class="badge badge-purple" style="font-size:0.65rem;">ADMIN</span>`;
     else if (postAuthorRole === 'Owner') roleBadge = `<span class="badge badge-yellow" style="font-size:0.65rem;">OWNER</span>`;
     else if (postAuthorRole === 'Moderator') roleBadge = `<span class="badge badge-green" style="font-size:0.65rem;">MOD</span>`;
 
+
     const userCanDelete = canDeletePost(post) && !post.is_pinned;
     const userCanEdit = post.author && currentUsername && post.author.toLowerCase() === currentUsername.toLowerCase();
     const userCanPin = (postAuthorRole === 'Site Admin' || postAuthorRole === 'Owner' || postAuthorRole === 'Moderator');
+
 
     let actionButtonsHtml = `
         <div class="post-admin-actions">
@@ -3876,10 +4459,12 @@ function createPostCardElement(post) {
         </div>
     `;
 
+
     const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
     const renderedBody = post.is_pinned && !post.poll_options ? post.content : renderFormattedContent(post.content || '');
+
 
     // Construct Poll UI
     let pollHtml = '';
@@ -3890,12 +4475,14 @@ function createPostCardElement(post) {
         const isExpired = post.poll_expires_at && new Date(post.poll_expires_at) < new Date();
         const showResults = hasVoted || isExpired;
 
+
         // Tally votes
         const tallies = post.poll_options.map(() => 0);
         Object.values(votes).forEach(optIndex => {
             if(tallies[optIndex] !== undefined) tallies[optIndex]++;
         });
         const maxVotes = Math.max(...tallies, 0);
+
 
         pollHtml += `<div class="poll-container" id="poll-${post.id}">`;
         
@@ -3919,13 +4506,16 @@ function createPostCardElement(post) {
         pollHtml += `<div class="poll-meta">${totalVotes} votes • ${isExpired ? 'Final Results' : 'Poll Open'}</div></div>`;
     }
 
+
     // Display globally synced flair
     const authorFlair = threadFlairMap.get(cleanAuthor);
     const userFlairBadge = authorFlair 
         ? `<span class="badge" style="font-size:0.65rem; background: #1e293b; border: 1px solid #475569; color: #94a3b8; margin-left: 4px;">${escapeHTML(authorFlair)}</span>` 
         : '';
 
+
     const titleHtml = post.title ? `<div class="post-title-text">${escapeHTML(post.title)}</div>` : '';
+
 
     item.innerHTML = `
         <div class="vote-box">
@@ -3958,12 +4548,14 @@ function createPostCardElement(post) {
         </div>
     `;
 
+
     item.querySelectorAll('.clickable-username, .post-author-avatar').forEach(clickable => {
         clickable.addEventListener('click', (e) => {
             const u = e.currentTarget.getAttribute('data-username');
             if (u) window.openUserProfileCard(u);
         });
     });
+
 
     item.querySelectorAll('.vote-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
@@ -3973,6 +4565,7 @@ function createPostCardElement(post) {
         });
     });
 
+
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
@@ -3980,6 +4573,7 @@ function createPostCardElement(post) {
             await deletePostById(post.id);
         });
     }
+
 
     const commentsBtn = item.querySelector('.toggle-comments-btn');
     if (commentsBtn) {
@@ -3992,12 +4586,14 @@ function createPostCardElement(post) {
         });
     }
 
+
     const shareBtn = item.querySelector('.btn-share-post');
     if (shareBtn) {
         shareBtn.addEventListener('click', () => {
             openShareModal(post.id);
         });
     }
+
 
     const submitCommentBtn = item.querySelector('.submit-comment-btn');
         if (submitCommentBtn) {
@@ -4008,6 +4604,7 @@ function createPostCardElement(post) {
                 input.value = '';
             });
         }
+
 
         // Fetch comment count asynchronously for the button
         if (db && post.id !== 'welcome-seed') {
@@ -4043,14 +4640,18 @@ function createPostCardElement(post) {
         });
     });
 
+
     const pinBtn = item.querySelector('.btn-pin-post');
     if (pinBtn) {
         pinBtn.addEventListener('click', () => togglePinPost(post));
     }
 
 
+
+
         return item;
     }
+
 
 async function deletePostById(postId) {
     if (!currentUser) return;
@@ -4064,6 +4665,7 @@ async function deletePostById(postId) {
     loadProminentUpdates();
 }
 
+
 async function loadCommentsForPost(postId) {
     const listEl = document.getElementById(`comments-list-${postId}`);
     if (!listEl || !db) return;
@@ -4076,12 +4678,15 @@ async function loadCommentsForPost(postId) {
         .eq('post_id', postId)
         .order('id', { ascending: true });
 
+
     if (error || !comments || comments.length === 0) {
         listEl.innerHTML = '<span style="font-size:0.8rem; color:#64748b; font-style:italic;">No replies yet.</span>';
         return;
     }
 
+
     listEl.innerHTML = '';
+
 
     // Group comments by parent to create a hierarchy tree
     const topLevelComments = comments.filter(c => !c.parent_id);
@@ -4093,14 +4698,17 @@ async function loadCommentsForPost(postId) {
         }
     });
 
+
     // Recursive render function for nested replies
     const renderCommentNode = (c, isReply = false) => {
         const cleanAuthor = (c.author || 'anonymous').toLowerCase().replace('@', '');
         const avatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
 
+
         const wrap = document.createElement('div');
         // Indent and add left border if it's a reply
         wrap.style.cssText = `display: flex; flex-direction: column; gap: 6px; ${isReply ? 'margin-left: 24px; border-left: 2px solid #334155; padding-left: 10px; margin-top: 6px;' : 'background: #0f172a; padding: 8px; border-radius: 6px;'}`;
+
 
         const commentBody = document.createElement('div');
         commentBody.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem;";
@@ -4119,7 +4727,9 @@ async function loadCommentsForPost(postId) {
             </div>
         `;
 
+
         wrap.appendChild(commentBody);
+
 
         commentBody.querySelectorAll('.clickable-username').forEach(clickable => {
             clickable.addEventListener('click', (e) => {
@@ -4127,6 +4737,7 @@ async function loadCommentsForPost(postId) {
                 if (u) window.openUserProfileCard(u);
             });
         });
+
 
         const replyToggle = commentBody.querySelector('.btn-reply-toggle');
         const replyWrap = commentBody.querySelector('.reply-input-wrap');
@@ -4143,6 +4754,7 @@ async function loadCommentsForPost(postId) {
             });
         }
 
+
         const submitSubReplyBtn = commentBody.querySelector('.submit-sub-reply-btn');
         const subReplyInput = commentBody.querySelector('.sub-reply-input');
         if (submitSubReplyBtn && subReplyInput) {
@@ -4157,6 +4769,7 @@ async function loadCommentsForPost(postId) {
             });
         }
 
+
         // Recursively call and append any child replies directly under this wrapper
         const children = repliesByParent[c.id] || [];
         if (children.length > 0) {
@@ -4168,13 +4781,16 @@ async function loadCommentsForPost(postId) {
             wrap.appendChild(childContainer);
         }
 
+
         return wrap;
     };
+
 
     topLevelComments.forEach(c => {
         listEl.appendChild(renderCommentNode(c, false));
     });
 }
+
 
 async function submitComment(postId, postAuthorUsername, content, parentId = null) {
     if (!currentUser) {
@@ -4189,6 +4805,7 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
     }
     if (!content.trim()) return;
 
+
     const { error } = await db.from('post_comments').insert([{
         post_id: postId,
         author: currentUsername,
@@ -4196,10 +4813,12 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
         parent_id: parentId
     }]);
 
+
     if (error) {
         alert(`Error posting comment: ${error.message}`);
         return;
     }
+
 
     // Immediately update the comment count button text on screen
     const countSpan = document.getElementById(`comment-count-${postId}`);
@@ -4209,7 +4828,9 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
         countSpan.textContent = newCount === 1 ? '1 Comment' : `${newCount} Comments`;
     }
 
+
     loadCommentsForPost(postId);
+
 
     if (postAuthorUsername && postAuthorUsername !== currentUsername.toLowerCase()) {
         const { data: profile } = await db.from('profiles').select('id').ilike('username', postAuthorUsername).maybeSingle();
@@ -4226,19 +4847,23 @@ function renderCurrentFeed() {
         return;
     }
 
+
     forumFeed.innerHTML = '';
     sorted.forEach(post => {
         forumFeed.appendChild(createPostCardElement(post));
     });
 }
 
+
 async function loadForumPosts() {
     updateThreadControlsUI();
     if (typeof syncLiveThread === 'function') syncLiveThread(activeThread); // Join Realtime Chat Room
     if (!db || !forumFeed) return;
 
+
     const thisFetchId = ++currentFetchId;
     const requestedThread = activeThread;
+
 
     // UI UPGRADE: Skeleton Loaders
     forumFeed.innerHTML = Array(4).fill(`
@@ -4258,8 +4883,10 @@ async function loadForumPosts() {
     cachedPosts = [];
     postCacheMap.clear();
 
+
     let posts = [];
     let error = null;
+
 
     if (requestedThread === "Trending") {
         // Automatically compile recent posts (last 7 days) from all communities
@@ -4271,8 +4898,10 @@ async function loadForumPosts() {
             .order('id', { ascending: false })
             .limit(100);
 
+
         posts = trendRes.data || [];
         error = trendRes.error;
+
 
         // Fallback: If no posts exist in the last 7 days, retrieve all-time latest posts so the feed is never blank
         if (!error && posts.length === 0) {
@@ -4293,12 +4922,15 @@ async function loadForumPosts() {
         error = res.error;
     }
 
+
     if (thisFetchId !== currentFetchId || activeThread !== requestedThread) return;
+
 
     if (error) {
         forumFeed.innerHTML = `<div class="no-posts" style="color: #f87171;">Error loading posts: ${escapeHTML(error.message)}</div>`;
         return;
     }
+
 
     // BUG FIX: Fetch missing avatars for authors directly before rendering the feed
     if (posts && posts.length > 0) {
@@ -4309,6 +4941,7 @@ async function loadForumPosts() {
         });
     }
 
+
     if (requestedThread === "Welcome & Security") {
         const welcomePost = getWelcomeSecurityPost();
         cachedPosts = posts && posts.length > 0 ? [welcomePost, ...posts] : [welcomePost];
@@ -4316,7 +4949,9 @@ async function loadForumPosts() {
         cachedPosts = posts || [];
     }
 
+
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
+
 
     // Fetch globally synced community flairs
     threadFlairMap.clear();
@@ -4325,6 +4960,7 @@ async function loadForumPosts() {
         .select('username, flair')
         .eq('thread_name', requestedThread);
 
+
     (flairs || []).forEach(f => {
         threadFlairMap.set(f.username.toLowerCase(), f.flair);
     });
@@ -4332,10 +4968,13 @@ async function loadForumPosts() {
     renderCurrentFeed();
 }
 
+
 // --- TICKER & ANNOUNCEMENTS ---
+
 
 async function loadProminentUpdates() {
     if (!db || !tickerContent) return;
+
 
     const { data: updates, error } = await db
         .from('Posts')
@@ -4344,10 +4983,12 @@ async function loadProminentUpdates() {
         .order('id', { ascending: false })
         .limit(3);
 
+
     if (error || !updates || updates.length === 0) {
         tickerContent.innerHTML = `<span class="ticker-item">No official updates posted yet.</span>`;
         return;
     }
+
 
     cachedUpdates = updates;
     const items = updates.map(u => {
@@ -4355,10 +4996,13 @@ async function loadProminentUpdates() {
         return `<span class="ticker-item" data-id="${u.id}">📢 [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
     }).join('');
 
+
     tickerContent.innerHTML = items + items;
 }
 
+
 // --- TELEMETRY ---
+
 
 function startCompositionTimer() {
     if (timerInterval) clearInterval(timerInterval);
@@ -4373,6 +5017,7 @@ function startCompositionTimer() {
     }, 250);
 }
 
+
 let lastMouseMoveSample = 0;
 window.addEventListener('mousemove', () => {
     const now = Date.now();
@@ -4382,14 +5027,17 @@ window.addEventListener('mousemove', () => {
     }
 }, { passive: true });
 
+
 window.addEventListener('touchstart', () => {
     mouseMovementsRecorded++;
 }, { passive: true });
+
 
 if (textBox) {
     textBox.addEventListener('focus', () => {
         if (!isTimerRunning) startCompositionTimer();
     });
+
 
     textBox.addEventListener('paste', () => {
         textWasPasted = true;
@@ -4404,6 +5052,7 @@ if (textBox) {
             }, 0);
         }
     });
+
 
     textBox.addEventListener('keydown', (e) => {
         if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return;
@@ -4420,6 +5069,7 @@ if (textBox) {
     });
 }
 
+
 function escapeHTML(str) {
     if (!str) return '';
     return String(str).replace(/[&<>'"]/g, tag => ({
@@ -4430,6 +5080,7 @@ function escapeHTML(str) {
         '"': '&quot;'
     }[tag] || tag));
 }
+
 
 function resetTelemetryConsole() {
     if (timerInterval) clearInterval(timerInterval);
@@ -4464,10 +5115,12 @@ function resetTelemetryConsole() {
     }
 }
 
+
 async function navigateToConversation(convId) {
     if (!currentUser || !db) return;
     if (notificationsModal) notificationsModal.classList.add('hidden');
     openMessagesModal();
+
 
     try {
         const { data: conv } = await db
@@ -4476,7 +5129,9 @@ async function navigateToConversation(convId) {
             .eq('id', convId)
             .maybeSingle();
 
+
         if (!conv) return;
+
 
         if (conv.is_group) {
             selectConversation(conv.id, `Group: ${conv.name}`, null, null, true);
@@ -4488,8 +5143,10 @@ async function navigateToConversation(convId) {
                 .neq('user_id', currentUser.id)
                 .maybeSingle();
 
+
             let partnerId = member ? member.user_id : null;
             let partnerUsername = 'Chat';
+
 
             if (partnerId) {
                 const { data: profile } = await db
@@ -4499,6 +5156,7 @@ async function navigateToConversation(convId) {
                     .maybeSingle();
                 if (profile?.username) partnerUsername = profile.username;
             }
+
 
             // Check true friendship status
             let isFriend = false;
@@ -4512,12 +5170,14 @@ async function navigateToConversation(convId) {
                 isFriend = Boolean(fr);
             }
 
+
             selectConversation(conv.id, `@${partnerUsername}`, partnerId, partnerUsername, isFriend);
         }
     } catch (err) {
         console.warn("Could not open chat from notification:", err);
     }
 }
+
 
 async function navigateToPost(postId) {
     if (!db) return;
@@ -4527,12 +5187,14 @@ async function navigateToPost(postId) {
         return;
     }
 
+
     if (notificationsModal) notificationsModal.classList.add('hidden');
     if (activeThread !== post.thread) {
         activeThread = post.thread;
         localStorage.setItem('forum_active_thread', activeThread);
         await loadForumPosts();
     }
+
 
     // Polls the DOM until the feed finishes rendering the post, then scrolls
     let attempts = 0;
@@ -4551,44 +5213,55 @@ async function navigateToPost(postId) {
 }
 
 
+
+
 // --- SHARING LOGIC ---
+
 
 async function incrementShareCount(postId) {
     if (!postId || isNaN(postId)) return;
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
 
+
     post.shares = (Number(post.shares) || 0) + 1;
     const countSpan = document.getElementById(`share-count-${postId}`);
     if (countSpan) countSpan.textContent = post.shares;
+
 
     if (db) {
         await db.from('Posts').update({ shares: post.shares }).eq('id', postId);
     }
 }
 
+
 safeAddListener(closeShareModalBtn, 'click', () => { if (shareModal) shareModal.classList.add('hidden'); });
 safeAddListener(shareModal, 'click', (e) => { if (e.target === shareModal) shareModal.classList.add('hidden'); });
+
 
 async function populateShareConversations() {
     if (!shareDmSelect) return;
     shareDmSelect.innerHTML = '<option value="">Select a friend or group...</option>';
     if (internalShareBtn) internalShareBtn.disabled = true;
 
+
     if (currentUser && db) {
         const { data: memberships } = await db.from('conversation_members')
             .select('conversation_id')
             .eq('user_id', currentUser.id);
+
 
         if (memberships && memberships.length > 0) {
             const convIds = memberships.map(m => m.conversation_id);
             const { data: convs } = await db.from('conversations').select('id, name, is_group').in('id', convIds);
             const { data: allMembers } = await db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id);
 
+
             const partnerIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
             const { data: profiles } = partnerIds.length > 0 
                 ? await db.from('profiles').select('id, username').in('id', partnerIds) 
                 : { data: [] };
+
 
             (convs || []).forEach(conv => {
                 let displayName = '';
@@ -4599,6 +5272,7 @@ async function populateShareConversations() {
                     const pProfile = partnerMem ? (profiles || []).find(p => p.id === partnerMem.user_id) : null;
                     displayName = pProfile ? `@${pProfile.username}` : 'Direct Message';
                 }
+
 
                 const option = document.createElement('option');
                 option.value = conv.id;
@@ -4616,16 +5290,19 @@ async function populateShareConversations() {
     }
 }
 
+
 // Opens modal to share an individual post
 async function openShareModal(postId) {
     currentShareType = 'post';
     currentShareTarget = postId;
     currentSharePostUrl = `${window.location.origin}${window.location.pathname}?post=${postId}`;
 
+
     if (shareModalTitle) shareModalTitle.textContent = '📤 Share Post';
     await populateShareConversations();
     if (shareModal) shareModal.classList.remove('hidden');
 }
+
 
 // Opens modal to share an entire thread
 async function openShareThreadModal(threadName) {
@@ -4633,14 +5310,17 @@ async function openShareThreadModal(threadName) {
     currentShareTarget = threadName;
     currentSharePostUrl = `${window.location.origin}${window.location.pathname}?thread=${encodeURIComponent(threadName)}`;
 
+
     if (shareModalTitle) shareModalTitle.textContent = `📤 Share Thread: #${threadName}`;
     await populateShareConversations();
     if (shareModal) shareModal.classList.remove('hidden');
 }
 
+
 safeAddListener(shareThreadBtn, 'click', () => {
     openShareThreadModal(activeThread);
 });
+
 
 // 1. Native OS Sharing
 safeAddListener(nativeShareBtn, 'click', async () => {
@@ -4650,11 +5330,13 @@ safeAddListener(nativeShareBtn, 'click', async () => {
                 ? `Check out the #${currentShareTarget} thread on Turing's Gate!`
                 : "Check out this post on Turing's Gate!";
 
+
             await navigator.share({
                 title: "Turing's Gate",
                 text: shareText,
                 url: currentSharePostUrl
             });
+
 
             if (currentShareType === 'post') {
                 await incrementShareCount(currentShareTarget);
@@ -4667,6 +5349,7 @@ safeAddListener(nativeShareBtn, 'click', async () => {
         alert("Your device doesn't support the native share menu. Please copy the link instead.");
     }
 });
+
 
 // 2. Clipboard Copy
 safeAddListener(copyLinkBtn, 'click', async () => {
@@ -4686,21 +5369,26 @@ safeAddListener(copyLinkBtn, 'click', async () => {
     }
 });
 
+
 safeAddListener(shareDmSelect, 'change', () => {
     if (internalShareBtn) internalShareBtn.disabled = !shareDmSelect.value;
 });
+
 
 // 3. Send via Internal DM
 safeAddListener(internalShareBtn, 'click', async () => {
     const selectedConvId = shareDmSelect.value;
     if (!selectedConvId || !currentShareTarget || !currentUser) return;
 
+
     internalShareBtn.disabled = true;
     internalShareBtn.textContent = 'Sending...';
+
 
     const formattedLink = currentShareType === 'thread'
         ? `Check out the #${currentShareTarget} community: [Open Thread](${currentSharePostUrl})`
         : `Check out this post: [View Post](${currentSharePostUrl})`;
+
 
     const { error } = await db.from('chat_messages').insert([{
         conversation_id: selectedConvId,
@@ -4710,6 +5398,7 @@ safeAddListener(internalShareBtn, 'click', async () => {
         pending_approval: false
     }]);
 
+
     if (error) {
         alert(`Error sharing: ${error.message}`);
         internalShareBtn.disabled = false;
@@ -4717,21 +5406,26 @@ safeAddListener(internalShareBtn, 'click', async () => {
         return;
     }
 
+
     await db.from('chat_messages')
         .update({ is_read: false })
         .eq('conversation_id', selectedConvId)
         .neq('sender_id', currentUser.id);
 
+
     if (currentShareType === 'post') {
         await incrementShareCount(currentShareTarget);
     }
+
 
     alert(currentShareType === 'thread' ? "Thread shared in your messages!" : "Post shared in your messages!");
     if (shareModal) shareModal.classList.add('hidden');
     internalShareBtn.textContent = 'Send Message';
 });
 
+
 // --- FAB POST MODAL LOGIC & CLOSE FIX ---
+
 
 function openFabModal(e) {
     if (!currentUser) { 
@@ -4740,6 +5434,7 @@ function openFabModal(e) {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return; 
     }
+
 
     if (isSuspended) {
         triggerSuspensionGate();
@@ -4758,12 +5453,14 @@ function openFabModal(e) {
         fabModalOverlay.classList.add('active');
     }
 
+
     // Default to activeThread unless on Trending (which cannot be posted to directly)
     if (threadSearchSelect) {
         threadSearchSelect.value = activeThread === 'Trending' ? 'New User Discussion' : activeThread;
     }
     if (threadSuggestDropdown) threadSuggestDropdown.classList.add('hidden');
 }
+
 
 function closeFabModal() {
     if (fabModalOverlay) {
@@ -4772,19 +5469,23 @@ function closeFabModal() {
     }
 }
 
+
 safeAddListener(desktopFab, 'click', openFabModal);
 safeAddListener(mobileFab, 'click', openFabModal);
+
 
 safeAddListener(closeFabModalBtn, 'click', (e) => {
     e.stopPropagation();
     closeFabModal();
 });
 
+
 safeAddListener(fabModalOverlay, 'click', (e) => {
     if (e.target === fabModalOverlay) {
         closeFabModal();
     }
 });
+
 
 // Community Search Dropdown Logic
 safeAddListener(threadSearchSelect, 'input', () => {
@@ -4796,6 +5497,7 @@ safeAddListener(threadSearchSelect, 'input', () => {
         threadSuggestDropdown.classList.add('hidden');
         return;
     }
+
 
     // Filter out Trending so users cannot target it when creating a post
     const joined = Array.from(myJoinedThreadNames).filter(t => t !== 'Trending' && t.toLowerCase().includes(q));
@@ -4821,6 +5523,7 @@ safeAddListener(threadSearchSelect, 'input', () => {
     threadSuggestDropdown.classList.remove('hidden');
 });
 
+
 document.addEventListener('click', (e) => {
     if (threadSearchSelect && threadSuggestDropdown) {
         if (!threadSearchSelect.contains(e.target) && !threadSuggestDropdown.contains(e.target)) {
@@ -4829,20 +5532,24 @@ document.addEventListener('click', (e) => {
     }
 });
 
+
 // Post Submission
 // Post Submission (Robust Paste Handling & Flag Reset)
 safeAddListener(forumForm, 'submit', async (event) => {
     event.preventDefault(); 
+
 
     if (!currentUser || !currentUsername) {
         alert("You must be logged in to post.");
         return;
     }
 
+
     if (isSuspended) {
         triggerSuspensionGate();
         return;
     }
+
 
     const targetThread = threadSearchSelect ? threadSearchSelect.value.trim() : activeThread;
     if (!targetThread) {
@@ -4850,33 +5557,40 @@ safeAddListener(forumForm, 'submit', async (event) => {
         return;
     }
 
+
     if (!allCloudThreads.some(t => t.name.toLowerCase() === targetThread.toLowerCase())) {
         alert("Community not found. Please choose an existing thread or create a new one from the sidebar.");
         return;
     }
+
 
     if (isUserBannedFromThread(targetThread, currentUsername)) {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
         return;
     }
 
+
     if (targetThread === "Trending") {
         alert("The #Trending feed is compiled automatically from top-rated posts. Please select a specific community to publish your post.");
         return;
     }
+
 
     if ((targetThread === "Update Thread" || targetThread === "Welcome & Security") && !isSiteAdmin()) {
         alert(`Permission Denied: Only @gemini can publish to the official "${targetThread}" section.`);
         return;
     }
 
+
     // Capture title & body text safely before any processing
     const postTitleInput = document.getElementById('post-title-input');
     const postTitle = postTitleInput ? postTitleInput.value.trim() : "";
     const postContent = textBox ? textBox.value.trim() : "";
 
+
     let pollOptionsJSON = null;
     let pollExpiresAt = null;
+
 
     const pollBuilder = document.getElementById('poll-builder-container');
     if (pollBuilder && !pollBuilder.classList.contains('hidden')) {
@@ -4892,19 +5606,23 @@ safeAddListener(forumForm, 'submit', async (event) => {
         pollExpiresAt = expDate.toISOString();
     }
 
+
     if (postContent.length < 2 && !selectedPostPhotoFile && !pollOptionsJSON && !postTitle) {
         alert("Please enter a message, attach a photo, or create a poll.");
         return;
     }
 
+
     // --- TELEMETRY EVALUATION ---
     let behaviorPoints = 0;
     const totalTimeElapsed = pageLoadTime ? (Date.now() - pageLoadTime) / 1000 : 0;
+
 
     // 1. Bot Trap / Honeypot field filled
     if (honeypotField && honeypotField.value.trim() !== "") {
         behaviorPoints += 5;
     }
+
 
     // 2. Clipboard Paste (+1 point only, exempted from superhuman speed check)
     if (textWasPasted) {
@@ -4914,16 +5632,19 @@ safeAddListener(forumForm, 'submit', async (event) => {
         behaviorPoints += 1;
     }
 
+
     // 4. Rapid burst posting (<4 seconds between forum posts)
     const now = Date.now();
     if (lastPostTimestamp > 0 && (now - lastPostTimestamp) < 4000) {
         behaviorPoints += 1;
     }
 
+
     // Update suspicion score
     if (behaviorPoints > 0) {
         suspicionScore = Math.min(5, suspicionScore + behaviorPoints);
         updateSuspicionUI();
+
 
         if (currentUser && db) {
             try {
@@ -4933,6 +5654,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
             }
         }
 
+
         // Suspend and halt ONLY if threshold (5) is reached
         if (suspicionScore >= 5) {
             resetTelemetryConsole(); 
@@ -4941,11 +5663,13 @@ safeAddListener(forumForm, 'submit', async (event) => {
         }
     }
 
+
     const submitBtn = document.getElementById('forum-submit-btn');
     if (submitBtn) { 
         submitBtn.disabled = true; 
         submitBtn.textContent = 'Publishing...'; 
     }
+
 
     let postImageUrl = null;
     try {
@@ -4955,11 +5679,13 @@ safeAddListener(forumForm, 'submit', async (event) => {
             const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
             const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, compressedPhoto);
 
+
             if (!uploadError) {
                 const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
                 postImageUrl = publicUrlData.publicUrl;
             }
         }
+
 
         // Build payload with optional title
         const insertPayload = { 
@@ -4971,6 +5697,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
             poll_expires_at: pollExpiresAt
         };
         if (postTitle) insertPayload.title = postTitle;
+
 
         // Insert into database with fallback in case 'title' column has not yet been added in Supabase
         let { error } = await db.from('Posts').insert([insertPayload]);
@@ -4986,7 +5713,9 @@ safeAddListener(forumForm, 'submit', async (event) => {
             return;
         }
 
+
         lastPostTimestamp = Date.now();
+
 
         if (targetThread === "Update Thread") {
             await loadProminentUpdates();
@@ -4996,12 +5725,14 @@ safeAddListener(forumForm, 'submit', async (event) => {
             await loadForumPosts();
         }
 
+
         closeFabModal();
     } catch (err) {
         alert(`An error occurred while posting: ${err.message}`);
     } finally {
         // ALWAYS reset telemetry flags so textWasPasted is reset to FALSE
         resetTelemetryConsole();
+
 
         if (submitBtn) { 
             submitBtn.disabled = false; 
@@ -5010,6 +5741,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
     }
 });
 
+
 // --- THREAD LINK NAVIGATION (T/Thread_Name) ---
 document.addEventListener('click', async (e) => {
     const threadLink = e.target.closest('.clickable-thread');
@@ -5017,11 +5749,13 @@ document.addEventListener('click', async (e) => {
         const targetThread = threadLink.getAttribute('data-thread');
         if (!targetThread) return;
 
+
         // 1. Close active modals if clicked from a DM, Profile, or Fab modal
         if (typeof closeMessagesModal === 'function') closeMessagesModal();
         if (typeof closeFabModal === 'function') closeFabModal();
         if (dmModal) dmModal.classList.add('hidden');
         if (userProfileModal) userProfileModal.classList.add('hidden');
+
 
         // 2. Switch thread directly if not already active
         if (activeThread !== targetThread) {
@@ -5030,6 +5764,7 @@ document.addEventListener('click', async (e) => {
             cachedPosts = [];
             postCacheMap.clear();
             if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+
 
             renderJoinedThreadsSidebar();
             updateThreadControlsUI();
@@ -5040,11 +5775,13 @@ document.addEventListener('click', async (e) => {
     }
 });
 
+
 // --- THREAD BANNER LOGIC ---
 function renderThreadBanner() {
     const container = document.getElementById('thread-banner-container');
     const img = document.getElementById('thread-banner-img');
     if (!container || !img) return;
+
 
     const threadData = allCloudThreads.find(t => t.name === activeThread);
     
@@ -5059,12 +5796,15 @@ function renderThreadBanner() {
     }
 }
 
+
 safeAddListener(document.getElementById('banner-upload-input'), 'change', async (e) => {
     const rawFile = e.target.files[0];
     if (!rawFile || !currentUser) return;
 
+
     const bannerBtn = document.getElementById('set-banner-btn');
     if (bannerBtn) { bannerBtn.disabled = true; bannerBtn.textContent = '⏳ Uploading...'; }
+
 
     try {
         // Compress banner, skips if GIF
@@ -5074,14 +5814,18 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
         const safeThreadName = activeThread.replace(/[^a-zA-Z0-9]/g, '_');
         const filePath = `banners/${safeThreadName}_${Date.now()}.${fileExt}`;
 
+
         const { error: uploadError } = await db.storage
             .from('chat-images')
             .upload(filePath, file, { upsert: true });
 
+
         if (uploadError) throw uploadError;
+
 
         const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
         const bannerUrl = publicUrlData.publicUrl;
+
 
         // Force select() so we know if a row was actually updated
         const { error: updateError, data: updateData } = await db
@@ -5090,7 +5834,9 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
             .eq('name', activeThread)
             .select();
 
+
         if (updateError) throw updateError;
+
 
         // If the DB returned 0 updated rows, the thread didn't exist in the DB yet. Insert it.
         if (!updateData || updateData.length === 0) {
@@ -5105,6 +5851,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
             if (insertErr) throw new Error("Database blocked row creation: " + insertErr.message);
         }
 
+
         // UPDATE LOCAL MEMORY DIRECTLY AND PERMANENTLY
         let localThreadIndex = allCloudThreads.findIndex(t => t.name === activeThread);
         if (localThreadIndex !== -1) {
@@ -5112,6 +5859,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
         } else {
             allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
         }
+
 
         renderThreadBanner();
         alert('Community banner updated successfully!');
@@ -5133,6 +5881,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
                 }
             });
 
+
     } catch (err) {
         alert(`Error uploading banner: ${err.message}`);
     } finally {
@@ -5142,11 +5891,14 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
 });
 
 
+
+
 // --- LIVE USER COUNT TRACKER ---
 async function initLiveUserCount() {
     if (!db) return;
     const countEl = document.getElementById('live-user-count');
     if (!countEl) return;
+
 
     const updateCount = async () => {
         // { head: true } asks Supabase only for the count number, saving massive bandwidth
@@ -5156,8 +5908,10 @@ async function initLiveUserCount() {
         }
     };
 
+
     // 1. Initial fetch on page load
     await updateCount();
+
 
     // 2. Subscribe to real-time additions or deletions in the profiles table
     db.channel('live-user-count')
@@ -5167,21 +5921,26 @@ async function initLiveUserCount() {
 }
 
 
+
+
 // --- WEB OF TRUST: INVITES LOGIC ---
 async function loadUserInvites() {
     const container = document.getElementById('invites-container');
     const btn = document.getElementById('generate-invite-btn');
     if (!container || !btn || !currentUser || !db) return;
 
+
     const { data: invites, error } = await db.from('invitations')
         .select('*')
         .eq('inviter_id', currentUser.id)
         .order('created_at', { ascending: false });
 
+
     if (error) {
         console.warn("Could not load invitations:", error.message);
         return;
     }
+
 
     container.innerHTML = '';
     const allGeneratedInvites = invites || [];
@@ -5190,6 +5949,7 @@ async function loadUserInvites() {
     const totalLifetimeCreated = allGeneratedInvites.length;
     const remainingQuota = Math.max(0, 3 - totalLifetimeCreated);
     const isAdmin = isSiteAdmin();
+
 
     if (!isAdmin && totalLifetimeCreated >= 3) {
         btn.style.display = 'none';
@@ -5202,18 +5962,22 @@ async function loadUserInvites() {
         }
     }
 
+
     // Only render invites that have not been cleared by the user
     const visibleInvites = allGeneratedInvites.filter(inv => !inv.is_hidden);
+
 
     if (visibleInvites.length === 0) {
         container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">No active codes displayed.</div>';
         return;
     }
 
+
     visibleInvites.forEach(inv => {
         const div = document.createElement('div');
         div.className = 'invite-code-box';
         const isClaimed = inv.status === 'claimed';
+
 
         div.innerHTML = `
             <span style="opacity: ${isClaimed ? '0.5' : '1'}; text-decoration: ${isClaimed ? 'line-through' : 'none'}; font-weight: 600;">${escapeHTML(inv.code)}</span>
@@ -5237,18 +6001,22 @@ async function loadUserInvites() {
             });
         }
 
+
         // Soft-delete action: hides code from dashboard without refunding quota
         const clearBtn = div.querySelector('.btn-clear-invite');
         clearBtn.addEventListener('click', async () => {
             if (!confirm("Remove this code from your list? (Note: your 3-invite quota will not be refunded)")) return;
 
+
             clearBtn.disabled = true;
             clearBtn.textContent = '...';
+
 
             const { error: updateErr } = await db
                 .from('invitations')
                 .update({ is_hidden: true })
                 .eq('id', inv.id);
+
 
             if (updateErr) {
                 alert(`Could not clear code: ${updateErr.message}`);
@@ -5257,12 +6025,15 @@ async function loadUserInvites() {
                 return;
             }
 
+
             await loadUserInvites();
         });
+
 
         container.appendChild(div);
     });
 }
+
 
 safeAddListener(document.getElementById('generate-invite-btn'), 'click', async () => {
     if (!currentUser || !db) return;
@@ -5270,14 +6041,17 @@ safeAddListener(document.getElementById('generate-invite-btn'), 'click', async (
     btn.disabled = true;
     btn.textContent = 'Generating...';
 
+
     // Generate a random 8-character hex code
     const newCode = 'TG-' + Math.random().toString(16).substr(2, 8).toUpperCase();
+
 
     const { error } = await db.from('invitations').insert([{
         inviter_id: currentUser.id,
         code: newCode,
         status: 'pending'
     }]);
+
 
     if (error) {
         alert("Could not generate invite: " + error.message);
@@ -5288,11 +6062,14 @@ safeAddListener(document.getElementById('generate-invite-btn'), 'click', async (
 });
 
 
+
+
 // --- SYNCHRONOUS LIVE EVENTS LOGIC ---
 let liveThreadSubscription = null;
 const liveChatModal = document.getElementById('live-chat-modal');
 const liveChatInput = document.getElementById('live-chat-input');
 const liveChatHistory = document.getElementById('live-chat-history');
+
 
 safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
     if (!currentUser) {
@@ -5303,8 +6080,10 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
     const role = getThreadRole(activeThread);
     const canBypassLock = (role === 'Owner' || role === 'Site Admin');
 
+
     const chatForm = document.getElementById('live-chat-form');
     const lockedMsg = document.getElementById('live-chat-locked-msg');
+
 
     // If chat is locked AND the user isn't an admin/owner, hide the form and show the lock
     if (!window.currentLiveChatIsOpen && !canBypassLock) {
@@ -5316,11 +6095,13 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
         if (lockedMsg) lockedMsg.classList.add('hidden');
     }
 
+
     document.getElementById('live-chat-thread-name').textContent = activeThread;
     
     // Hide floating telemetry so it never blocks the Send button or input
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'none';
+
 
     liveChatModal.classList.remove('hidden');
     
@@ -5332,6 +6113,7 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
     scrollToBottomLiveChat();
 });
 
+
 function closeLiveChatModal() {
     if (liveChatModal) liveChatModal.classList.add('hidden');
     // Restore floating telemetry monitor
@@ -5339,7 +6121,9 @@ function closeLiveChatModal() {
     if (telemetryHud) telemetryHud.style.display = 'flex';
 }
 
+
 safeAddListener(document.getElementById('close-live-chat-btn'), 'click', closeLiveChatModal);
+
 
 // Close by tapping the dark backdrop overlay
 safeAddListener(liveChatModal, 'click', (e) => {
@@ -5348,11 +6132,13 @@ safeAddListener(liveChatModal, 'click', (e) => {
     }
 });
 
+
 function scrollToBottomLiveChat() {
     if (liveChatHistory) {
         liveChatHistory.scrollTop = liveChatHistory.scrollHeight;
     }
 }
+
 
 function renderLiveChatBubble(username, avatarUrl, message) {
     if (!liveChatHistory) return;
@@ -5368,10 +6154,12 @@ function renderLiveChatBubble(username, avatarUrl, message) {
         </div>
     `;
 
+
     div.innerHTML = isMine ? bubbleHtml + avatarHtml : avatarHtml + bubbleHtml;
     liveChatHistory.appendChild(div);
     scrollToBottomLiveChat();
 }
+
 
 async function syncLiveThread(threadName) {
     if (!db) return;
@@ -5385,12 +6173,14 @@ async function syncLiveThread(threadName) {
     const safeName = threadName.replace(/[^a-zA-Z0-9]/g, '_');
     const userIdentifier = currentUsername || 'guest_' + Math.floor(Math.random() * 10000);
 
+
     liveThreadSubscription = db.channel(`live_watercooler_${safeName}`, {
         config: {
             presence: { key: userIdentifier },
             broadcast: { self: true } // receive our own messages back to render them
         }
     });
+
 
     liveThreadSubscription
         .on('presence', { event: 'sync' }, () => {
@@ -5416,16 +6206,19 @@ async function syncLiveThread(threadName) {
     }
 }
 
+
 safeAddListener(document.getElementById('live-chat-form'), 'submit', (e) => {
     e.preventDefault();
     const text = liveChatInput.value.trim();
     if (!text || !liveThreadSubscription || !currentUser) return;
+
 
     const role = getThreadRole(activeThread);
     if (!window.currentLiveChatIsOpen && role !== 'Owner' && role !== 'Site Admin') {
         alert("Chat is currently locked. Message blocked.");
         return;
     }
+
 
     // Send payload via Supabase Realtime (No database row gets written)
     liveThreadSubscription.send({
@@ -5438,12 +6231,14 @@ safeAddListener(document.getElementById('live-chat-form'), 'submit', (e) => {
         }
     });
 
+
     liveChatInput.value = '';
 });
 // --- POST EDITING & HISTORY ENGINE ---
 const postEditModal = document.getElementById('post-edit-modal');
 const editPostIdInput = document.getElementById('edit-post-id');
 const editPostTextInput = document.getElementById('edit-post-text');
+
 
 function openPostEditModal(post) {
     if (!currentUser) return;
@@ -5453,9 +6248,11 @@ function openPostEditModal(post) {
     postEditModal.classList.remove('hidden');
 }
 
+
 safeAddListener(document.getElementById('close-post-edit-btn'), 'click', () => {
     postEditModal.classList.add('hidden');
 });
+
 
 safeAddListener(document.getElementById('post-edit-form'), 'submit', async (e) => {
     e.preventDefault();
@@ -5465,9 +6262,11 @@ safeAddListener(document.getElementById('post-edit-form'), 'submit', async (e) =
     submitBtn.disabled = true;
     submitBtn.textContent = 'Saving...';
 
+
     const postId = Number(editPostIdInput.value);
     const newContent = editPostTextInput.value.trim();
     const post = postCacheMap.get(postId);
+
 
     if (post && newContent !== post.content) {
         // Log to history table
@@ -5477,11 +6276,13 @@ safeAddListener(document.getElementById('post-edit-form'), 'submit', async (e) =
             new_content: newContent
         }]);
 
+
         // Update main post
         const { error } = await db.from('Posts').update({
             content: newContent,
             is_edited: true
         }).eq('id', postId);
+
 
         if (!error) {
             post.content = newContent;
@@ -5492,28 +6293,34 @@ safeAddListener(document.getElementById('post-edit-form'), 'submit', async (e) =
         }
     }
 
+
     submitBtn.disabled = false;
     submitBtn.textContent = 'Save Changes';
     postEditModal.classList.add('hidden');
 });
+
 
 async function loadEditHistory(postId) {
     const historyModal = document.getElementById('edit-history-modal');
     const historyList = document.getElementById('edit-history-list');
     if (!db || !historyModal || !historyList) return;
 
+
     historyModal.classList.remove('hidden');
     historyList.innerHTML = '<div class="no-posts">Loading history...</div>';
+
 
     const { data: edits, error } = await db.from('post_edits')
         .select('*')
         .eq('post_id', postId)
         .order('edited_at', { ascending: false });
 
+
     if (error || !edits || edits.length === 0) {
         historyList.innerHTML = '<div class="no-posts">No edit history found.</div>';
         return;
     }
+
 
     historyList.innerHTML = '';
     edits.forEach(edit => {
@@ -5528,14 +6335,17 @@ async function loadEditHistory(postId) {
     });
 }
 
+
 safeAddListener(document.getElementById('close-edit-history-btn'), 'click', () => {
     document.getElementById('edit-history-modal').classList.add('hidden');
 });
+
 
 // --- LIVE CHAT SCHEDULING LOGIC ---
 const chatConfigModal = document.getElementById('chat-config-modal');
 const scheduleCheckbox = document.getElementById('chat-schedule-enable-chk');
 const scheduleOptionsBox = document.getElementById('schedule-options');
+
 
 function evaluateLiveChatStatus(threadData) {
     if (!threadData) return true;
@@ -5543,6 +6353,7 @@ function evaluateLiveChatStatus(threadData) {
     
     const sched = threadData.live_chat_schedule;
     if (!sched || !sched.enabled) return true;
+
 
     try {
         // Evaluate current time against target timezone
@@ -5556,6 +6367,7 @@ function evaluateLiveChatStatus(threadData) {
         // Pad single digits (e.g. 9:00 -> 09:00) for string comparison
         const currentStr = `${hrStr.padStart(2, '0')}:${minStr.padStart(2, '0')}`;
 
+
         if (!sched.days.includes(day)) return false;
         if (currentStr >= sched.startTime && currentStr <= sched.endTime) return true;
         return false;
@@ -5566,21 +6378,26 @@ function evaluateLiveChatStatus(threadData) {
 }
 
 
+
+
 // Configuration Modal UI
 safeAddListener(scheduleCheckbox, 'change', (e) => {
     scheduleOptionsBox.style.opacity = e.target.checked ? '1' : '0.5';
     scheduleOptionsBox.style.pointerEvents = e.target.checked ? 'auto' : 'none';
 });
 
+
 safeAddListener(document.getElementById('manage-chat-btn'), 'click', () => {
     const tData = allCloudThreads.find(t => t.name === activeThread);
     if (!tData) return;
+
 
     document.getElementById('chat-manual-lock-chk').checked = !!tData.live_chat_locked;
     
     const sched = tData.live_chat_schedule || { enabled: false, days: [], startTime: "19:00", endTime: "20:00", timezone: "America/Toronto" };
     scheduleCheckbox.checked = sched.enabled;
     scheduleCheckbox.dispatchEvent(new Event('change'));
+
 
     document.querySelectorAll('.sched-day').forEach(chk => {
         chk.checked = sched.days.includes(chk.value);
@@ -5590,20 +6407,25 @@ safeAddListener(document.getElementById('manage-chat-btn'), 'click', () => {
     document.getElementById('chat-sched-end').value = sched.endTime || "20:00";
     document.getElementById('chat-sched-tz').value = sched.timezone || "America/Toronto";
 
+
     chatConfigModal.classList.remove('hidden');
 });
+
 
 safeAddListener(document.getElementById('close-chat-config-btn'), 'click', () => {
     chatConfigModal.classList.add('hidden');
 });
 
+
 safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e) => {
     e.preventDefault();
     if (!db || !currentUser) return;
 
+
     const btn = document.getElementById('save-chat-settings-btn');
     btn.disabled = true;
     btn.textContent = 'Saving...';
+
 
     const isLocked = document.getElementById('chat-manual-lock-chk').checked;
     const schedEnabled = scheduleCheckbox.checked;
@@ -5617,10 +6439,12 @@ safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e)
         timezone: document.getElementById('chat-sched-tz').value
     };
 
+
     const { error } = await db.from('forum_threads').update({
         live_chat_locked: isLocked,
         live_chat_schedule: scheduleJSON
     }).eq('name', activeThread);
+
 
     if (!error) {
         // Update local memory so we don't have to fully re-fetch
@@ -5635,11 +6459,14 @@ safeAddListener(document.getElementById('chat-config-form'), 'submit', async (e)
         alert("Failed to update chat settings: " + error.message);
     }
 
+
     btn.disabled = false;
     btn.textContent = 'Save Settings';
 });
 
+
 // --- POLL & PINNING ENGINE ---
+
 
 document.addEventListener('click', (e) => {
     // Toggle the UI for building a poll
@@ -5665,6 +6492,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
+
 async function togglePinPost(post) {
     if (!currentUser || !db) return;
     const newPinState = !post.is_pinned;
@@ -5679,6 +6507,7 @@ async function togglePinPost(post) {
     renderCurrentFeed();
 }
 
+
 async function submitPollVote(postId, optIdx) {
     if (!currentUser || !currentUsername || !db) {
         alert("Please log in to vote.");
@@ -5686,6 +6515,7 @@ async function submitPollVote(postId, optIdx) {
     }
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
+
 
     // Grab current votes or init fresh
     const votes = post.poll_votes || {};
@@ -5696,13 +6526,531 @@ async function submitPollVote(postId, optIdx) {
     // Record their vote
     votes[currentUsername.toLowerCase()] = Number(optIdx);
 
+
     const { error } = await db.from('Posts').update({ poll_votes: votes }).eq('id', postId);
     if (error) {
         alert("Failed to record vote: " + error.message);
         return;
     }
 
+
     // Refresh UI instantly
     post.poll_votes = votes;
     renderCurrentFeed();
 }
+
+// =========================================================================
+// --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
+// =========================================================================
+
+function playRingtoneSound() {
+    stopRingtoneSound();
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        ringtoneAudioCtx = new AudioCtx();
+
+        const playTone = () => {
+            if (!ringtoneAudioCtx || ringtoneAudioCtx.state === 'closed') return;
+            const osc1 = ringtoneAudioCtx.createOscillator();
+            const osc2 = ringtoneAudioCtx.createOscillator();
+            const gain = ringtoneAudioCtx.createGain();
+
+            osc1.type = 'sine';
+            osc2.type = 'sine';
+            osc1.frequency.setValueAtTime(440, ringtoneAudioCtx.currentTime);
+            osc2.frequency.setValueAtTime(480, ringtoneAudioCtx.currentTime);
+
+            gain.gain.setValueAtTime(0.06, ringtoneAudioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ringtoneAudioCtx.currentTime + 1.2);
+
+            osc1.connect(gain);
+            osc2.connect(gain);
+            gain.connect(ringtoneAudioCtx.destination);
+
+            osc1.start();
+            osc2.start();
+            osc1.stop(ringtoneAudioCtx.currentTime + 1.2);
+            osc2.stop(ringtoneAudioCtx.currentTime + 1.2);
+        };
+
+        playTone();
+        ringtoneInterval = setInterval(playTone, 3000);
+    } catch (e) {
+        console.warn("Ringtone audio notice:", e);
+    }
+}
+
+function stopRingtoneSound() {
+    if (ringtoneInterval) {
+        clearInterval(ringtoneInterval);
+        ringtoneInterval = null;
+    }
+    if (ringtoneAudioCtx) {
+        try { ringtoneAudioCtx.close(); } catch (e) {}
+        ringtoneAudioCtx = null;
+    }
+}
+
+function showActiveCallBar(status, isConnecting = true) {
+    if (!activeCallBar) return;
+    if (callStatusText) callStatusText.textContent = status;
+    if (callPulseIndicator) {
+        if (isConnecting) {
+            callPulseIndicator.className = 'call-pulse-dot connecting';
+            activeCallBar.className = 'active-call-bar connecting';
+        } else {
+            callPulseIndicator.className = 'call-pulse-dot';
+            activeCallBar.className = 'active-call-bar';
+        }
+    }
+    if (callDurationText) {
+        if (isConnecting) callDurationText.classList.add('hidden');
+        else callDurationText.classList.remove('hidden');
+    }
+    activeCallBar.classList.remove('hidden');
+}
+
+function setCallConnectedState() {
+    if (!activeCall) return;
+    stopRingtoneSound();
+    showActiveCallBar(`In call with @${activeCall.partnerUsername}`, false);
+
+    if (callDurationText) {
+        callDurationText.classList.remove('hidden');
+        callDurationText.textContent = "00:00";
+    }
+
+    if (activeCall.callTimerInterval) clearInterval(activeCall.callTimerInterval);
+    activeCall.callStartTime = Date.now();
+    activeCall.callTimerInterval = setInterval(() => {
+        if (!activeCall || !activeCall.callStartTime) return;
+        const elapsed = Math.floor((Date.now() - activeCall.callStartTime) / 1000);
+        const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const secs = String(elapsed % 60).padStart(2, '0');
+        if (callDurationText) callDurationText.textContent = `${mins}:${secs}`;
+    }, 1000);
+}
+
+function cleanupCall(statusNotice = null) {
+    stopRingtoneSound();
+    queuedIceCandidates = [];
+
+    if (activeCall) {
+        if (activeCall.callTimerInterval) {
+            clearInterval(activeCall.callTimerInterval);
+        }
+        if (activeCall.localStream) {
+            activeCall.localStream.getTracks().forEach(t => {
+                try { t.stop(); } catch (e) {}
+            });
+        }
+        if (activeCall.peerConnection) {
+            try { activeCall.peerConnection.close(); } catch (e) {}
+        }
+        if (activeCall.callChannel && db) {
+            try { db.removeChannel(activeCall.callChannel); } catch (e) {}
+        }
+        activeCall = null;
+    }
+
+    if (remoteAudioEl) {
+        remoteAudioEl.srcObject = null;
+    }
+
+    isMicMuted = false;
+    if (callMuteBtn) {
+        callMuteBtn.textContent = '🎤';
+        callMuteBtn.className = 'call-ctrl-btn secondary';
+    }
+
+    if (statusNotice && callStatusText) {
+        callStatusText.textContent = statusNotice;
+        setTimeout(() => {
+            if (!activeCall && activeCallBar) activeCallBar.classList.add('hidden');
+        }, 2000);
+    } else if (activeCallBar) {
+        activeCallBar.classList.add('hidden');
+    }
+}
+
+function setupCallChannelListeners(callChan, pc) {
+    callChan
+        .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.offer || data.from === currentUser?.id) return;
+
+            try {
+                if (!activeCall || !activeCall.peerConnection) return;
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+                // Process any queued ICE candidates
+                while (queuedIceCandidates.length > 0) {
+                    const c = queuedIceCandidates.shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                }
+
+                // Generate Answer
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_answer',
+                    payload: { answer: answer, from: currentUser.id }
+                });
+            } catch (err) {
+                console.error("Error handling webrtc_offer:", err);
+            }
+        })
+        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.answer || data.from === currentUser?.id) return;
+
+            try {
+                if (!activeCall || !activeCall.peerConnection) return;
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+
+                // Process any queued ICE candidates
+                while (queuedIceCandidates.length > 0) {
+                    const c = queuedIceCandidates.shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                }
+            } catch (err) {
+                console.error("Error handling webrtc_answer:", err);
+            }
+        })
+        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.candidate || data.from === currentUser?.id) return;
+
+            try {
+                if (!activeCall || !activeCall.peerConnection) return;
+                if (pc.remoteDescription && pc.remoteDescription.type) {
+                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } else {
+                    queuedIceCandidates.push(data.candidate);
+                }
+            } catch (err) {
+                console.warn("Notice adding ICE candidate:", err);
+            }
+        })
+        .on('broadcast', { event: 'receiver_ready' }, async (payload) => {
+            const data = payload?.payload;
+            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
+                if (activeCall.peerConnection.localDescription) {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_offer',
+                        payload: { offer: activeCall.peerConnection.localDescription, from: currentUser.id }
+                    });
+                }
+            }
+        })
+        .on('broadcast', { event: 'call_declined' }, () => {
+            stopRingtoneSound();
+            cleanupCall("Call Declined");
+        })
+        .on('broadcast', { event: 'call_busy' }, () => {
+            stopRingtoneSound();
+            cleanupCall("User is Busy");
+        })
+        .on('broadcast', { event: 'call_ended' }, () => {
+            cleanupCall("Call Ended");
+        });
+}
+
+async function startAudioCall() {
+    if (!currentUser || !activeConversationId || !activeConversationPartnerId) {
+        alert("Please select a 1-on-1 friend conversation to start an audio call.");
+        return;
+    }
+    if (activeCall) {
+        alert("You are already on an audio call.");
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false
+        });
+
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        const pc = new RTCPeerConnection(rtcConfig);
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        pc.ontrack = (event) => {
+            if (remoteAudioEl && event.streams[0]) {
+                remoteAudioEl.srcObject = event.streams[0];
+                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
+            }
+        };
+
+        const targetConvId = activeConversationId;
+        const targetPartnerId = activeConversationPartnerId;
+        const targetPartnerUsername = activeConversationPartnerUsername || 'User';
+
+        const callChan = db.channel(`call_room_${targetConvId}`);
+
+        activeCall = {
+            peerConnection: pc,
+            localStream: stream,
+            conversationId: targetConvId,
+            partnerId: targetPartnerId,
+            partnerUsername: targetPartnerUsername,
+            isCaller: true,
+            callChannel: callChan,
+            callStartTime: null,
+            callTimerInterval: null
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate && callChan) {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: { candidate: event.candidate, from: currentUser.id }
+                });
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') {
+                setCallConnectedState();
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                cleanupCall("Call Disconnected");
+            }
+        };
+
+        setupCallChannelListeners(callChan, pc);
+
+        await callChan.subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                // Ring partner's persistent signaling channel
+                const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`);
+                await partnerSig.subscribe();
+                partnerSig.send({
+                    type: 'broadcast',
+                    event: 'incoming_call',
+                    payload: {
+                        callerId: currentUser.id,
+                        callerUsername: currentUsername,
+                        conversationId: targetConvId
+                    }
+                });
+
+                // Create initial offer
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_offer',
+                    payload: { offer: offer, from: currentUser.id }
+                });
+            }
+        });
+
+        showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
+        playRingtoneSound();
+
+    } catch (err) {
+        console.error("Audio call error:", err);
+        alert("Could not access microphone: " + (err.message || err.name));
+        cleanupCall();
+    }
+}
+
+async function answerAudioCall() {
+    if (!incomingCallData || !currentUser) return;
+    stopRingtoneSound();
+    if (incomingCallModal) incomingCallModal.classList.add('hidden');
+
+    const data = incomingCallData;
+    incomingCallData = null;
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false
+        });
+
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        const pc = new RTCPeerConnection(rtcConfig);
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        pc.ontrack = (event) => {
+            if (remoteAudioEl && event.streams[0]) {
+                remoteAudioEl.srcObject = event.streams[0];
+                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
+            }
+        };
+
+        const callChan = db.channel(`call_room_${data.conversationId}`);
+
+        activeCall = {
+            peerConnection: pc,
+            localStream: stream,
+            conversationId: data.conversationId,
+            partnerId: data.callerId,
+            partnerUsername: data.callerUsername || 'User',
+            isCaller: false,
+            callChannel: callChan,
+            callStartTime: null,
+            callTimerInterval: null
+        };
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate && callChan) {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: { candidate: event.candidate, from: currentUser.id }
+                });
+            }
+        };
+
+        pc.onconnectionstatechange = () => {
+            if (pc.connectionState === 'connected') {
+                setCallConnectedState();
+            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                cleanupCall("Call Disconnected");
+            }
+        };
+
+        setupCallChannelListeners(callChan, pc);
+
+        await callChan.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'receiver_ready',
+                    payload: { from: currentUser.id }
+                });
+            }
+        });
+
+        showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
+
+        // If messages modal is closed, open it to the conversation
+        if (dmModal && dmModal.classList.contains('hidden')) {
+            openMessagesModal();
+        }
+        selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
+
+    } catch (err) {
+        console.error("Answer call error:", err);
+        alert("Could not access microphone: " + (err.message || err.name));
+        cleanupCall();
+    }
+}
+
+function declineAudioCall() {
+    stopRingtoneSound();
+    if (incomingCallModal) incomingCallModal.classList.add('hidden');
+    if (incomingCallData && db) {
+        const chan = db.channel(`call_room_${incomingCallData.conversationId}`);
+        chan.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                chan.send({
+                    type: 'broadcast',
+                    event: 'call_declined',
+                    payload: { from: currentUser?.id }
+                });
+            }
+        });
+    }
+    incomingCallData = null;
+}
+
+function toggleCallMute() {
+    if (!activeCall || !activeCall.localStream) return;
+    const tracks = activeCall.localStream.getAudioTracks();
+    if (tracks.length === 0) return;
+
+    isMicMuted = !isMicMuted;
+    tracks[0].enabled = !isMicMuted;
+
+    if (callMuteBtn) {
+        callMuteBtn.textContent = isMicMuted ? '🔇' : '🎤';
+        callMuteBtn.title = isMicMuted ? 'Unmute Mic' : 'Mute Mic';
+        if (isMicMuted) callMuteBtn.className = 'call-ctrl-btn muted';
+        else callMuteBtn.className = 'call-ctrl-btn secondary';
+    }
+}
+
+function endCurrentAudioCall() {
+    if (activeCall && activeCall.callChannel) {
+        activeCall.callChannel.send({
+            type: 'broadcast',
+            event: 'call_ended',
+            payload: { from: currentUser?.id }
+        });
+    }
+    cleanupCall("Call Ended");
+}
+
+function initUserCallSignaling() {
+    if (!db || !currentUser) return;
+    if (userCallSignalingChannel) {
+        try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
+    }
+
+    userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`)
+        .on('broadcast', { event: 'incoming_call' }, (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.callerId) return;
+
+            if (activeCall) {
+                const returnChan = db.channel(`call_room_${data.conversationId}`);
+                returnChan.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        returnChan.send({
+                            type: 'broadcast',
+                            event: 'call_busy',
+                            payload: { from: currentUser.id }
+                        });
+                    }
+                });
+                return;
+            }
+
+            incomingCallData = data;
+            if (incomingCallerName) {
+                incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
+            }
+            playRingtoneSound();
+            if (incomingCallModal) {
+                incomingCallModal.classList.remove('hidden');
+            }
+        })
+        .on('broadcast', { event: 'cancel_call' }, (payload) => {
+            const data = payload?.payload;
+            if (incomingCallData && incomingCallData.callerId === data?.callerId) {
+                stopRingtoneSound();
+                incomingCallData = null;
+                if (incomingCallModal) incomingCallModal.classList.add('hidden');
+            }
+        })
+        .subscribe();
+}
+
+// Call button click listeners
+safeAddListener(startCallBtn, 'click', startAudioCall);
+safeAddListener(acceptCallBtn, 'click', answerAudioCall);
+safeAddListener(declineCallBtn, 'click', declineAudioCall);
+safeAddListener(callMuteBtn, 'click', toggleCallMute);
+safeAddListener(callHangupBtn, 'click', endCurrentAudioCall);
+
