@@ -453,17 +453,80 @@ img, video, canvas, pre, code {
     word-break: break-word;
 }
 
-/* --- Mobile Safe Live Chat Modal --- */
+/* --- Drag & Drop Sidebar Styles --- */
+.thread-nav-btn {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+.thread-nav-btn.is-dragging {
+    opacity: 0.45;
+    border: 1px dashed #38bdf8 !important;
+    background: #0f172a !important;
+    transform: scale(0.98);
+}
+.thread-drag-handle {
+    color: #64748b;
+    font-size: 1.1rem;
+    padding: 0 4px 0 8px;
+    cursor: grab;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    flex-shrink: 0;
+}
+.thread-drag-handle:hover,
+.thread-drag-handle:active {
+    color: #38bdf8;
+}
+.thread-drag-handle:active {
+    cursor: grabbing;
+}
+.thread-nav-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* --- Post Title Styling --- */
+.post-title-text {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin: 4px 0 8px 0;
+    line-height: 1.35;
+    word-break: break-word;
+}
+
+/* --- Desktop & Mobile Responsive Live Chat Modal --- */
 #live-chat-modal {
-    z-index: 10008;
+    z-index: 10008 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 }
 #live-chat-modal .modal-box {
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    height: 80vh;
-    max-height: 700px;
+    width: 100%;
+    max-width: 650px;
+    height: 75vh;
+    max-height: 650px;
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 14px;
     padding: 16px;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 #live-chat-history {
     flex: 1 1 0% !important;
@@ -472,13 +535,20 @@ img, video, canvas, pre, code {
     -webkit-overflow-scrolling: touch;
 }
 #live-chat-form {
+    display: flex;
+    gap: 8px;
     flex-shrink: 0 !important;
+    margin-top: auto;
+    width: 100%;
 }
 
 @media (max-width: 768px) {
     #live-chat-modal {
-        padding: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(72px + env(safe-area-inset-bottom, 0px)) !important;
+        /* Removes bottom tab padding so the modal expands safely to viewport bounds */
+        padding: calc(8px + env(safe-area-inset-top, 0px)) 8px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
         align-items: stretch !important;
+        height: 100% !important;
+        height: 100dvh !important;
     }
     #live-chat-modal .modal-box {
         width: 100% !important;
@@ -486,10 +556,18 @@ img, video, canvas, pre, code {
         height: 100% !important;
         max-height: 100% !important;
         padding: 12px !important;
-        border-radius: 12px !important;
+        border-radius: 14px !important;
+        margin: 0 !important;
     }
     #live-chat-input {
-        font-size: 16px !important; /* Prevents iOS auto-zoom cutoffs */
+        font-size: 16px !important; /* 16px minimum prevents iOS Safari from auto-zooming and clipping header/footer */
+        height: 44px !important;
+        margin-bottom: 0 !important;
+    }
+    #live-chat-form button {
+        height: 44px !important;
+        padding: 0 16px !important;
+        flex-shrink: 0 !important;
     }
 }
 </style>
@@ -706,6 +784,9 @@ img, video, canvas, pre, code {
                     <input type="text" id="thread-search-select" placeholder="Search to select a community..." autocomplete="off">
                     <div id="thread-suggest-dropdown" class="suggest-dropdown hidden"></div>
                 </div>
+
+                <label for="post-title-input" style="margin-bottom: 6px;">Post Title (Optional)</label>
+                <input type="text" id="post-title-input" placeholder="Give your post a title or headline..." autocomplete="off">
 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                     <label style="margin-bottom: 0;">Your Message</label>
