@@ -1617,7 +1617,7 @@ safeAddListener(authForm, 'submit', async (e) => {
     } else {
         const { error } = await db.auth.signInWithPassword({ 
             email, 
-            password,
+            password, 
             options: { captchaToken: captchaToken } // Supabase backend validates this
         });
         
@@ -2473,6 +2473,7 @@ function renderPermissionsUserList() {
                     meta.banned = (meta.banned || []).filter(b => b.toLowerCase() !== cleanUser);
                     saveThreadMeta();
                     renderPermissionsUserList();
+                    updateThreadControlsUI();
                 };
                 btnCol.appendChild(unbanBtn);
             } else {
@@ -2487,6 +2488,7 @@ function renderPermissionsUserList() {
                     meta.moderators = (meta.moderators || []).filter(m => m.toLowerCase() !== cleanUser);
                     saveThreadMeta();
                     renderPermissionsUserList();
+                    updateThreadControlsUI();
                 };
                 btnCol.appendChild(banBtn);
             }
@@ -2616,10 +2618,12 @@ safeAddListener(backToListBtn, 'click', () => {
 });
 
 async function refreshMessagingHub() {
-    await loadFriendRequests();
-    await loadFriends();
-    await loadMessageRequests();
-    await loadConversations();
+    await Promise.all([
+        loadFriendRequests(),
+        loadFriends(),
+        loadMessageRequests(),
+        loadConversations()
+    ]);
     updateSidebarBadges();
 }
 
@@ -3182,7 +3186,23 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
                 table: 'chat_messages', 
                 filter: `conversation_id=eq.${activeConversationId}` 
             },
-            () => { loadMessages(true); }
+            (payload) => {
+                const newMsg = payload?.new;
+                if (!newMsg) {
+                    loadMessages(true);
+                    return;
+                }
+                const existing = document.getElementById(`msg-${newMsg.id}`);
+                if (!existing) {
+                    appendChatMessage(newMsg, false);
+                }
+                if (currentUser && newMsg.sender_id !== currentUser.id) {
+                    db.from('chat_messages')
+                        .update({ is_read: true })
+                        .eq('id', newMsg.id)
+                        .catch(() => {});
+                }
+            }
         )
         .subscribe();
 }
@@ -3213,21 +3233,96 @@ async function ensureAvatarsCached(userIds) {
     });
 }
 
+function createMessageElement(msg) {
+    const isMine = currentUser && msg.sender_id === currentUser.id;
+    const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
+    const isPending = msg.pending_approval;
+    const isOptimistic = Boolean(msg.is_optimistic);
+
+    const row = document.createElement('div');
+    row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
+    row.id = `msg-${msg.id}`;
+    if (isOptimistic) row.style.opacity = '0.75';
+
+    const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
+    const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
+    const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
+    const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+    
+    let pendingBadge = '';
+    if (isOptimistic) {
+        pendingBadge = `<span class="pending-tag" style="background:#475569; color:#94a3b8;">⏱ Sending...</span>`;
+    } else if (isPending) {
+        pendingBadge = isMine 
+            ? `<span class="pending-tag">⏳ Pending Approval</span>` 
+            : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">📩 Chat Request</span>`;
+    }
+    const bubbleHtml = `
+        <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
+            ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
+        </div>
+    `;
+
+    row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
+
+    const attachedImg = row.querySelector('.chat-img-thumb');
+    if (attachedImg) {
+        attachedImg.onload = () => scrollToBottom(false);
+    }
+
+    row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
+        clickable.addEventListener('click', (e) => {
+            const u = e.currentTarget.getAttribute('data-username');
+            if (u) window.openUserProfileCard(u);
+        });
+    });
+
+    return row;
+}
+
+function appendChatMessage(msg, forceScroll = true) {
+    if (!chatMessages) return;
+
+    // Remove empty notice if present
+    const emptyNotice = chatMessages.querySelector('.no-posts');
+    if (emptyNotice) emptyNotice.remove();
+
+    // Check if element with this ID already exists
+    const existing = document.getElementById(`msg-${msg.id}`);
+    if (existing) return;
+
+    const row = createMessageElement(msg);
+    chatMessages.appendChild(row);
+    scrollToBottom(forceScroll);
+
+    if (msg.sender_id && !userAvatarCache.has(msg.sender_id)) {
+        ensureAvatarsCached([msg.sender_id]).then(() => {
+            const avatar = userAvatarCache.get(msg.sender_id);
+            if (avatar) {
+                const img = row.querySelector('.msg-avatar');
+                if (img) img.src = avatar;
+            }
+        }).catch(() => {});
+    }
+}
+
 async function loadMessages(forceScroll = false) {
     if (!currentUser || !activeConversationId || !db || !chatMessages) return;
 
+    // Fetch latest 50 messages for optimal initial load time
     const { data: messages, error } = await db
         .from('chat_messages')
         .select('*')
         .eq('conversation_id', activeConversationId)
-        .order('id', { ascending: true });
+        .order('id', { ascending: false })
+        .limit(50);
 
     if (error) {
         console.warn("Error loading chat messages:", error);
         return;
     }
 
-    const visibleMessages = messages || [];
+    const visibleMessages = (messages || []).reverse();
 
     const currentMsgCount = chatMessages.querySelectorAll('.msg-bubble').length;
     if (!forceScroll && visibleMessages.length === currentMsgCount) return;
@@ -3236,7 +3331,6 @@ async function loadMessages(forceScroll = false) {
     const pendingFromPartner = visibleMessages.filter(m => m.pending_approval && m.sender_id !== currentUser.id);
     const pendingFromMe = visibleMessages.filter(m => m.pending_approval && m.sender_id === currentUser.id);
 
-    // Update banner for chat request approval
     // Update banner for chat request approval
     if (chatPendingBanner) {
         if (!activeConversationIsFriend && pendingFromPartner.length > 0) {
@@ -3295,56 +3389,20 @@ async function loadMessages(forceScroll = false) {
     const senderIds = Array.from(new Set(visibleMessages.map(m => m.sender_id)));
     await ensureAvatarsCached(senderIds);
 
+    const fragment = document.createDocumentFragment();
     visibleMessages.forEach(msg => {
-        const isMine = msg.sender_id === currentUser.id;
-        const senderAvatar = userAvatarCache.get(msg.sender_id) || DEFAULT_AVATAR;
-        const isPending = msg.pending_approval;
-
-        const row = document.createElement('div');
-        row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
-
-        const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
-        const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
-        const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
-        const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
-        
-        let pendingBadge = '';
-        if (isPending) {
-            pendingBadge = isMine 
-                ? `<span class="pending-tag">⏳ Pending Approval</span>`
-                : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">📩 Chat Request</span>`;
-        }
-        const bubbleHtml = `
-            <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
-                ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
-            </div>
-        `;
-
-        row.innerHTML = isMine ? (bubbleHtml + avatarImgHtml) : (avatarImgHtml + bubbleHtml);
-
-        const attachedImg = row.querySelector('.chat-img-thumb');
-        if (attachedImg) {
-            attachedImg.onload = () => scrollToBottom(forceScroll);
-        }
-
-        row.querySelectorAll('.clickable-username, .clickable-avatar').forEach(clickable => {
-            clickable.addEventListener('click', (e) => {
-                const u = e.currentTarget.getAttribute('data-username');
-                if (u) window.openUserProfileCard(u);
-            });
-        });
-
-        chatMessages.appendChild(row);
+        fragment.appendChild(createMessageElement(msg));
     });
+    chatMessages.appendChild(fragment);
 
     scrollToBottom(forceScroll);
 
-    await db
-        .from('chat_messages')
+    db.from('chat_messages')
         .update({ is_read: true })
         .eq('conversation_id', activeConversationId)
         .neq('sender_id', currentUser.id)
-        .eq('is_read', false);
+        .eq('is_read', false)
+        .catch(() => {});
 
     unreadCountsByConv.delete(activeConversationId);
     checkNotifications();
@@ -3371,46 +3429,19 @@ safeAddListener(dmForm, 'submit', async (e) => {
         return;
     }
 
-    const content = dmText.value.trim();
+    const messageText = dmText.value.trim();
     const rawFile = dmImageInput.files[0];
-    const file = rawFile ? await compressImage(rawFile, 1200, 0.75) : null;
 
-    if (!content && !file) return;
+    if (!messageText && !rawFile) return;
     if (!activeConversationId) return;
 
-    dmSendBtn.disabled = true;
-    dmSendBtn.textContent = '...';
-
-    let uploadedImageUrl = null;
-
-    if (file) {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
-        const filePath = `${activeConversationId}/${fileName}`;
-
-        const { error: uploadError } = await db.storage
-            .from('chat-images')
-            .upload(filePath, file);
-
-        if (uploadError) {
-            alert(`Photo upload failed: ${uploadError.message}`);
-            dmSendBtn.disabled = false;
-            dmSendBtn.textContent = 'Send';
-            return;
-        }
-
-        const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
-        uploadedImageUrl = publicUrlData.publicUrl;
-    }
-
-    // If the recipient replies to an incoming pending chat, auto-approve the conversation
-    if (activeConversationPartnerId) {
-        await db
-            .from('chat_messages')
-            .update({ pending_approval: false })
-            .eq('conversation_id', activeConversationId)
-            .neq('sender_id', currentUser.id)
-            .eq('pending_approval', true);
+    // Reset input fields immediately for instant response
+    dmText.value = '';
+    dmImageInput.value = '';
+    const label = document.querySelector('.upload-photo-label');
+    if (label) {
+        label.style.borderColor = '#475569';
+        label.title = 'Attach Photo';
     }
 
     // Check if the chat was already approved previously
@@ -3423,52 +3454,124 @@ safeAddListener(dmForm, 'submit', async (e) => {
             .eq('pending_approval', false)
             .limit(1);
 
-        // If no message has ever been approved and they are not friends, mark as pending
         isPendingApproval = !approvedMsg || approvedMsg.length === 0;
     }
 
-    const { error } = await db
-        .from('chat_messages')
-        .insert([{
-            conversation_id: activeConversationId,
-            sender_id: currentUser.id,
-            sender_username: currentUsername,
-            content: content || '',
-            image_url: uploadedImageUrl,
-            pending_approval: isPendingApproval
-        }]);
-
-    dmSendBtn.disabled = false;
-    dmSendBtn.textContent = 'Send';
-
-    if (error) {
-        alert(`Error sending message: ${error.message}`);
-        return;
+    // Instant Optimistic UI append
+    const tempId = 'temp_' + Date.now();
+    let localPreviewUrl = null;
+    if (rawFile) {
+        localPreviewUrl = URL.createObjectURL(rawFile);
     }
 
-    if (isPendingApproval && activeConversationPartnerId) {
-        await db.from('friendships').insert([{
-            user_id: currentUser.id,
-            friend_id: activeConversationPartnerId,
-            status: 'pending'
-        }]).then(() => {
-            sendNotification(
-                activeConversationPartnerId,
-                'friend_request',
-                null,
-                'sent you a friend request and a pending message.'
-            );
-        }).catch(() => {});
-    } else {
-        // DISPATCH NOTIFICATIONS TO CHAT RECIPIENTS
-        try {
-            let recipientIds = [];
+    const optimisticMsg = {
+        id: tempId,
+        conversation_id: activeConversationId,
+        sender_id: currentUser.id,
+        sender_username: currentUsername,
+        content: messageText || '',
+        image_url: localPreviewUrl,
+        pending_approval: isPendingApproval,
+        is_optimistic: true
+    };
+    appendChatMessage(optimisticMsg, true);
 
-            // In 1-on-1 chats, target partner directly from memory (avoids RLS query blocks)
+    dmSendBtn.disabled = true;
+    dmSendBtn.textContent = '...';
+
+    try {
+        let uploadedImageUrl = null;
+        if (rawFile) {
+            const file = await compressImage(rawFile, 1200, 0.75);
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${currentUser.id}_${Date.now()}.${fileExt}`;
+            const filePath = `${activeConversationId}/${fileName}`;
+
+            const { error: uploadError } = await db.storage
+                .from('chat-images')
+                .upload(filePath, file);
+
+            if (uploadError) {
+                alert(`Photo upload failed: ${uploadError.message}`);
+                const tempEl = document.getElementById(`msg-${tempId}`);
+                if (tempEl) tempEl.remove();
+                return;
+            }
+
+            const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
+            uploadedImageUrl = publicUrlData.publicUrl;
+        }
+
+        // If recipient replies to incoming pending chat, auto-approve
+        if (activeConversationPartnerId) {
+            await db
+                .from('chat_messages')
+                .update({ pending_approval: false })
+                .eq('conversation_id', activeConversationId)
+                .neq('sender_id', currentUser.id)
+                .eq('pending_approval', true);
+        }
+
+        const { data: insertedMsg, error } = await db
+            .from('chat_messages')
+            .insert([{
+                conversation_id: activeConversationId,
+                sender_id: currentUser.id,
+                sender_username: currentUsername,
+                content: messageText || '',
+                image_url: uploadedImageUrl,
+                pending_approval: isPendingApproval
+            }])
+            .select()
+            .single();
+
+        if (error) {
+            alert(`Error sending message: ${error.message}`);
+            const tempEl = document.getElementById(`msg-${tempId}`);
+            if (tempEl) tempEl.remove();
+            return;
+        }
+
+        // Confirm optimistic bubble with real server ID
+        const tempEl = document.getElementById(`msg-${tempId}`);
+        if (tempEl && insertedMsg) {
+            tempEl.id = `msg-${insertedMsg.id}`;
+            tempEl.style.opacity = '1';
+            const pendingTag = tempEl.querySelector('.pending-tag');
+            if (pendingTag) {
+                if (!insertedMsg.pending_approval) {
+                    pendingTag.remove();
+                } else {
+                    pendingTag.textContent = '⏳ Pending Approval';
+                    pendingTag.style.background = '#334155';
+                    pendingTag.style.color = '#cbd5e1';
+                }
+            }
+            if (uploadedImageUrl) {
+                const img = tempEl.querySelector('.chat-img-thumb');
+                if (img) img.src = uploadedImageUrl;
+            }
+        }
+
+        // Background notification dispatching
+        if (isPendingApproval && activeConversationPartnerId) {
+            db.from('friendships').insert([{
+                user_id: currentUser.id,
+                friend_id: activeConversationPartnerId,
+                status: 'pending'
+            }]).then(() => {
+                sendNotification(
+                    activeConversationPartnerId,
+                    'friend_request',
+                    null,
+                    'sent you a friend request and a pending message.'
+                );
+            }).catch(() => {});
+        } else {
+            let recipientIds = [];
             if (activeConversationPartnerId) {
                 recipientIds.push(activeConversationPartnerId);
             } else {
-                // In group chats, query all other participants
                 const { data: members } = await db
                     .from('conversation_members')
                     .select('user_id')
@@ -3482,8 +3585,8 @@ safeAddListener(dmForm, 'submit', async (e) => {
 
             if (recipientIds.length > 0) {
                 let snippet = 'sent a photo.';
-                if (content) {
-                    const cleanText = content.length > 50 ? `${content.substring(0, 47)}...` : content;
+                if (messageText) {
+                    const cleanText = messageText.length > 50 ? `${messageText.substring(0, 47)}...` : messageText;
                     snippet = `: "${cleanText}"`;
                 }
 
@@ -3496,29 +3599,18 @@ safeAddListener(dmForm, 'submit', async (e) => {
                     is_read: false
                 }));
 
-                const { error: notifError } = await db.from('user_notifications').insert(notifsToInsert);
-
-                // Fail-safe: If entity_id type causes a reject, retry with null entity_id so the push alert still fires
-                if (notifError) {
-                    console.warn("Retrying notification insert without entity_id:", notifError.message);
+                db.from('user_notifications').insert(notifsToInsert).catch(err => {
                     const fallbackNotifs = notifsToInsert.map(n => ({ ...n, entity_id: null }));
-                    await db.from('user_notifications').insert(fallbackNotifs);
-                }
+                    db.from('user_notifications').insert(fallbackNotifs).catch(() => {});
+                });
             }
-        } catch (notifErr) {
-            console.warn("Notice sending chat notification:", notifErr);
         }
+    } catch (err) {
+        console.warn("Message sending error:", err);
+    } finally {
+        dmSendBtn.disabled = false;
+        dmSendBtn.textContent = 'Send';
     }
-
-    dmText.value = '';
-    dmImageInput.value = '';
-    const label = document.querySelector('.upload-photo-label');
-    if (label) {
-        label.style.borderColor = '#475569';
-        label.title = 'Attach Photo';
-    }
-
-    loadMessages(true);
 });
 
 // --- NOTIFICATION BADGES ---
@@ -4274,13 +4366,25 @@ function startCompositionTimer() {
     isTimerRunning = true;
     
     timerInterval = setInterval(() => {
-        const elapsed = (Date.now() - pageLoadTime) / 1000;
-        if (statTimer) statTimer.textContent = `${elapsed.toFixed(1)}s`;
-    }, 100);
+        if (!telemetryDrawer || !telemetryDrawer.classList.contains('hidden')) {
+            const elapsed = (Date.now() - pageLoadTime) / 1000;
+            if (statTimer) statTimer.textContent = `${elapsed.toFixed(1)}s`;
+        }
+    }, 250);
 }
 
-window.addEventListener('mousemove', () => { mouseMovementsRecorded++; });
-window.addEventListener('touchstart', () => { mouseMovementsRecorded++; });
+let lastMouseMoveSample = 0;
+window.addEventListener('mousemove', () => {
+    const now = Date.now();
+    if (now - lastMouseMoveSample > 100) {
+        mouseMovementsRecorded++;
+        lastMouseMoveSample = now;
+    }
+}, { passive: true });
+
+window.addEventListener('touchstart', () => {
+    mouseMovementsRecorded++;
+}, { passive: true });
 
 if (textBox) {
     textBox.addEventListener('focus', () => {
@@ -5602,4 +5706,3 @@ async function submitPollVote(postId, optIdx) {
     post.poll_votes = votes;
     renderCurrentFeed();
 }
-
