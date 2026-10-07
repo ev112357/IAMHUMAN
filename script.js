@@ -5213,18 +5213,35 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
     }
 
     document.getElementById('live-chat-thread-name').textContent = activeThread;
+    
+    // Hide floating telemetry so it never blocks the Send button or input
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'none';
+
     liveChatModal.classList.remove('hidden');
     
-    // Only auto-focus the input if they are allowed to type
-    if (window.currentLiveChatIsOpen || canBypassLock) {
+    // Only auto-focus on desktop to avoid triggering the mobile keyboard on modal open
+    if ((window.currentLiveChatIsOpen || canBypassLock) && window.innerWidth > 768) {
         setTimeout(() => { if (liveChatInput) liveChatInput.focus(); }, 100);
     }
     
     scrollToBottomLiveChat();
 });
 
-safeAddListener(document.getElementById('close-live-chat-btn'), 'click', () => {
-    liveChatModal.classList.add('hidden');
+function closeLiveChatModal() {
+    if (liveChatModal) liveChatModal.classList.add('hidden');
+    // Restore floating telemetry monitor
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'flex';
+}
+
+safeAddListener(document.getElementById('close-live-chat-btn'), 'click', closeLiveChatModal);
+
+// Close by tapping the dark backdrop overlay
+safeAddListener(liveChatModal, 'click', (e) => {
+    if (e.target === liveChatModal) {
+        closeLiveChatModal();
+    }
 });
 
 function scrollToBottomLiveChat() {
