@@ -24,7 +24,7 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
 const MANDATORY_THREADS = ["New User Discussion"];
-const DEFAULT_THREADS = ["Welcome & Security", "Update Thread"];
+const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Trending"];
 
 function safeAddListener(el, event, handler) {
     if (el) el.addEventListener(event, handler);
@@ -302,13 +302,14 @@ let notifPollInterval = null;
 // Thread State
 let allCloudThreads = []; 
 let myJoinedThreadNames = new Set(MANDATORY_THREADS);
-let activeThread = "Welcome & Security";
+let activeThread = localStorage.getItem('forum_active_thread') || "Welcome & Security";
 let currentFetchId = 0;
 
 let threadMetaMap = JSON.parse(localStorage.getItem('forum_thread_metadata') || '{}');
 if (!threadMetaMap["Welcome & Security"]) threadMetaMap["Welcome & Security"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["Update Thread"]) threadMetaMap["Update Thread"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 if (!threadMetaMap["New User Discussion"]) threadMetaMap["New User Discussion"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
+if (!threadMetaMap["Trending"]) threadMetaMap["Trending"] = { owner: SITE_ADMIN_USERNAME, moderators: [], banned: [] };
 
 // Voting Cache
 let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
@@ -906,7 +907,7 @@ function canDeletePost(post) {
 
 function canDeleteThread(threadName = activeThread) {
     if (!currentUsername) return false;
-    if (MANDATORY_THREADS.includes(threadName)) return false;
+    if (MANDATORY_THREADS.includes(threadName) || DEFAULT_THREADS.includes(threadName) || threadName === "Trending") return false;
     const role = getThreadRole(threadName);
     return isSiteAdmin() || role === "Owner";
 }
@@ -1488,6 +1489,7 @@ if (db) {
                 const decodedThread = decodeURIComponent(targetThreadName);
                 const matchedThread = allCloudThreads.find(t => t.name.toLowerCase() === decodedThread.toLowerCase());
                 activeThread = matchedThread ? matchedThread.name : decodedThread;
+                localStorage.setItem('forum_active_thread', activeThread);
                 await loadForumPosts();
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
@@ -1728,12 +1730,12 @@ safeAddListener(updatePasswordBtn, 'click', async () => {
     }
 });
 
-safeAddListener(openDeleteModalBtn, () => {
+safeAddListener(openDeleteModalBtn, 'click', () => {
     if (deleteConfirmModal) deleteConfirmModal.classList.remove('hidden');
     if (deleteUsernameInput) deleteUsernameInput.value = '';
 });
-safeAddListener(closeDeleteModalBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
-safeAddListener(cancelDeleteBtn, () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
+safeAddListener(closeDeleteModalBtn, 'click', () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
+safeAddListener(cancelDeleteBtn, 'click', () => { if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden'); });
 safeAddListener(document.getElementById('settings-logout-btn'), 'click', async () => {
     if (db) await db.auth.signOut();
     if (profileModal) profileModal.classList.add('hidden');
@@ -1769,7 +1771,8 @@ async function syncCloudThreads() {
     const coreThreads = [
         { name: "Welcome & Security", owner_username: "gemini" },
         { name: "Update Thread", owner_username: "gemini" },
-        { name: "New User Discussion", owner_username: "gemini" }
+        { name: "New User Discussion", owner_username: "gemini" },
+        { name: "Trending", owner_username: "gemini" }
     ];
 
     let mergedThreads = [];
@@ -1799,8 +1802,8 @@ async function syncCloudThreads() {
         const dbJoinedNames = (memberships || []).map(m => m.thread_name);
         dbJoinedNames.forEach(name => myJoinedThreadNames.add(name));
 
-        // Migration / Auto-Join for Default Threads
-        const autoJoinFlag = `has_auto_joined_defaults_${currentUser.id}`;
+        // Migration / Auto-Join for Default Threads (v2 includes Trending)
+        const autoJoinFlag = `has_auto_joined_defaults_v2_${currentUser.id}`;
         if (!localStorage.getItem(autoJoinFlag)) {
             const toInsert = DEFAULT_THREADS
                 .filter(t => !dbJoinedNames.includes(t))
@@ -1835,8 +1838,8 @@ function renderJoinedThreadsSidebar() {
         btn.type = 'button';
         btn.className = `thread-nav-btn ${tName === activeThread ? 'active' : ''}`;
         
-        const isMandatory = MANDATORY_THREADS.includes(tName);
-        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : "💬");
+        const isMandatory = MANDATORY_THREADS.includes(tName) || tName === "Trending";
+        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : (tName === "Trending" ? "⚡" : "💬"));
 
         btn.innerHTML = `
             <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>
@@ -1846,6 +1849,7 @@ function renderJoinedThreadsSidebar() {
         btn.addEventListener('click', async () => {
             if (activeThread === tName) return;
             activeThread = tName;
+            localStorage.setItem('forum_active_thread', activeThread);
             
             cachedPosts = [];
             postCacheMap.clear();
@@ -1898,7 +1902,7 @@ safeAddListener(threadSearchInput, 'input', () => {
 
     matches.forEach(t => {
         const isJoined = myJoinedThreadNames.has(t.name);
-        const isMandatory = MANDATORY_THREADS.includes(t.name);
+        const isMandatory = MANDATORY_THREADS.includes(t.name) || t.name === "Trending";
 
         const row = document.createElement('div');
         row.className = 'discovery-item';
@@ -1915,6 +1919,7 @@ safeAddListener(threadSearchInput, 'input', () => {
         // Allow anyone (guests included) to click the name to view the thread
         label.addEventListener('click', async () => {
             activeThread = t.name;
+            localStorage.setItem('forum_active_thread', activeThread);
             threadSearchInput.value = '';
             threadDiscoveryBox.classList.add('hidden');
             
@@ -1953,7 +1958,7 @@ safeAddListener(threadSearchInput, 'input', () => {
 
 async function toggleThreadMembership(tName) {
     if (!currentUser || !db) return;
-    if (MANDATORY_THREADS.includes(tName)) return;
+    if (MANDATORY_THREADS.includes(tName) || tName === "Trending") return;
 
     if (myJoinedThreadNames.has(tName)) {
         await db.from('forum_thread_members')
@@ -1962,13 +1967,17 @@ async function toggleThreadMembership(tName) {
             .eq('thread_name', tName);
 
         myJoinedThreadNames.delete(tName);
-        if (activeThread === tName) activeThread = "Welcome & Security";
+        if (activeThread === tName) {
+            activeThread = "Welcome & Security";
+            localStorage.setItem('forum_active_thread', activeThread);
+        }
     } else {
         await db.from('forum_thread_members')
             .insert([{ user_id: currentUser.id, thread_name: tName }]);
 
         myJoinedThreadNames.add(tName);
         activeThread = tName;
+        localStorage.setItem('forum_active_thread', activeThread);
     }
 
     cachedPosts = [];
@@ -2056,6 +2065,7 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
 
     await syncCloudThreads();
     activeThread = newName;
+    localStorage.setItem('forum_active_thread', activeThread);
 
     cachedPosts = [];
     postCacheMap.clear();
@@ -2074,7 +2084,7 @@ async function updateThreadMemberCount() {
     if (!countEl || !db) return;
 
     try {
-        if (MANDATORY_THREADS.includes(activeThread)) {
+        if (MANDATORY_THREADS.includes(activeThread) || activeThread === "Trending") {
             // Mandatory threads include every registered account
             const { count, error } = await db
                 .from('profiles')
@@ -2101,16 +2111,21 @@ function updateThreadControlsUI() {
     if (currentThreadTitle) currentThreadTitle.textContent = activeThread;
     const role = getThreadRole(activeThread);
     if (currentUserThreadRole) {
-        currentUserThreadRole.textContent = role;
-        currentUserThreadRole.className = 'thread-role-badge';
-        if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
-        else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
-        else if (role === 'Moderator') currentUserThreadRole.classList.add('badge-green');
-        else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
-        else currentUserThreadRole.classList.add('badge-blue');
+        if (activeThread === 'Trending') {
+            currentUserThreadRole.textContent = "Compiled Feed";
+            currentUserThreadRole.className = 'thread-role-badge badge-purple';
+        } else {
+            currentUserThreadRole.textContent = role;
+            currentUserThreadRole.className = 'thread-role-badge';
+            if (role === 'Site Admin') currentUserThreadRole.classList.add('badge-purple');
+            else if (role === 'Owner') currentUserThreadRole.classList.add('badge-yellow');
+            else if (role === 'Moderator') currentUserThreadRole.classList.add('badge-green');
+            else if (role === 'Banned') currentUserThreadRole.classList.add('badge-red');
+            else currentUserThreadRole.classList.add('badge-blue');
+        }
     }
 
-    const isMandatory = MANDATORY_THREADS.includes(activeThread);
+    const isMandatory = MANDATORY_THREADS.includes(activeThread) || activeThread === "Trending";
     const isJoined = myJoinedThreadNames.has(activeThread);
 
     if (joinLeaveActiveThreadBtn) {
@@ -2264,6 +2279,7 @@ safeAddListener(finalDeleteThreadBtn, 'click', async () => {
 
     alert(`Thread "${inputVal}" has been permanently removed.`);
     activeThread = "Welcome & Security";
+    localStorage.setItem('forum_active_thread', activeThread);
     cachedPosts = [];
     postCacheMap.clear();
     if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
@@ -3581,6 +3597,12 @@ function sortPosts(posts) {
         const scoreA = getPostScore(a);
         const scoreB = getPostScore(b);
 
+        // Ensure the Trending feed orders by highest score first by default
+        if (activeThread === 'Trending' && (sortMode === 'top' || sortMode === 'trending')) {
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return Number(b.id) - Number(a.id);
+        }
+
         if (sortMode === 'top' || sortMode === 'trending') {
             if (scoreB !== scoreA) return scoreB - scoreA;
             return Number(b.id) - Number(a.id);
@@ -3726,9 +3748,8 @@ function createPostCardElement(post) {
             <div class="post-meta">
                 <div class="post-author-wrap">
                     <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
-                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>
-                    ${roleBadge}
-                    ${userFlairBadge}
+                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>${activeThread === 'Trending' && post.thread ? `<span class="clickable-thread" data-thread="${escapeHTML(post.thread)}" style="font-size: 0.72rem; color: #38bdf8; background: #0f172a; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155;">#${escapeHTML(post.thread)}</span>` : ''}
+                    ${roleBadge}${userFlairBadge}
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <span>${dateFormatted}</span>${post.is_edited ? `<span class="edited-badge view-edit-history" data-post-id="${post.id}">Edited 🕒</span>` : ''}
@@ -4049,10 +4070,40 @@ async function loadForumPosts() {
     cachedPosts = [];
     postCacheMap.clear();
 
-    const { data: posts, error } = await db
-        .from('Posts')
-        .select('*')
-        .eq('thread', requestedThread);
+    let posts = [];
+    let error = null;
+
+    if (requestedThread === "Trending") {
+        // Automatically compile recent posts (last 7 days) from all communities
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const trendRes = await db
+            .from('Posts')
+            .select('*')
+            .gte('created_at', sevenDaysAgo)
+            .order('id', { ascending: false })
+            .limit(100);
+
+        posts = trendRes.data || [];
+        error = trendRes.error;
+
+        // Fallback: If no posts exist in the last 7 days, retrieve all-time latest posts so the feed is never blank
+        if (!error && posts.length === 0) {
+            const fallbackRes = await db
+                .from('Posts')
+                .select('*')
+                .order('id', { ascending: false })
+                .limit(50);
+            posts = fallbackRes.data || [];
+            error = fallbackRes.error;
+        }
+    } else {
+        const res = await db
+            .from('Posts')
+            .select('*')
+            .eq('thread', requestedThread);
+        posts = res.data;
+        error = res.error;
+    }
 
     if (thisFetchId !== currentFetchId || activeThread !== requestedThread) return;
 
@@ -4063,7 +4114,7 @@ async function loadForumPosts() {
 
     // BUG FIX: Fetch missing avatars for authors directly before rendering the feed
     if (posts && posts.length > 0) {
-        const uniqueAuthors = Array.from(new Set(posts.map(p => p.author.toLowerCase().replace('@', ''))));
+        const uniqueAuthors = Array.from(new Set(posts.map(p => (p.author || 'anonymous').toLowerCase().replace('@', ''))));
         const { data: authorProfiles } = await db.from('profiles').select('username, avatar_url').in('username', uniqueAuthors);
         (authorProfiles || []).forEach(profile => {
             if (profile.avatar_url) usernameAvatarMap.set(profile.username.toLowerCase(), profile.avatar_url);
@@ -4277,6 +4328,7 @@ async function navigateToPost(postId) {
     if (notificationsModal) notificationsModal.classList.add('hidden');
     if (activeThread !== post.thread) {
         activeThread = post.thread;
+        localStorage.setItem('forum_active_thread', activeThread);
         await loadForumPosts();
     }
 
@@ -4504,7 +4556,10 @@ function openFabModal(e) {
         fabModalOverlay.classList.add('active');
     }
 
-    if (threadSearchSelect) threadSearchSelect.value = activeThread;
+    // Default to activeThread unless on Trending (which cannot be posted to directly)
+    if (threadSearchSelect) {
+        threadSearchSelect.value = activeThread === 'Trending' ? 'New User Discussion' : activeThread;
+    }
     if (threadSuggestDropdown) threadSuggestDropdown.classList.add('hidden');
 }
 
@@ -4540,10 +4595,11 @@ safeAddListener(threadSearchSelect, 'input', () => {
         return;
     }
 
-    const joined = Array.from(myJoinedThreadNames).filter(t => t.toLowerCase().includes(q));
-    const others = allCloudThreads.map(t => t.name).filter(t => !myJoinedThreadNames.has(t) && t.toLowerCase().includes(q));
-    const combined = [...joined, ...others].slice(0, 8); 
-
+    // Filter out Trending so users cannot target it when creating a post
+    const joined = Array.from(myJoinedThreadNames).filter(t => t !== 'Trending' && t.toLowerCase().includes(q));
+    const others = allCloudThreads.map(t => t.name).filter(t => t !== 'Trending' && !myJoinedThreadNames.has(t) && t.toLowerCase().includes(q));
+    const combined = [...joined, ...others].slice(0, 8);
+    
     if (combined.length === 0) {
         threadSuggestDropdown.innerHTML = '<div style="padding: 10px; font-size: 0.85rem; color: #94a3b8;">No matching communities found.</div>';
     } else {
@@ -4599,6 +4655,11 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
     if (isUserBannedFromThread(targetThread, currentUsername)) {
         alert(`Posting Permission Denied: Your access to post in "${targetThread}" has been revoked.`);
+        return;
+    }
+
+    if (targetThread === "Trending") {
+        alert("The #Trending feed is compiled automatically from top-rated posts. Please select a specific community to publish your post.");
         return;
     }
 
@@ -4719,6 +4780,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
             await loadProminentUpdates();
         } else {
             activeThread = targetThread;
+            localStorage.setItem('forum_active_thread', activeThread);
             await loadForumPosts();
         }
 
@@ -4752,6 +4814,7 @@ document.addEventListener('click', async (e) => {
         // 2. Switch thread directly if not already active
         if (activeThread !== targetThread) {
             activeThread = targetThread;
+            localStorage.setItem('forum_active_thread', activeThread);
             cachedPosts = [];
             postCacheMap.clear();
             if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
