@@ -554,22 +554,23 @@ img, video, canvas, pre, code {
                 <div class="thread-header-bar">
                     <!-- LEFT SIDE: Emoji & Thread Title -->
                     <div class="thread-title-wrap" style="flex: 1; min-width: 0; margin-right: 16px;">
-                        <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 6px;">
+                        <!-- FIX: Added justify-content: flex-start to override the global space-between on h2 -->
+                        <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; justify-content: flex-start; gap: 8px;">
                             <span style="flex-shrink: 0;">📜</span>
                             <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">Welcome & Security</span>
                         </h2>
                     </div>
 
-                    <!-- RIGHT SIDE: Role, Chat, and Actions -->
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
-                        <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
+                    <!-- RIGHT SIDE: Role, Chat, and Actions inline -->
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+                        <span id="current-user-thread-role" class="thread-role-badge badge-blue" style="margin: 0;">Member</span>
                         
-                        <!-- FIX: Added width: auto !important to prevent global button stretching -->
                         <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="width: auto !important; margin: 0;">
                             <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
                         </button>
                         
-                        <div class="thread-actions-bar" style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end;">
+                        <!-- FIX: Added align-items: center to perfectly level the Flair injection -->
+                        <div class="thread-actions-bar" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: flex-end;">
                             <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
                             <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
                             <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
