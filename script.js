@@ -4866,16 +4866,19 @@ async function loadUserInvites() {
     const btn = document.getElementById('generate-invite-btn');
     if (!container || !btn || !currentUser || !db) return;
 
-    const { data: invites } = await db.from('invitations')
+    const { data: invites, error } = await db.from('invitations')
         .select('*')
         .eq('inviter_id', currentUser.id)
         .order('created_at', { ascending: false });
 
+    if (error) {
+        console.warn("Could not load invitations:", error.message);
+        return;
+    }
+
     container.innerHTML = '';
     const inviteList = invites || [];
     
-    // Hard Limit to 3 active invites per human to manufacture scarcity
-    // Hard Limit to 3 active invites per human (Unlimited for Site Admin)
     const isAdmin = isSiteAdmin();
     if (!isAdmin && inviteList.length >= 3) {
         btn.style.display = 'none';
@@ -4897,13 +4900,20 @@ async function loadUserInvites() {
         const div = document.createElement('div');
         div.className = 'invite-code-box';
         const isClaimed = inv.status === 'claimed';
+
         div.innerHTML = `
-            <span style="opacity: ${isClaimed ? '0.5' : '1'}; text-decoration: ${isClaimed ? 'line-through' : 'none'};">${inv.code}</span>
-            <button type="button" class="btn-copy-invite" ${isClaimed ? 'disabled style="background:#475569;"' : ''}>
-                ${isClaimed ? 'Claimed' : 'Copy'}
-            </button>
+            <span style="opacity: ${isClaimed ? '0.5' : '1'}; text-decoration: ${isClaimed ? 'line-through' : 'none'}; font-weight: 600;">${escapeHTML(inv.code)}</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button type="button" class="btn-copy-invite" ${isClaimed ? 'disabled style="background:#334155; color:#94a3b8; cursor:default;"' : ''}>
+                    ${isClaimed ? 'Claimed' : 'Copy'}
+                </button>
+                <button type="button" class="btn-clear-invite" title="Clear invite from list">
+                    ✕
+                </button>
+            </div>
         `;
         
+        // Copy action for unclaimed links
         if (!isClaimed) {
             const copyBtn = div.querySelector('.btn-copy-invite');
             copyBtn.addEventListener('click', () => {
@@ -4912,6 +4922,31 @@ async function loadUserInvites() {
                 setTimeout(() => copyBtn.textContent = 'Copy', 2000);
             });
         }
+
+        // Manual clear action
+        const clearBtn = div.querySelector('.btn-clear-invite');
+        clearBtn.addEventListener('click', async () => {
+            const confirmMsg = isClaimed 
+                ? "Remove this claimed code from your dashboard?" 
+                : "Revoke and remove this unclaimed invite code?";
+
+            if (!confirm(confirmMsg)) return;
+
+            clearBtn.disabled = true;
+            clearBtn.textContent = '...';
+
+            const { error: delError } = await db.from('invitations').delete().eq('id', inv.id);
+
+            if (delError) {
+                alert(`Could not clear invite: ${delError.message}`);
+                clearBtn.disabled = false;
+                clearBtn.textContent = '✕';
+                return;
+            }
+
+            await loadUserInvites();
+        });
+
         container.appendChild(div);
     });
 }
