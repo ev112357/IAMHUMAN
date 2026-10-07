@@ -3569,7 +3569,7 @@ function getWelcomeSecurityPost() {
         dislikes: 0,
         content: `### Welcome to Turing's Gate: The Verified Human Community
 
-Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry and cryptographic perimeter defense.
+Turing's Gate is built to protect organic human discussions from automated AI crawlers, spambots, and synthetic farm networks through passive client-side telemetry, cryptographic perimeter defense, and an accountable Web of Trust.
 
 <div class="welcome-diagram">
     <div class="diagram-step">
@@ -3581,15 +3581,19 @@ Turing's Gate is built to protect organic human discussions from automated AI cr
         <span>In-app keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">3. Accessibility-Safe Risk Ledger</span>
+        <span class="diagram-badge">3. Web of Trust (3 Lifetime Invites)</span>
+        <span>Network expansion is strictly capped: every verified account receives exactly three lifetime invites. You are mutually accountable for the accounts you introduce—if an invitee deploys automated scripts or spams, your Human Score is penalized.</span>
+    </div>
+    <div class="diagram-step">
+        <span class="diagram-badge">4. Accessibility-Safe Risk Ledger</span>
         <span>Speech-to-text, screen readers, and assistive copy-paste are never hard-blocked. Instead, actions gently accumulate suspicion points only if burst-spam behaviors are sustained.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">4. Verification Escrow</span>
+        <span class="diagram-badge">5. Verification Escrow</span>
         <span>Reaching a threshold temporarily suspends account posting until an interactive visual verification challenge is completed.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">5. Verified Direct Messaging</span>
+        <span class="diagram-badge">6. Verified Direct Messaging</span>
         <span>1-on-1 private messaging remains safely quarantined until recipient approval, stopping automated spam inboxes cold.</span>
     </div>
 </div>
