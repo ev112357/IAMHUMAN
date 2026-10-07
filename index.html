@@ -551,22 +551,13 @@ img, video, canvas, pre, code {
                     <div class="thread-banner-gradient"></div>
                 </div>
 
-                <div class="thread-header-bar" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px;">
-                    <!-- LEFT SIDE: Emoji & Thread Title -->
-                    <h2 style="margin-bottom: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px; flex: 1 1 200px; min-width: 200px; margin-right: auto;">
-                        <span style="flex-shrink: 0;">📜</span>
-                        <span id="current-thread-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;">Welcome & Security</span>
-                    </h2>
-
-                    <!-- RIGHT SIDE: Flattened Role, Chat, and Actions -->
-                    <span id="current-user-thread-role" class="thread-role-badge badge-blue" style="margin: 0; white-space: nowrap;">Member</span>
-                    
-                    <button type="button" id="open-live-chat-btn" class="live-chat-btn" style="width: auto !important; margin: 0; white-space: nowrap;">
-                        <div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)
-                    </button>
-                    
-                    <!-- display: contents allows these buttons to flow seamlessly on the same exact baseline as the Live Chat button -->
-                    <div class="thread-actions-bar" style="display: contents;">
+                <div class="thread-header-bar">
+                    <div class="thread-badge-wrap">
+                        <h2 style="margin-bottom: 0; font-size: 1.25rem;">📜 <span id="current-thread-title">Welcome & Security</span></h2>
+                        <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
+                        <button type="button" id="open-live-chat-btn" class="live-chat-btn"><div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)</button>
+                    </div>
+                    <div class="thread-actions-bar">
                         <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
                         <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
                         <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">⚙️ Chat Config</button>
