@@ -2068,6 +2068,35 @@ safeAddListener(createThreadForm, 'submit', async (e) => {
 
 safeAddListener(postSortSelect, 'change', () => { renderCurrentFeed(); });
 
+// --- THREAD MEMBER COUNT LOADER ---
+async function updateThreadMemberCount() {
+    const countEl = document.getElementById('thread-member-count');
+    if (!countEl || !db) return;
+
+    try {
+        if (MANDATORY_THREADS.includes(activeThread)) {
+            // Mandatory threads include every registered account
+            const { count, error } = await db
+                .from('profiles')
+                .select('*', { count: 'exact', head: true });
+            if (!error && count !== null) {
+                countEl.textContent = `${count.toLocaleString()} ${count === 1 ? 'member' : 'members'}`;
+            }
+        } else {
+            // Standard threads count joined memberships
+            const { count, error } = await db
+                .from('forum_thread_members')
+                .select('*', { count: 'exact', head: true })
+                .eq('thread_name', activeThread);
+            if (!error && count !== null) {
+                countEl.textContent = `${count.toLocaleString()} ${count === 1 ? 'member' : 'members'}`;
+            }
+        }
+    } catch (err) {
+        console.warn("Could not load thread member count:", err);
+    }
+}
+
 function updateThreadControlsUI() {
     if (currentThreadTitle) currentThreadTitle.textContent = activeThread;
     const role = getThreadRole(activeThread);
@@ -2189,6 +2218,9 @@ function updateThreadControlsUI() {
         else deleteThreadBtn.classList.add('hidden');
     }
     
+    // Update live member count for the active thread
+    updateThreadMemberCount();
+
     // Renders the banner once UI and DB sync is complete
     if (typeof renderThreadBanner === 'function') {
         renderThreadBanner();
@@ -4877,26 +4909,33 @@ async function loadUserInvites() {
     }
 
     container.innerHTML = '';
-    const inviteList = invites || [];
+    const allGeneratedInvites = invites || [];
     
+    // Quota counts EVERY invite ever generated (including hidden ones)
+    const totalLifetimeCreated = allGeneratedInvites.length;
+    const remainingQuota = Math.max(0, 3 - totalLifetimeCreated);
     const isAdmin = isSiteAdmin();
-    if (!isAdmin && inviteList.length >= 3) {
+
+    if (!isAdmin && totalLifetimeCreated >= 3) {
         btn.style.display = 'none';
     } else {
         btn.style.display = 'block';
         if (isAdmin) {
             btn.textContent = `+ Generate Invite Link (Unlimited Admin)`;
         } else {
-            btn.textContent = `+ Generate Invite Link (${3 - inviteList.length} remaining)`;
+            btn.textContent = `+ Generate Invite Link (${remainingQuota} remaining)`;
         }
     }
 
-    if (inviteList.length === 0) {
-        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">No invites generated yet.</div>';
+    // Only render invites that have not been cleared by the user
+    const visibleInvites = allGeneratedInvites.filter(inv => !inv.is_hidden);
+
+    if (visibleInvites.length === 0) {
+        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">No active codes displayed.</div>';
         return;
     }
 
-    inviteList.forEach(inv => {
+    visibleInvites.forEach(inv => {
         const div = document.createElement('div');
         div.className = 'invite-code-box';
         const isClaimed = inv.status === 'claimed';
@@ -4907,13 +4946,13 @@ async function loadUserInvites() {
                 <button type="button" class="btn-copy-invite" ${isClaimed ? 'disabled style="background:#334155; color:#94a3b8; cursor:default;"' : ''}>
                     ${isClaimed ? 'Claimed' : 'Copy'}
                 </button>
-                <button type="button" class="btn-clear-invite" title="Clear invite from list">
+                <button type="button" class="btn-clear-invite" title="Clear code from display">
                     ✕
                 </button>
             </div>
         `;
         
-        // Copy action for unclaimed links
+        // Copy link action for unclaimed invites
         if (!isClaimed) {
             const copyBtn = div.querySelector('.btn-copy-invite');
             copyBtn.addEventListener('click', () => {
@@ -4923,22 +4962,21 @@ async function loadUserInvites() {
             });
         }
 
-        // Manual clear action
+        // Soft-delete action: hides code from dashboard without refunding quota
         const clearBtn = div.querySelector('.btn-clear-invite');
         clearBtn.addEventListener('click', async () => {
-            const confirmMsg = isClaimed 
-                ? "Remove this claimed code from your dashboard?" 
-                : "Revoke and remove this unclaimed invite code?";
-
-            if (!confirm(confirmMsg)) return;
+            if (!confirm("Remove this code from your list? (Note: your 3-invite quota will not be refunded)")) return;
 
             clearBtn.disabled = true;
             clearBtn.textContent = '...';
 
-            const { error: delError } = await db.from('invitations').delete().eq('id', inv.id);
+            const { error: updateErr } = await db
+                .from('invitations')
+                .update({ is_hidden: true })
+                .eq('id', inv.id);
 
-            if (delError) {
-                alert(`Could not clear invite: ${delError.message}`);
+            if (updateErr) {
+                alert(`Could not clear code: ${updateErr.message}`);
                 clearBtn.disabled = false;
                 clearBtn.textContent = '✕';
                 return;
