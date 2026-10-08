@@ -26,6 +26,145 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
+
+// --- AUDIO AUTOPLAY UNLOCKER & SYNTHESIZER ---
+let userInteractedWithPage = false;
+function ensureAudioUnlocked() {
+    if (userInteractedWithPage) return;
+    userInteractedWithPage = true;
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+            const tempCtx = new AudioCtx();
+            tempCtx.resume().then(() => {
+                setTimeout(() => tempCtx.close().catch(() => {}), 100);
+            }).catch(() => {});
+        }
+    } catch (e) {}
+}
+window.addEventListener('click', ensureAudioUnlocked, { once: true, passive: true });
+window.addEventListener('keydown', ensureAudioUnlocked, { once: true, passive: true });
+window.addEventListener('touchstart', ensureAudioUnlocked, { once: true, passive: true });
+
+function playTechChirp(type = 'info') {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        if (type === 'success') {
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
+        } else if (type === 'error') {
+            osc.frequency.setValueAtTime(329.63, ctx.currentTime); // E4
+            osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.15); // A3
+        } else {
+            osc.frequency.setValueAtTime(440, ctx.currentTime); // A4
+            osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+        }
+
+        gain.gain.setValueAtTime(0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.16);
+    } catch (e) {}
+}
+
+function showToast({ title = 'Notification', message = '', type = 'info', icon = '📡', onClick = null, duration = 4000, force = false }) {
+    if (!force && typeof userNotifPrefs !== 'undefined' && userNotifPrefs && !userNotifPrefs.allEnabled) return;
+
+    let container = document.getElementById('tech-toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'tech-toast-container';
+        container.className = 'tech-toast-container';
+        document.body.appendChild(container);
+    }
+
+    if (force || (typeof userNotifPrefs === 'undefined' || !userNotifPrefs || userNotifPrefs.sounds)) {
+        playTechChirp(type);
+    }
+    if (navigator.vibrate) {
+        try { navigator.vibrate(type === 'error' ? [80, 50, 80] : [60]); } catch (e) {}
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `tech-toast ${type === 'success' ? 'toast-success' : (type === 'error' ? 'toast-error' : '')}`;
+
+    toast.innerHTML = `
+        <span class="tech-toast-icon">${icon}</span>
+        <div class="tech-toast-body">
+            <div class="tech-toast-title">${escapeHTML(title)}</div>
+            <div class="tech-toast-msg">${escapeHTML(message)}</div>
+        </div>
+        <div class="tech-toast-progress" style="animation-duration: ${duration}ms;"></div>
+    `;
+
+    const closeToast = () => {
+        if (toast.classList.contains('closing')) return;
+        toast.classList.add('closing');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    if (onClick) {
+        toast.addEventListener('click', (e) => {
+            onClick(e);
+            closeToast();
+        });
+    } else {
+        toast.addEventListener('click', closeToast);
+    }
+
+    setTimeout(closeToast, duration);
+    container.appendChild(toast);
+}
+
+// --- GLOBAL CYBERPUNK POPUP INTERCEPTOR (REPLACES GENERIC BROWSER ALERTS) ---
+window.alert = function(msg) {
+    if (!msg) return;
+    const str = String(msg);
+    let title = "System Notification";
+    let icon = "⚡";
+    let type = "info";
+
+    const lower = str.toLowerCase();
+    if (lower.includes("error") || lower.includes("failed") || lower.includes("blocked") || lower.includes("denied") || lower.includes("must be") || lower.includes("please") || lower.includes("security check") || lower.includes("invalid") || lower.includes("already taken") || lower.includes("incorrect")) {
+        type = "error";
+        icon = "⚠️";
+        title = "Security Clearance Alert";
+        if (lower.includes("security check") || lower.includes("captcha") || lower.includes("turnstile")) {
+            title = "Perimeter Verification";
+            icon = "🛡️";
+        } else if (lower.includes("username") || lower.includes("password") || lower.includes("login") || lower.includes("sign up")) {
+            title = "Authentication Gate";
+            icon = "🔑";
+        } else if (lower.includes("call") || lower.includes("microphone") || lower.includes("audio")) {
+            title = "Comms Protocol";
+            icon = "📞";
+        }
+    } else if (lower.includes("success") || lower.includes("copied") || lower.includes("updated") || lower.includes("welcome")) {
+        type = "success";
+        icon = "✓";
+        title = "Confirmed";
+    }
+
+    showToast({
+        title: title,
+        message: str,
+        type: type,
+        icon: icon,
+        duration: 4500,
+        force: true
+    });
+};
 const MANDATORY_THREADS = ["New User Discussion"];
 const DEFAULT_THREADS = ["Welcome & Security", "Update Thread", "Trending"];
 
@@ -561,7 +700,8 @@ safeAddListener(notifMasterToggleChk, 'change', () => {
         title: "Notifications",
         message: userNotifPrefs.allEnabled ? "All notifications enabled." : "Notifications muted entirely.",
         type: userNotifPrefs.allEnabled ? "success" : "info",
-        icon: userNotifPrefs.allEnabled ? "🔔" : "🔕"
+        icon: userNotifPrefs.allEnabled ? "🔔" : "🔕",
+        force: true
     });
 });
 
@@ -825,6 +965,7 @@ function openSettingsModal() {
         privacyToggleChk.checked = currentUserIsPrivate;
     }
     syncPrivacyDesc();
+    loadNotificationPreferences();
     switchSettingsTab('profile');
     if (typeof loadUserInvites === 'function') loadUserInvites(); // Sync active invites
     
@@ -1651,9 +1792,6 @@ async function syncUserState(user) {
                     userAvatarCache.set(currentUser.id, currentAvatarUrl);
                     usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
                     renderUserAvatar(currentAvatarUrl);
-        initUserCallSignaling();
-        initRealtimeActivityNotifications();
-        loadNotificationPreferences();
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
                 if (privacyToggleChk) {
@@ -1679,12 +1817,10 @@ async function syncUserState(user) {
         await syncCloudThreads();
         checkNotifications();
         loadUserNotifications();
+        loadNotificationPreferences();
+        initUserCallSignaling();
+        initRealtimeActivityNotifications();
         if (notifPollInterval) clearInterval(notifPollInterval);
-        cleanupCall();
-        if (userCallSignalingChannel && db) {
-            try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
-            userCallSignalingChannel = null;
-        }
         notifPollInterval = setInterval(() => {
             checkNotifications();
             loadUserNotifications();
@@ -1697,6 +1833,16 @@ async function syncUserState(user) {
         currentUserIsPrivate = false;
         suspicionScore = 0;
         updateSuspicionUI();
+
+        if (userCallSignalingChannel && db) {
+            try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
+            userCallSignalingChannel = null;
+        }
+        if (userNotifRealtimeChannel && db) {
+            try { db.removeChannel(userNotifRealtimeChannel); } catch (e) {}
+            userNotifRealtimeChannel = null;
+        }
+        cleanupCall();
 
 
         // UNLINK DEVICE ON LOGOUT (Capacitor & Web compatible)
@@ -4256,6 +4402,8 @@ safeAddListener(dmForm, 'submit', async (e) => {
 // --- NOTIFICATION BADGES ---
 
 
+let lastUnreadMessageTotal = -1;
+
 async function checkNotifications() {
     if (!currentUser || !db) return;
 
@@ -4282,7 +4430,7 @@ async function checkNotifications() {
             const convIds = memberships.map(m => m.conversation_id);
             const { data: unreadMsgs } = await db
                 .from('chat_messages')
-                .select('conversation_id')
+                .select('conversation_id, sender_username, content')
                 .in('conversation_id', convIds)
                 .neq('sender_id', currentUser.id)
                 .eq('is_read', false)
@@ -4300,6 +4448,46 @@ async function checkNotifications() {
 
 
         const total = (pendingReqs || 0) + unreadTotal;
+        if (lastUnreadMessageTotal !== -1 && total > lastUnreadMessageTotal) {
+            if (userNotifPrefs.allEnabled && userNotifPrefs.messages) {
+                showToast({
+                    title: "Incoming Transmission",
+                    message: "You have a new direct message or request.",
+                    type: "info",
+                    icon: "✉️",
+                    onClick: () => {
+                        openMessagesModal();
+                    }
+                });
+            }
+        }
+        lastUnreadMessageTotal = total;
+
+        // Check for incoming call notification in database fallback
+        if (!activeCall) {
+            const { data: callNotifs } = await db
+                .from('user_notifications')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .eq('type', 'incoming_call')
+                .eq('is_read', false)
+                .order('id', { ascending: false })
+                .limit(1);
+
+            if (callNotifs && callNotifs.length > 0) {
+                const notif = callNotifs[0];
+                const notifAge = Date.now() - new Date(notif.created_at || Date.now()).getTime();
+                if (notifAge < 35000 && !activeCall) {
+                    triggerIncomingCallUI({
+                        callerId: notif.actor_id || null,
+                        callerUsername: notif.actor_username,
+                        conversationId: notif.entity_id,
+                        offer: null
+                    });
+                }
+            }
+        }
+
         if (total > 0) {
             const badgeText = total > 99 ? '99+' : total;
             if (notifBadge) { notifBadge.textContent = badgeText; notifBadge.classList.remove('hidden'); }
@@ -6670,88 +6858,32 @@ async function submitPollVote(postId, optIdx) {
 
 
 // =========================================================================
-// --- TECHNO TOAST NOTIFICATION SYSTEM & SYNTHESIZER ---
+// --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
 // =========================================================================
 
-function playTechChirp(type = 'info') {
-    try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
+function triggerIncomingCallUI(data) {
+    if (!data || !data.callerId || data.callerId === currentUser?.id) return;
+    if (activeCall) return;
 
-        if (type === 'success') {
-            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
-        } else if (type === 'error') {
-            osc.frequency.setValueAtTime(329.63, ctx.currentTime); // E4
-            osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.15); // A3
-        } else {
-            osc.frequency.setValueAtTime(440, ctx.currentTime); // A4
-            osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
-        }
-
-        gain.gain.setValueAtTime(0.04, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.16);
-    } catch (e) {}
-}
-
-function showToast({ title = 'Notification', message = '', type = 'info', icon = '📡', onClick = null, duration = 3800 }) {
-    if (!userNotifPrefs.allEnabled) return;
-
-    const container = document.getElementById('tech-toast-container');
-    if (!container) {
-        console.log(`[${title}] ${message}`);
+    if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
         return;
     }
 
-    if (userNotifPrefs.sounds) {
-        playTechChirp(type);
+    incomingCallData = data;
+    if (incomingCallerName) {
+        incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
     }
+    playRingtoneSound();
     if (navigator.vibrate) {
-        try { navigator.vibrate(type === 'error' ? [80, 50, 80] : [60]); } catch (e) {}
+        try { navigator.vibrate([400, 200, 400, 200, 600]); } catch (e) {}
     }
-
-    const toast = document.createElement('div');
-    toast.className = `tech-toast ${type === 'success' ? 'toast-success' : (type === 'error' ? 'toast-error' : '')}`;
-
-    toast.innerHTML = `
-        <span class="tech-toast-icon">${icon}</span>
-        <div class="tech-toast-body">
-            <div class="tech-toast-title">${escapeHTML(title)}</div>
-            <div class="tech-toast-msg">${escapeHTML(message)}</div>
-        </div>
-        <div class="tech-toast-progress" style="animation-duration: ${duration}ms;"></div>
-    `;
-
-    const closeToast = () => {
-        if (toast.classList.contains('closing')) return;
-        toast.classList.add('closing');
-        setTimeout(() => toast.remove(), 300);
-    };
-
-    if (onClick) {
-        toast.addEventListener('click', (e) => {
-            onClick(e);
-            closeToast();
-        });
-    } else {
-        toast.addEventListener('click', closeToast);
+    if (callAmbientBackdrop) {
+        callAmbientBackdrop.classList.remove('hidden');
     }
-
-    setTimeout(closeToast, duration);
-    container.appendChild(toast);
+    if (incomingCallModal) {
+        incomingCallModal.classList.remove('hidden');
+    }
 }
-
-// =========================================================================
-// --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
-// =========================================================================
 
 function playRingtoneSound() {
     stopRingtoneSound();
@@ -6759,9 +6891,15 @@ function playRingtoneSound() {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         ringtoneAudioCtx = new AudioCtx();
+        if (ringtoneAudioCtx.state === 'suspended') {
+            ringtoneAudioCtx.resume().catch(() => {});
+        }
 
         const playTone = () => {
             if (!ringtoneAudioCtx || ringtoneAudioCtx.state === 'closed') return;
+            if (ringtoneAudioCtx.state === 'suspended') {
+                ringtoneAudioCtx.resume().catch(() => {});
+            }
             const osc1 = ringtoneAudioCtx.createOscillator();
             const osc2 = ringtoneAudioCtx.createOscillator();
             const gain = ringtoneAudioCtx.createGain();
@@ -6771,7 +6909,7 @@ function playRingtoneSound() {
             osc1.frequency.setValueAtTime(440, ringtoneAudioCtx.currentTime);
             osc2.frequency.setValueAtTime(480, ringtoneAudioCtx.currentTime);
 
-            gain.gain.setValueAtTime(0.06, ringtoneAudioCtx.currentTime);
+            gain.gain.setValueAtTime(0.08, ringtoneAudioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, ringtoneAudioCtx.currentTime + 1.2);
 
             osc1.connect(gain);
@@ -6850,6 +6988,10 @@ function cleanupCall(statusNotice = null) {
     queuedIceCandidates = [];
 
     if (activeCall) {
+        if (activeCall.dialingInterval) {
+            clearInterval(activeCall.dialingInterval);
+            activeCall.dialingInterval = null;
+        }
         if (activeCall.callTimerInterval) {
             clearInterval(activeCall.callTimerInterval);
         }
@@ -6892,15 +7034,8 @@ function setupCallChannelListeners(callChan, pc) {
         .on('broadcast', { event: 'incoming_call' }, (payload) => {
             const data = payload?.payload;
             if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-
             if (!activeCall || activeCall.conversationId !== data.conversationId) {
-                incomingCallData = data;
-                if (incomingCallerName) {
-                    incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
-                }
-                playRingtoneSound();
-                if (callAmbientBackdrop) callAmbientBackdrop.classList.remove('hidden');
-                if (incomingCallModal) incomingCallModal.classList.remove('hidden');
+                triggerIncomingCallUI(data);
             }
         })
         .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
@@ -7062,43 +7197,76 @@ async function startAudioCall() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
+        const plainOffer = { type: offer.type, sdp: offer.sdp };
         const callPayload = {
             callerId: currentUser.id,
             callerUsername: currentUsername,
             callerAvatar: currentAvatarUrl,
             conversationId: targetConvId,
-            offer: offer
+            offer: plainOffer
         };
 
-        await callChan.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                // 1. Send offer on call room
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_offer',
-                    payload: { offer: offer, from: currentUser.id }
-                });
+        const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`, {
+            config: { broadcast: { self: false } }
+        });
 
-                // 2. Also broadcast incoming_call in call room
+        const sendCallSignals = () => {
+            if (!activeCall || !activeCall.isCaller) return;
+            try {
+                partnerSig.send({
+                    type: 'broadcast',
+                    event: 'incoming_call',
+                    payload: callPayload
+                });
+            } catch (e) {}
+
+            try {
                 callChan.send({
                     type: 'broadcast',
                     event: 'incoming_call',
                     payload: callPayload
                 });
-
-                // 3. Ring partner's dedicated personal signaling channel
-                const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`);
-                partnerSig.subscribe((sigStatus) => {
-                    if (sigStatus === 'SUBSCRIBED') {
-                        partnerSig.send({
-                            type: 'broadcast',
-                            event: 'incoming_call',
-                            payload: callPayload
-                        });
-                    }
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_offer',
+                    payload: { offer: plainOffer, from: currentUser.id }
                 });
+            } catch (e) {}
+        };
+
+        partnerSig.subscribe((sigStatus) => {
+            if (sigStatus === 'SUBSCRIBED') {
+                sendCallSignals();
+                setTimeout(sendCallSignals, 350);
+                setTimeout(sendCallSignals, 1000);
             }
         });
+
+        await callChan.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                sendCallSignals();
+            }
+        });
+
+        // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
+        let dialCount = 0;
+        activeCall.dialingInterval = setInterval(() => {
+            if (!activeCall || !activeCall.isCaller || dialCount > 14) {
+                if (activeCall && activeCall.dialingInterval) {
+                    clearInterval(activeCall.dialingInterval);
+                    activeCall.dialingInterval = null;
+                }
+                if (dialCount > 14 && (!pc.connectionState || pc.connectionState !== 'connected')) {
+                    cleanupCall("No Answer");
+                }
+                return;
+            }
+            dialCount++;
+            sendCallSignals();
+        }, 2500);
+
+        // Layer 3: Database Signal Dispatch via user_notifications fallback
+        sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
 
         showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
         playRingtoneSound();
@@ -7114,9 +7282,18 @@ async function answerAudioCall() {
     if (!incomingCallData || !currentUser) return;
     stopRingtoneSound();
     if (incomingCallModal) incomingCallModal.classList.add('hidden');
+    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
 
     const data = incomingCallData;
     incomingCallData = null;
+
+    if (db && currentUser) {
+        db.from('user_notifications')
+            .update({ is_read: true })
+            .eq('user_id', currentUser.id)
+            .eq('type', 'incoming_call')
+            .catch(() => {});
+    }
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -7229,6 +7406,13 @@ function declineAudioCall() {
     stopRingtoneSound();
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
     if (incomingCallModal) incomingCallModal.classList.add('hidden');
+    if (db && currentUser) {
+        db.from('user_notifications')
+            .update({ is_read: true })
+            .eq('user_id', currentUser.id)
+            .eq('type', 'incoming_call')
+            .catch(() => {});
+    }
     if (incomingCallData && db) {
         const chan = db.channel(`call_room_${incomingCallData.conversationId}`);
         chan.subscribe((status) => {
@@ -7261,12 +7445,30 @@ function toggleCallMute() {
 }
 
 function endCurrentAudioCall() {
-    if (activeCall && activeCall.callChannel) {
-        activeCall.callChannel.send({
-            type: 'broadcast',
-            event: 'call_ended',
-            payload: { from: currentUser?.id }
-        });
+    if (activeCall) {
+        if (activeCall.callChannel) {
+            try {
+                activeCall.callChannel.send({
+                    type: 'broadcast',
+                    event: 'call_ended',
+                    payload: { from: currentUser?.id }
+                });
+            } catch (e) {}
+        }
+        if (activeCall.partnerId && db) {
+            try {
+                const partnerSig = db.channel(`user_call_sig_${activeCall.partnerId}`);
+                partnerSig.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        partnerSig.send({
+                            type: 'broadcast',
+                            event: 'cancel_call',
+                            payload: { callerId: currentUser?.id }
+                        });
+                    }
+                });
+            } catch (e) {}
+        }
     }
     cleanupCall("Call Ended");
 }
@@ -7307,26 +7509,14 @@ function initUserCallSignaling() {
                 return;
             }
 
-            incomingCallData = data;
-            if (incomingCallerName) {
-                incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
-            }
-            playRingtoneSound();
-            if (navigator.vibrate) {
-                try { navigator.vibrate([400, 200, 400, 200, 600]); } catch (e) {}
-            }
-            if (callAmbientBackdrop) {
-                callAmbientBackdrop.classList.remove('hidden');
-            }
-            if (incomingCallModal) {
-                incomingCallModal.classList.remove('hidden');
-            }
+            triggerIncomingCallUI(data);
         })
         .on('broadcast', { event: 'cancel_call' }, (payload) => {
             const data = payload?.payload;
             if (incomingCallData && incomingCallData.callerId === data?.callerId) {
                 stopRingtoneSound();
                 incomingCallData = null;
+                if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
                 if (incomingCallModal) incomingCallModal.classList.add('hidden');
             }
         })
