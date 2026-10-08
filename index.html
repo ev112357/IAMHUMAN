@@ -1344,9 +1344,486 @@ img, video, canvas, pre, code {
             }
         }
 
+
+        /* ==========================================================================
+           CYBERPUNK TECHNO OVERHAUL & BIOMECHANICAL INCUBATOR
+           ========================================================================== */
+
+        :root {
+            --cyber-bg: #030712;
+            --cyber-card: #090e1a;
+            --cyber-card-alt: #0c1527;
+            --cyber-border: #1e293b;
+            --cyber-cyan: #00f0ff;
+            --cyber-cyan-glow: rgba(0, 240, 255, 0.45);
+            --cyber-crimson: #ff2a5f;
+            --cyber-crimson-glow: rgba(255, 42, 95, 0.55);
+            --cyber-emerald: #10b981;
+            --cyber-amber: #f59e0b;
+            --cyber-text: #f8fafc;
+            --cyber-muted: #94a3b8;
+        }
+
+        /* Darker High-Contrast Body with Subtle Cyber Texture */
+        body {
+            background-color: var(--cyber-bg) !important;
+            background-image: 
+                radial-gradient(circle at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 65%),
+                linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px) !important;
+            background-size: 100% 100%, 32px 32px, 32px 32px !important;
+            color: var(--cyber-text) !important;
+        }
+
+        /* Top Viewport Scroll Progress Indicator */
+        .cyber-scroll-tracker {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 3px;
+            width: 0%;
+            background: linear-gradient(90deg, #00f0ff 0%, #ff2a5f 50%, #10b981 100%);
+            box-shadow: 0 0 12px #00f0ff, 0 0 6px #ff2a5f;
+            z-index: 999999;
+            pointer-events: none;
+            transition: width 0.08s ease-out;
+        }
+
+        /* Cyberpunk Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #040711;
+            border-left: 1px solid rgba(56, 189, 248, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #0284c7, #00f0ff);
+            border-radius: 3px;
+            box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #00f0ff, #ff2a5f);
+        }
+
+        /* Interactive Hover Highlights */
+        button, .btn-thread-action, .thread-nav-btn, .tab-btn, .conv-item, .notif-item, .opt-modal-item, .setting-toggle-row {
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+
+        button:hover:not(:disabled),
+        .btn-thread-action:hover:not(:disabled),
+        .thread-nav-btn:hover:not(.active),
+        .conv-item:hover:not(.active),
+        .opt-modal-item:hover {
+            border-color: #00f0ff !important;
+            box-shadow: 0 0 16px rgba(0, 240, 255, 0.4), inset 0 0 8px rgba(0, 240, 255, 0.12) !important;
+            transform: translateY(-1px) !important;
+            color: #ffffff !important;
+        }
+
+        /* Standardized Action Buttons Geometry */
+        .btn-thread-action {
+            height: 36px !important;
+            min-width: 86px !important;
+            padding: 0 12px !important;
+            font-size: 0.8rem !important;
+            font-weight: 600 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 6px !important;
+            border-radius: 6px !important;
+            box-sizing: border-box !important;
+            background: #090e1a !important;
+            border: 1px solid #1e293b !important;
+            color: #cbd5e1 !important;
+        }
+
+        .opt-modal-item {
+            display: flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            padding: 10px 14px !important;
+            text-align: left !important;
+            font-size: 0.88rem !important;
+            font-weight: 600 !important;
+            width: 100% !important;
+            margin: 0 !important;
+            border-radius: 8px !important;
+            height: 42px !important;
+            box-sizing: border-box !important;
+            background: #090e1a !important;
+            border: 1px solid #1e293b !important;
+            color: #e2e8f0 !important;
+        }
+
+        /* Biomechanical Trust Incubator */
+        .biomech-incubator-panel {
+            background: linear-gradient(180deg, #090e1a 0%, #040711 100%);
+            border: 1px solid rgba(255, 42, 95, 0.35);
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 18px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(255, 42, 95, 0.06);
+        }
+        .biomech-incubator-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #ff2a5f, #00f0ff, #ff2a5f);
+            opacity: 0.85;
+        }
+        .biomech-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 14px;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .biomech-title-wrap {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            flex: 1;
+            min-width: 200px;
+        }
+        .biomech-core-icon {
+            font-size: 1.4rem;
+            color: #ff2a5f;
+            text-shadow: 0 0 12px #ff2a5f;
+            line-height: 1;
+            margin-top: 2px;
+        }
+        .biomech-title {
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #f8fafc;
+            letter-spacing: -0.01em;
+            margin-bottom: 4px;
+        }
+        .biomech-subtitle {
+            font-size: 0.76rem;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+
+        .btn-quantum-overdrive {
+            background: linear-gradient(135deg, #0284c7 0%, #00f0ff 100%) !important;
+            color: #040711 !important;
+            font-weight: 800 !important;
+            font-size: 0.76rem !important;
+            padding: 8px 12px !important;
+            border-radius: 8px !important;
+            border: 1px solid #38bdf8 !important;
+            cursor: pointer !important;
+            white-space: nowrap !important;
+            box-shadow: 0 0 14px rgba(0, 240, 255, 0.45) !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.03em !important;
+            width: auto !important;
+        }
+        .btn-quantum-overdrive:hover {
+            background: linear-gradient(135deg, #00f0ff 0%, #38bdf8 100%) !important;
+            box-shadow: 0 0 22px rgba(0, 240, 255, 0.75) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* 3 Pods Grid */
+        .pearl-incubator-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        @media (max-width: 640px) {
+            .pearl-incubator-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Individual Pod */
+        .pearl-pod {
+            background: #080d18;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 12px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            transition: all 0.25s ease;
+            box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.5);
+        }
+        .pearl-pod.state-ready {
+            border-color: rgba(255, 42, 95, 0.45);
+        }
+        .pearl-pod.state-ready:hover {
+            border-color: #ff2a5f;
+            box-shadow: 0 0 16px rgba(255, 42, 95, 0.35);
+        }
+        .pearl-pod.state-incubating {
+            border-color: rgba(0, 240, 255, 0.35);
+            background: #050913;
+        }
+        .pearl-pod.state-incubating:hover {
+            border-color: #00f0ff;
+            box-shadow: 0 0 14px rgba(0, 240, 255, 0.3);
+        }
+
+        .pod-badge-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: #64748b;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .pod-status-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.62rem;
+            font-weight: 800;
+        }
+        .pod-status-ready {
+            background: rgba(255, 42, 95, 0.18);
+            color: #ff2a5f;
+            border: 1px solid rgba(255, 42, 95, 0.4);
+        }
+        .pod-status-incubating {
+            background: rgba(0, 240, 255, 0.15);
+            color: #00f0ff;
+            border: 1px solid rgba(0, 240, 255, 0.3);
+        }
+
+        /* Capsule Chamber */
+        .pod-chamber {
+            width: 78px;
+            height: 78px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #0b1324 0%, #03050b 100%);
+            border: 2px solid #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            margin-bottom: 10px;
+            box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.85);
+        }
+        .pearl-pod.state-ready .pod-chamber {
+            border-color: rgba(255, 42, 95, 0.55);
+            box-shadow: 0 0 16px rgba(255, 42, 95, 0.3), inset 0 0 12px rgba(255, 42, 95, 0.25);
+        }
+        .pearl-pod.state-incubating .pod-chamber {
+            border-color: rgba(0, 240, 255, 0.4);
+            box-shadow: 0 0 14px rgba(0, 240, 255, 0.2), inset 0 0 12px rgba(0, 240, 255, 0.2);
+        }
+
+        /* 3D Radiant Red Pearl */
+        .red-pearl {
+            width: 46px;
+            height: 46px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ff80a0, #ff1a53 40%, #b3002b 75%, #4a0011 100%);
+            box-shadow: 0 0 18px rgba(255, 42, 95, 0.75), inset 0 0 10px rgba(255, 255, 255, 0.6);
+            animation: pearl-breathe 3.5s ease-in-out infinite;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s ease;
+        }
+        .red-pearl:hover {
+            transform: scale(1.08);
+            box-shadow: 0 0 26px rgba(255, 42, 95, 0.95), inset 0 0 14px rgba(255, 255, 255, 0.8);
+        }
+        @keyframes pearl-breathe {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 14px rgba(255, 42, 95, 0.6), inset 0 0 8px rgba(255, 255, 255, 0.4);
+            }
+            50% {
+                transform: scale(1.06);
+                box-shadow: 0 0 24px rgba(255, 42, 95, 0.9), inset 0 0 12px rgba(255, 255, 255, 0.65);
+            }
+        }
+
+        /* Popping Animation */
+        .red-pearl.popping {
+            animation: pearl-pop 0.48s cubic-bezier(0.2, 0.8, 0.2, 1) forwards !important;
+        }
+        @keyframes pearl-pop {
+            0% { transform: scale(1); opacity: 1; filter: brightness(1); }
+            45% { transform: scale(1.4); opacity: 0.95; filter: brightness(2.8); box-shadow: 0 0 35px #ffffff, 0 0 55px #ff2a5f; }
+            100% { transform: scale(0.1); opacity: 0; filter: brightness(3); }
+        }
+
+        /* Incubating Embryo and Fluid */
+        .bio-chamber-active {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .bio-particles {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, rgba(0, 240, 255, 0.15) 0%, transparent 70%);
+            animation: bio-pulse 2s infinite alternate;
+        }
+        @keyframes bio-pulse {
+            0% { opacity: 0.3; transform: scale(0.9); }
+            100% { opacity: 0.85; transform: scale(1.1); }
+        }
+        .nano-nucleus {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 30%, #ff80a0, #ff2a5f 60%, #4a0011 100%);
+            box-shadow: 0 0 10px rgba(255, 42, 95, 0.6);
+            animation: nucleus-grow 2s ease-in-out infinite alternate;
+        }
+        @keyframes nucleus-grow {
+            0% { transform: scale(0.85); box-shadow: 0 0 8px rgba(0, 240, 255, 0.5); }
+            100% { transform: scale(1.15); box-shadow: 0 0 16px rgba(255, 42, 95, 0.8); }
+        }
+
+        .pod-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            width: 100%;
+        }
+        .pod-code-label {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: #f8fafc;
+            letter-spacing: 0.04em;
+            background: #040711;
+            border: 1px solid #1e293b;
+            padding: 3px 6px;
+            border-radius: 6px;
+            width: 100%;
+            text-align: center;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pod-timer-text {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: #00f0ff;
+            font-family: ui-monospace, monospace;
+            text-align: center;
+            letter-spacing: 0.02em;
+        }
+        .pod-progress-bar-wrap {
+            width: 100%;
+            height: 4px;
+            background: #040711;
+            border-radius: 2px;
+            overflow: hidden;
+            border: 1px solid #1e293b;
+            margin: 2px 0;
+        }
+        .pod-progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff2a5f, #00f0ff);
+            box-shadow: 0 0 6px #00f0ff;
+            transition: width 0.3s ease;
+        }
+        .btn-pod-action {
+            height: 32px !important;
+            font-size: 0.74rem !important;
+            font-weight: 700 !important;
+            border-radius: 6px !important;
+            padding: 0 8px !important;
+            width: 100% !important;
+            margin-top: 4px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 4px !important;
+        }
+
+        /* Lineage Ledger */
+        .invite-ledger-section {
+            margin-top: 14px;
+            border-top: 1px solid #1e293b;
+            padding-top: 10px;
+        }
+        .ledger-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px 10px;
+            background: #080d18;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            transition: all 0.15s ease;
+        }
+        .ledger-header:hover {
+            border-color: #38bdf8;
+            background: #0c1424;
+        }
+        .invite-ledger-content {
+            margin-top: 10px;
+        }
+        .invite-ledger-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+        .ledger-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #040711;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 0.76rem;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .ledger-row.is-tainted {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.08);
+        }
+        .ledger-code {
+            font-family: monospace;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+        .ledger-meta {
+            color: #94a3b8;
+            font-size: 0.7rem;
+        }
+
 </style>
 </head>
 <body>
+    <!-- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER -->
+    <div id="cyber-scroll-tracker" class="cyber-scroll-tracker"></div>
+
 
 
     <div class="ticker-wrap" title="Click to view recent updates">
@@ -1489,12 +1966,30 @@ img, video, canvas, pre, code {
                         </div>
                     </div>
                     <div class="thread-actions-bar">
-                        <button type="button" id="share-thread-btn" class="secondary btn-thread-action">📤 Share</button>
-                        <button type="button" id="open-thread-options-btn" class="secondary btn-thread-action" style="color: #38bdf8; border-color: #38bdf8;">⚙️ Options</button>
-                        <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden desktop-only-btn">⚙️ Roles</button>
-                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden desktop-only-btn">🔴 Live Config</button>
-                        <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
-                        <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden desktop-only-btn">🗑 Delete</button>
+                        <button type="button" id="share-thread-btn" class="secondary btn-thread-action desktop-only-btn" title="Share Community Thread">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                            <span>Share</span>
+                        </button>
+                        <button type="button" id="open-thread-options-btn" class="secondary btn-thread-action" style="color: #00f0ff; border-color: #00f0ff;" title="Thread Options HUD">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            <span>Options</span>
+                        </button>
+                        <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden desktop-only-btn" title="Roles & Permissions">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            <span>Roles</span>
+                        </button>
+                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden desktop-only-btn" title="Live Chat Configuration">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                            <span>Live Config</span>
+                        </button>
+                        <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden desktop-only-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                            <span id="join-leave-active-thread-text">Leave</span>
+                        </button>
+                        <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden desktop-only-btn" title="Delete Community Thread">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                            <span>Delete</span>
+                        </button>
                     </div>
                 </div>
 
@@ -1796,11 +2291,51 @@ img, video, canvas, pre, code {
                 </div>
 
 
-                <div class="profile-section" style="border-top: 1px solid #10b981; margin-top: 20px; padding-top: 14px;">
-                    <label style="color: #10b981; font-weight: 700;">Golden Invites (Web of Trust)</label>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px;">You are allocated strictly <strong>3 lifetime invites</strong>. You are directly accountable for the humans you vouch for—if an invitee spams or automates, your human score drops.</p>
-                    <div id="invites-container" style="margin-bottom: 10px;"></div>
-                    <button type="button" id="generate-invite-btn" style="background: #10b981; color: #0f172a;">+ Generate Invite Link</button>
+                <!-- BIOMECHANICAL TRUST INCUBATOR (3 RED PEARL CODES & CHAIN OF CUSTODY) -->
+                <div class="biomech-incubator-panel">
+                    <div class="biomech-header">
+                        <div class="biomech-title-wrap">
+                            <div class="biomech-core-icon">◈</div>
+                            <div>
+                                <h3 class="biomech-title">Biomechanical Trust Incubator</h3>
+                                <p class="biomech-subtitle">
+                                    3 Genetic Red Pearls allocated per 30-day incubation cycle. Vouching creates an immutable chain of custody—sponsoring synthetic or automated accounts degrades your verification pedigree.
+                                </p>
+                            </div>
+                        </div>
+                        <div id="admin-overdrive-container" class="hidden">
+                            <button type="button" id="admin-overdrive-btn" class="btn-quantum-overdrive" title="Admin Unlimited Key Generation">
+                                ⚡ Quantum Core Overdrive (Infinite)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 3 Biomechanical Incubation Pods -->
+                    <div id="pearl-incubator-grid" class="pearl-incubator-grid">
+                        <!-- Rendered in real-time by loadUserInvites() -->
+                    </div>
+
+                    <!-- Cryptographic Lineage Ledger -->
+                    <div class="invite-ledger-section">
+                        <div class="ledger-header" id="toggle-invite-ledger-btn">
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                <span style="font-weight: 700; color: #38bdf8; font-size: 0.85rem;">Chain of Custody Ledger</span>
+                                <span id="ledger-count-badge" class="pod-status-badge pod-status-ready">0 Issued</span>
+                            </div>
+                            <span id="ledger-chevron" style="color: #94a3b8; font-size: 0.75rem;">▼ Show</span>
+                        </div>
+                        <div id="invite-ledger-content" class="invite-ledger-content hidden">
+                            <div id="admin-ledger-filter-row" class="hidden" style="margin-bottom: 8px; display: flex; gap: 6px;">
+                                <input type="text" id="ledger-search-input" placeholder="Filter by code, inviter, or invitee username..." style="margin-bottom: 0; font-size: 0.78rem; padding: 6px 10px; height: 32px; background: #060b14; border-color: #334155;">
+                            </div>
+                            <div id="invite-ledger-list" class="invite-ledger-list"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Fallback nodes for any legacy selectors -->
+                    <div id="invites-container" style="display: none;"></div>
+                    <button type="button" id="generate-invite-btn" style="display: none;">+ Generate</button>
                 </div>
 
 
@@ -2464,38 +2999,45 @@ img, video, canvas, pre, code {
             
             <div id="thread-options-list" style="display: flex; flex-direction: column; gap: 8px;">
                 <!-- Set Banner (Mods and Owners only) -->
-                <button type="button" id="opt-set-banner-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>🖼️</span> <span>Set Community Banner</span>
+                <button type="button" id="opt-set-banner-btn" class="secondary opt-modal-item hidden">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    <span>Set Community Banner</span>
                 </button>
 
                 <!-- Roles & Permissions (Mods and Owners only) -->
-                <button type="button" id="opt-manage-perms-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>⚙️</span> <span>Manage Roles & Permissions</span>
+                <button type="button" id="opt-manage-perms-btn" class="secondary opt-modal-item hidden">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    <span>Manage Roles & Permissions</span>
                 </button>
 
                 <!-- Live Chat Config (Mods and Owners only) -->
-                <button type="button" id="opt-manage-chat-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>🔴</span> <span>Live Chat Schedule & Lock</span>
+                <button type="button" id="opt-manage-chat-btn" class="secondary opt-modal-item hidden">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+                    <span>Live Chat Schedule & Lock</span>
                 </button>
 
                 <!-- Set Flair -->
-                <button type="button" id="opt-set-flair-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>🏷️</span> <span>Set Community Flair</span>
+                <button type="button" id="opt-set-flair-btn" class="secondary opt-modal-item">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    <span>Set Community Flair</span>
                 </button>
 
                 <!-- Share Thread -->
-                <button type="button" id="opt-share-thread-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>📤</span> <span>Share Community Thread</span>
+                <button type="button" id="opt-share-thread-btn" class="secondary opt-modal-item">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                    <span>Share Community Thread</span>
                 </button>
 
                 <!-- Join / Leave Thread -->
-                <button type="button" id="opt-join-leave-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
-                    <span>🚪</span> <span id="opt-join-leave-text">Leave Thread</span>
+                <button type="button" id="opt-join-leave-btn" class="secondary opt-modal-item">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    <span id="opt-join-leave-text">Leave Thread</span>
                 </button>
 
                 <!-- Delete Thread (Owner & Admin only) -->
-                <button type="button" id="opt-delete-thread-btn" class="danger hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px; margin-top: 4px;">
-                    <span>🗑️</span> <span>Delete Community Thread</span>
+                <button type="button" id="opt-delete-thread-btn" class="danger opt-modal-item hidden" style="border-color: #ef4444; color: #ef4444;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    <span>Delete Community Thread</span>
                 </button>
             </div>
         </div>
