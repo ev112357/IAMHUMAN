@@ -11588,443 +11588,1767 @@ if (window.ResizeObserver && document.body) {
 
 
 // Background koi simulation: graceful, top-down Japanese koi swimming through deep midnight water.
-// Features organic body contours, fan-shaped pectoral and veil-tail fins, glowing red pearl eyes,
-// and glowing blue water wake streamlines stretching out behind them.
+// Motion is built from a smooth travelling body wave, gradual steering, and a flexible multi-ray tail.
+// The body and fins are frame-rate independent so the stroke remains consistent across devices.
+
 function initBioluminescentSea() {
     const canvas = document.getElementById('bioluminescent-canvas');
     if (!canvas) return;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    const TAU = Math.PI * 2;
 
-    window.addEventListener('resize', () => {
-        width = canvas.width = window.innerWidth;
-        height = canvas.height = window.innerHeight;
-    }, { passive: true });
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const angleDifference = (target, current) => {
+        let diff = target - current;
+        while (diff < -Math.PI) diff += TAU;
+        while (diff > Math.PI) diff -= TAU;
+        return diff;
+    };
+
+    const smoothToward = (current, target, response, dt) => {
+        return current + (target - current) * (1 - Math.exp(-response * dt));
+    };
+
+    const resizeCanvas = () => {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+
+        // Keep the drawing coordinate system in CSS pixels.
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+
+    resizeCanvas();
+
+    window.addEventListener('resize', resizeCanvas, { passive: true });
 
     class TrueKoi {
         constructor(w, h, scale = 1.0) {
             this.w = w;
             this.h = h;
             this.scale = scale;
+
             this.x = Math.random() * w;
             this.y = Math.random() * h;
-            
-            // Slower, contemplative gliding swimming speed
-            this.speed = (0.52 + Math.random() * 0.32) * (0.9 + (1 - scale * 0.2));
-            this.angle = Math.random() * Math.PI * 2;
+
+            // Slow, steady cruising speed. Expressed in pixels/second.
+            this.speed =
+                (30 + Math.random() * 8) *
+                (0.98 - (scale - 1) * 0.06);
+
+            this.angle = Math.random() * TAU;
             this.targetAngle = this.angle;
-            this.turnTimer = 40 + Math.floor(Math.random() * 80);
-            
+
+            // Course changes happen slowly and are smoothed by turnVelocity.
+            this.turnTimer = 2.5 + Math.random() * 4.0;
+            this.turnVelocity = 0;
+
+            // Body-wave parameters. Each fish gets a slightly different rhythm.
+            this.swimPhase = Math.random() * TAU;
+            this.swimRate = 2.15 + Math.random() * 0.30;
+
+            // Phase delay from head to tail.
+            this.phaseLag = 0.39 + Math.random() * 0.035;
+
+            // Main body curvature and very small secondary harmonic.
+            this.bodyBend = 0.28 + Math.random() * 0.055;
+            this.secondaryBend = 0.025 + Math.random() * 0.02;
+            this.wavePhaseOffset = Math.random() * TAU;
+
             this.numVertebrae = 12;
             this.segDist = 4.8 * scale;
-            this.swimCycle = Math.random() * Math.PI * 2;
-            this.swimFreq = 0.040 + Math.random() * 0.015; // Natural slow tail stroke
-            
-            // Proportional anatomical widths along the spine from snout to caudal base
+
+            // The caudal fin attaches at the caudal base, just before
+            // the final terminal spine anchor.
+            this.tailBaseIndex = this.numVertebrae - 2;
+
+            // Proportional anatomical half-widths along the body,
+            // from the snout to the end of the caudal peduncle.
             this.bodyWidths = [
-                3.8 * scale,  // 0: Snout
-                6.5 * scale,  // 1: Head / Eyes
-                10.2 * scale, // 2: Pectoral girdle
-                11.5 * scale, // 3: Mid-body (widest)
-                11.0 * scale, // 4: Upper abdomen
-                9.8 * scale,  // 5: Abdomen
-                8.2 * scale,  // 6: Pelvic area
-                6.6 * scale,  // 7: Lower body
-                5.0 * scale,  // 8: Pre-tail
-                3.6 * scale,  // 9: Tail peduncle
-                2.4 * scale,  // 10: Caudal base
-                1.5 * scale   // 11: Tail tip anchor
+                3.8 * scale,   // 0: snout
+                6.5 * scale,   // 1: head / eyes
+                10.2 * scale,  // 2: pectoral girdle
+                11.5 * scale,  // 3: widest point
+                11.0 * scale,  // 4: upper abdomen
+                9.8 * scale,   // 5: abdomen
+                8.2 * scale,   // 6: pelvic area
+                6.6 * scale,   // 7: lower body
+                5.0 * scale,   // 8: pre-tail
+                3.6 * scale,   // 9: tail peduncle
+                2.4 * scale,   // 10: caudal base
+                0.9 * scale    // 11: short terminal anchor
             ];
-            
+
             this.spine = [];
-            for (let i = 0; i < this.numVertebrae; i++) {
-                this.spine.push({
-                    x: this.x - Math.cos(this.angle) * i * this.segDist,
-                    y: this.y - Math.sin(this.angle) * i * this.segDist
-                });
-            }
-            
-            // Trailing wake lines: 3 fluid streamlines stretching out behind the tail into the water
+            this.buildSpine();
+
+            // Wake samples are time based rather than frame based.
             this.wakeLeft = [];
             this.wakeCenter = [];
             this.wakeRight = [];
-            this.maxWakePoints = 48;
+            this.wakeClock = 0;
+            this.maxWakeAge = 2.2;
         }
 
-        update(w, h) {
+        buildSpine() {
+            this.spine.length = this.numVertebrae;
+
+            // Segment 0 is anchored to the fish head.
+            // Every following segment is reconstructed from a local tangent,
+            // so lengths stay stable and the curve cannot accumulate kinks.
+            this.spine[0] = {
+                x: this.x,
+                y: this.y
+            };
+
+            for (let i = 1; i < this.numVertebrae; i++) {
+                const progress = i / (this.numVertebrae - 1);
+                const waveGain = Math.pow(progress, 1.72);
+
+                // Main travelling lateral wave.
+                // Head stays almost still while the tail becomes flexible.
+                let bend =
+                    this.bodyBend *
+                    waveGain *
+                    Math.sin(
+                        this.swimPhase -
+                        i * this.phaseLag
+                    );
+
+                // Tiny secondary harmonic prevents an overly perfect
+                // computer-generated sine-wave appearance.
+                bend +=
+                    this.secondaryBend *
+                    waveGain *
+                    Math.sin(
+                        this.swimPhase * 1.93 -
+                        i * (this.phaseLag * 1.82) +
+                        this.wavePhaseOffset
+                    );
+
+                // The rear of the fish follows the head's steering with
+                // a natural delay instead of rotating all at once.
+                const bodyTravelTime =
+                    (i * this.segDist) /
+                    Math.max(this.speed, 1);
+
+                const steeringLag = clamp(
+                    this.turnVelocity *
+                        bodyTravelTime *
+                        0.78,
+                    -0.46,
+                    0.46
+                );
+
+                const localAngle =
+                    this.angle +
+                    bend -
+                    steeringLag;
+
+                this.spine[i] = {
+                    x:
+                        this.spine[i - 1].x -
+                        Math.cos(localAngle) *
+                            this.segDist,
+
+                    y:
+                        this.spine[i - 1].y -
+                        Math.sin(localAngle) *
+                            this.segDist
+                };
+            }
+        }
+
+        update(w, h, dt) {
             this.w = w;
             this.h = h;
-            this.swimCycle += this.swimFreq;
-            
-            this.turnTimer--;
+
+            this.swimPhase += this.swimRate * dt;
+
+            // Gentle, infrequent course changes.
+            this.turnTimer -= dt;
+
             if (this.turnTimer <= 0) {
-                this.targetAngle += (Math.random() - 0.5) * 1.2;
-                this.turnTimer = 80 + Math.floor(Math.random() * 120);
+                const turnAmount =
+                    (Math.random() - 0.5) * 0.9;
+
+                this.targetAngle =
+                    this.angle + turnAmount;
+
+                // Avoid obvious repetitive steering.
+                this.turnTimer =
+                    3.0 +
+                    Math.random() * 5.0;
             }
-            let diff = this.targetAngle - this.angle;
-            while (diff < -Math.PI) diff += Math.PI * 2;
-            while (diff > Math.PI) diff -= Math.PI * 2;
-            this.angle += diff * 0.018;
 
-            this.x += Math.cos(this.angle) * this.speed;
-            this.y += Math.sin(this.angle) * this.speed;
+            const desiredTurnVelocity = clamp(
+                angleDifference(
+                    this.targetAngle,
+                    this.angle
+                ) * 0.72,
+                -0.50,
+                0.50
+            );
 
-            // Screen boundary wrap: shift all vertebrae together so lines never flash across screen
-            const pad = 120;
+            // Smooth angular acceleration and deceleration.
+            this.turnVelocity =
+                smoothToward(
+                    this.turnVelocity,
+                    desiredTurnVelocity,
+                    2.6,
+                    dt
+                );
+
+            this.angle +=
+                this.turnVelocity * dt;
+
+            // Subtle propulsion pulse.
+            // It is intentionally tiny so the fish doesn't bob or jerk.
+            const propulsionPulse =
+                1 +
+                0.025 *
+                    Math.sin(
+                        this.swimPhase - 0.9
+                    ) *
+                    Math.sin(
+                        this.swimPhase - 0.9
+                    );
+
+            this.x +=
+                Math.cos(this.angle) *
+                this.speed *
+                propulsionPulse *
+                dt;
+
+            this.y +=
+                Math.sin(this.angle) *
+                this.speed *
+                propulsionPulse *
+                dt;
+
+            // Screen wrapping.
+            const pad = 150;
+
             let wrapped = false;
-            let shiftX = 0, shiftY = 0;
+            let shiftX = 0;
+            let shiftY = 0;
 
-            if (this.x < -pad) { shiftX = w + pad * 2; wrapped = true; }
-            else if (this.x > w + pad) { shiftX = -(w + pad * 2); wrapped = true; }
-            if (this.y < -pad) { shiftY = h + pad * 2; wrapped = true; }
-            else if (this.y > h + pad) { shiftY = -(h + pad * 2); wrapped = true; }
+            if (this.x < -pad) {
+                shiftX =
+                    w +
+                    pad * 2;
+
+                wrapped = true;
+            } else if (this.x > w + pad) {
+                shiftX =
+                    -(w + pad * 2);
+
+                wrapped = true;
+            }
+
+            if (this.y < -pad) {
+                shiftY =
+                    h +
+                    pad * 2;
+
+                wrapped = true;
+            } else if (this.y > h + pad) {
+                shiftY =
+                    -(h + pad * 2);
+
+                wrapped = true;
+            }
 
             if (wrapped) {
                 this.x += shiftX;
                 this.y += shiftY;
-                for (let s of this.spine) {
-                    s.x += shiftX;
-                    s.y += shiftY;
+
+                this.wakeLeft.length = 0;
+                this.wakeCenter.length = 0;
+                this.wakeRight.length = 0;
+            }
+
+            // Rebuild the full body from the head using the travelling wave.
+            this.buildSpine();
+
+            // Sample wake at a stable time interval so different refresh
+            // rates do not change the visual density of the wake.
+            this.wakeClock += dt;
+
+            while (this.wakeClock >= 0.045) {
+                this.wakeClock -= 0.045;
+
+                const tail =
+                    this.spine[
+                        this.spine.length - 1
+                    ];
+
+                const preTail =
+                    this.spine[
+                        this.spine.length - 2
+                    ];
+
+                const tailAngle =
+                    Math.atan2(
+                        tail.y - preTail.y,
+                        tail.x - preTail.x
+                    );
+
+                const perpX =
+                    -Math.sin(tailAngle);
+
+                const perpY =
+                    Math.cos(tailAngle);
+
+                this.wakeCenter.unshift({
+                    x: tail.x,
+                    y: tail.y,
+                    age: 0
+                });
+
+                this.wakeLeft.unshift({
+                    x:
+                        tail.x +
+                        perpX *
+                            3.5 *
+                            this.scale,
+
+                    y:
+                        tail.y +
+                        perpY *
+                            3.5 *
+                            this.scale,
+
+                    age: 0
+                });
+
+                this.wakeRight.unshift({
+                    x:
+                        tail.x -
+                        perpX *
+                            3.5 *
+                            this.scale,
+
+                    y:
+                        tail.y -
+                        perpY *
+                            3.5 *
+                            this.scale,
+
+                    age: 0
+                });
+            }
+
+            const ageWake = (stream) => {
+                for (const point of stream) {
+                    point.age += dt;
                 }
-                this.wakeLeft = [];
-                this.wakeCenter = [];
-                this.wakeRight = [];
+
+                while (
+                    stream.length &&
+                    stream[
+                        stream.length - 1
+                    ].age > this.maxWakeAge
+                ) {
+                    stream.pop();
+                }
+            };
+
+            ageWake(this.wakeLeft);
+            ageWake(this.wakeCenter);
+            ageWake(this.wakeRight);
+        }
+
+        getBodyAngle(index) {
+            const last =
+                this.numVertebrae - 1;
+
+            const prev =
+                this.spine[
+                    Math.max(0, index - 1)
+                ];
+
+            const next =
+                this.spine[
+                    Math.min(last, index + 1)
+                ];
+
+            return Math.atan2(
+                next.y - prev.y,
+                next.x - prev.x
+            );
+        }
+
+        getTailGeometry() {
+            const root =
+                this.spine[
+                    this.tailBaseIndex
+                ];
+
+            const prev =
+                this.spine[
+                    this.tailBaseIndex - 1
+                ];
+
+            const next =
+                this.spine[
+                    this.tailBaseIndex + 1
+                ];
+
+            const tailAngle =
+                Math.atan2(
+                    next.y - prev.y,
+                    next.x - prev.x
+                );
+
+            const forwardX =
+                Math.cos(tailAngle);
+
+            const forwardY =
+                Math.sin(tailAngle);
+
+            const sideX =
+                -forwardY;
+
+            const sideY =
+                forwardX;
+
+            const tailLen =
+                30 *
+                this.scale;
+
+            const tailSpread =
+                14.5 *
+                this.scale;
+
+            // Nine membrane anchors let the tail flex progressively
+            // instead of rotating as one solid shape.
+            const points = [];
+
+            for (let i = 0; i < 9; i++) {
+                const u =
+                    -1 +
+                    (i / 8) * 2;
+
+                // Shallow center notch creates two soft tail lobes.
+                const radial =
+                    tailLen *
+                    (
+                        0.86 +
+                        0.14 *
+                            Math.pow(
+                                Math.abs(u),
+                                1.35
+                            )
+                    );
+
+                const lateral =
+                    u *
+                    tailSpread *
+                    (
+                        0.96 -
+                        0.07 *
+                            (1 - u * u)
+                    );
+
+                // Flex gets stronger toward the free edge and lags behind
+                // the body wave, which is the key to the natural "follow".
+                const edgeWeight =
+                    0.30 +
+                    0.70 *
+                        Math.pow(
+                            Math.abs(u),
+                            0.85
+                        );
+
+                let flex =
+                    0.15 *
+                    edgeWeight *
+                    Math.sin(
+                        this.swimPhase -
+                        2.55 -
+                        0.24 *
+                            Math.abs(u) +
+                        u * 0.12
+                    );
+
+                // Very small secondary flutter.
+                flex +=
+                    0.028 *
+                    edgeWeight *
+                    Math.sin(
+                        this.swimPhase * 2.05 +
+                        u * 1.65 +
+                        0.8
+                    );
+
+                const cosFlex =
+                    Math.cos(flex);
+
+                const sinFlex =
+                    Math.sin(flex);
+
+                const localX =
+                    forwardX * radial +
+                    sideX * lateral;
+
+                const localY =
+                    forwardY * radial +
+                    sideY * lateral;
+
+                points.push({
+                    x:
+                        root.x +
+                        localX * cosFlex -
+                        localY * sinFlex,
+
+                    y:
+                        root.y +
+                        localX * sinFlex +
+                        localY * cosFlex,
+
+                    u
+                });
             }
 
-            this.spine[0].x = this.x;
-            this.spine[0].y = this.y;
+            return {
+                root,
+                tailAngle,
+                forwardX,
+                forwardY,
+                sideX,
+                sideY,
+                points,
+                tailLen,
+                tailSpread
+            };
+        }
 
-            // Organic fish spine undulation (minimal at head, progressive whip along body to tail)
-            for (let i = 1; i < this.numVertebrae; i++) {
-                const prev = this.spine[i - 1];
-                const curr = this.spine[i];
-                let dx = prev.x - curr.x;
-                let dy = prev.y - curr.y;
-                let dist = Math.hypot(dx, dy) || 1;
-                
-                const progress = i / this.numVertebrae;
-                const waveAmp = Math.pow(progress, 1.35) * (7.5 * this.scale);
-                const lateralOffset = Math.sin(this.swimCycle - i * 0.42) * waveAmp;
-                
-                const perpX = -dy / dist;
-                const perpY = dx / dist;
+        drawWake(
+            ctx,
+            stream,
+            alphaFactor,
+            widthFactor
+        ) {
+            if (stream.length < 3) return;
 
-                curr.x = prev.x - (dx / dist) * this.segDist + perpX * lateralOffset * 0.35;
-                curr.y = prev.y - (dy / dist) * this.segDist + perpY * lateralOffset * 0.35;
+            ctx.beginPath();
+
+            ctx.moveTo(
+                stream[0].x,
+                stream[0].y
+            );
+
+            for (
+                let i = 1;
+                i < stream.length - 1;
+                i++
+            ) {
+                const point = stream[i];
+                const next = stream[i + 1];
+
+                if (
+                    Math.hypot(
+                        point.x - next.x,
+                        point.y - next.y
+                    ) > 55
+                ) {
+                    break;
+                }
+
+                const midX =
+                    (point.x + next.x) *
+                    0.5;
+
+                const midY =
+                    (point.y + next.y) *
+                    0.5;
+
+                ctx.quadraticCurveTo(
+                    point.x,
+                    point.y,
+                    midX,
+                    midY
+                );
             }
 
-            // Streamline wake line recording from tail
-            const tail = this.spine[this.spine.length - 1];
-            const preTail = this.spine[this.spine.length - 2];
-            const tAngle = Math.atan2(tail.y - preTail.y, tail.x - preTail.x);
-            const perpX = -Math.sin(tAngle);
-            const perpY = Math.cos(tAngle);
+            // Fade according to the age of the oldest visible part.
+            const oldestAge =
+                stream[
+                    stream.length - 1
+                ].age;
 
-            this.wakeCenter.unshift({ x: tail.x, y: tail.y, age: 0 });
-            this.wakeLeft.unshift({ x: tail.x + perpX * 4 * this.scale, y: tail.y + perpY * 4 * this.scale, age: 0 });
-            this.wakeRight.unshift({ x: tail.x - perpX * 4 * this.scale, y: tail.y - perpY * 4 * this.scale, age: 0 });
+            const ageFade =
+                0.35 +
+                0.65 *
+                    clamp(
+                        1 -
+                            oldestAge /
+                                this.maxWakeAge,
+                        0,
+                        1
+                    );
 
-            if (this.wakeCenter.length > this.maxWakePoints) this.wakeCenter.pop();
-            if (this.wakeLeft.length > this.maxWakePoints) this.wakeLeft.pop();
-            if (this.wakeRight.length > this.maxWakePoints) this.wakeRight.pop();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
 
-            for (let pt of this.wakeCenter) pt.age++;
-            for (let pt of this.wakeLeft) pt.age++;
-            for (let pt of this.wakeRight) pt.age++;
+            // Soft outer wake wash.
+            ctx.strokeStyle =
+                'rgba(0, 240, 255, ' +
+                0.18 *
+                    alphaFactor *
+                    ageFade +
+                ')';
+
+            ctx.lineWidth =
+                3.0 *
+                this.scale *
+                widthFactor;
+
+            ctx.stroke();
+
+            // Brighter core.
+            ctx.beginPath();
+
+            ctx.moveTo(
+                stream[0].x,
+                stream[0].y
+            );
+
+            for (
+                let i = 1;
+                i < stream.length - 1;
+                i++
+            ) {
+                const point = stream[i];
+                const next = stream[i + 1];
+
+                if (
+                    Math.hypot(
+                        point.x - next.x,
+                        point.y - next.y
+                    ) > 55
+                ) {
+                    break;
+                }
+
+                const midX =
+                    (point.x + next.x) *
+                    0.5;
+
+                const midY =
+                    (point.y + next.y) *
+                    0.5;
+
+                ctx.quadraticCurveTo(
+                    point.x,
+                    point.y,
+                    midX,
+                    midY
+                );
+            }
+
+            const newestAge =
+                stream[0].age;
+
+            const coreFade =
+                0.25 +
+                0.75 *
+                    clamp(
+                        1 -
+                            newestAge /
+                                this.maxWakeAge,
+                        0,
+                        1
+                    );
+
+            ctx.strokeStyle =
+                'rgba(56, 189, 248, ' +
+                0.50 *
+                    alphaFactor *
+                    coreFade +
+                ')';
+
+            ctx.lineWidth =
+                1.1 *
+                this.scale *
+                widthFactor;
+
+            ctx.stroke();
+        }
+
+        drawTail(ctx) {
+            const geometry =
+                this.getTailGeometry();
+
+            const root =
+                geometry.root;
+
+            const points =
+                geometry.points;
+
+            if (points.length < 3) return;
+
+            // Flexible membrane boundary.
+            ctx.beginPath();
+
+            ctx.moveTo(
+                root.x,
+                root.y
+            );
+
+            for (
+                let i = 0;
+                i < points.length - 1;
+                i++
+            ) {
+                const current =
+                    points[i];
+
+                const next =
+                    points[i + 1];
+
+                const midX =
+                    (current.x + next.x) *
+                    0.5;
+
+                const midY =
+                    (current.y + next.y) *
+                    0.5;
+
+                ctx.quadraticCurveTo(
+                    current.x,
+                    current.y,
+                    midX,
+                    midY
+                );
+            }
+
+            ctx.lineTo(
+                points[
+                    points.length - 1
+                ].x,
+                points[
+                    points.length - 1
+                ].y
+            );
+
+            // Curved return edge gives the membrane a soft veil-like shape.
+            const center =
+                points[4];
+
+            ctx.quadraticCurveTo(
+                center.x * 0.55 +
+                    root.x * 0.45,
+
+                center.y * 0.55 +
+                    root.y * 0.45,
+
+                root.x,
+                root.y
+            );
+
+            ctx.closePath();
+
+            ctx.fillStyle =
+                'rgba(0, 240, 255, 0.20)';
+
+            ctx.fill();
+
+            ctx.strokeStyle =
+                'rgba(56, 189, 248, 0.72)';
+
+            ctx.lineWidth =
+                1.15 *
+                this.scale;
+
+            ctx.stroke();
+
+            // Individual tail rays follow their local membrane geometry.
+            for (
+                let index = 0;
+                index < points.length;
+                index++
+            ) {
+                const point =
+                    points[index];
+
+                const inward =
+                    0.12 +
+                    0.06 *
+                        Math.abs(
+                            point.u
+                        );
+
+                const endX =
+                    root.x +
+                    (point.x - root.x) *
+                        (1 - inward);
+
+                const endY =
+                    root.y +
+                    (point.y - root.y) *
+                        (1 - inward);
+
+                // Tiny variation prevents every ray from reading as
+                // a mathematically identical spoke.
+                const rayWave =
+                    1.8 *
+                    this.scale *
+                    Math.sin(
+                        this.swimPhase -
+                        2.8 +
+                        index * 0.08
+                    );
+
+                const controlX =
+                    root.x +
+                    (endX - root.x) *
+                        0.55 -
+                    geometry.sideX *
+                        rayWave;
+
+                const controlY =
+                    root.y +
+                    (endY - root.y) *
+                        0.55 -
+                    geometry.sideY *
+                        rayWave;
+
+                ctx.beginPath();
+
+                ctx.moveTo(
+                    root.x,
+                    root.y
+                );
+
+                ctx.quadraticCurveTo(
+                    controlX,
+                    controlY,
+                    endX,
+                    endY
+                );
+
+                ctx.strokeStyle =
+                    'rgba(0, 240, 255, 0.30)';
+
+                ctx.lineWidth =
+                    0.72 *
+                    this.scale;
+
+                ctx.stroke();
+            }
+
+            // Central vane helps the two lobes read as one flexible tail.
+            const centerPoint =
+                points[4];
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                root.x,
+                root.y
+            );
+
+            ctx.quadraticCurveTo(
+                root.x +
+                    geometry.forwardX *
+                        geometry.tailLen *
+                        0.55,
+
+                root.y +
+                    geometry.forwardY *
+                        geometry.tailLen *
+                        0.55,
+
+                centerPoint.x,
+                centerPoint.y
+            );
+
+            ctx.strokeStyle =
+                'rgba(56, 189, 248, 0.38)';
+
+            ctx.lineWidth =
+                0.75 *
+                this.scale;
+
+            ctx.stroke();
+        }
+
+        drawPectoralFins(ctx) {
+            const anchorIndex = 2;
+
+            const anchor =
+                this.spine[
+                    anchorIndex
+                ];
+
+            const bodyAngle =
+                this.getBodyAngle(
+                    anchorIndex
+                );
+
+            const finLength =
+                20 *
+                this.scale;
+
+            for (
+                let side = -1;
+                side <= 1;
+                side += 2
+            ) {
+                // Slightly independent strokes prevent perfect bilateral
+                // synchronization, while keeping both fins coordinated.
+                const stroke =
+                    0.14 *
+                    Math.sin(
+                        this.swimPhase *
+                            0.72 +
+                        side * 1.0
+                    );
+
+                const finAngle =
+                    bodyAngle +
+                    side *
+                        (Math.PI * 0.50) +
+                    side * 0.16 +
+                    stroke;
+
+                const tipX =
+                    anchor.x +
+                    Math.cos(finAngle) *
+                        finLength;
+
+                const tipY =
+                    anchor.y +
+                    Math.sin(finAngle) *
+                        finLength;
+
+                const controlX =
+                    anchor.x +
+                    Math.cos(
+                        finAngle -
+                            side * 0.38
+                    ) *
+                        (13 * this.scale);
+
+                const controlY =
+                    anchor.y +
+                    Math.sin(
+                        finAngle -
+                            side * 0.38
+                    ) *
+                        (13 * this.scale);
+
+                const rearX =
+                    anchor.x -
+                    Math.cos(
+                        bodyAngle
+                    ) *
+                        (6.5 *
+                            this.scale);
+
+                const rearY =
+                    anchor.y -
+                    Math.sin(
+                        bodyAngle
+                    ) *
+                        (6.5 *
+                            this.scale);
+
+                ctx.beginPath();
+
+                ctx.moveTo(
+                    anchor.x,
+                    anchor.y
+                );
+
+                ctx.quadraticCurveTo(
+                    controlX,
+                    controlY,
+                    tipX,
+                    tipY
+                );
+
+                ctx.quadraticCurveTo(
+                    rearX,
+                    rearY,
+                    anchor.x,
+                    anchor.y
+                );
+
+                ctx.fillStyle =
+                    'rgba(0, 240, 255, 0.22)';
+
+                ctx.fill();
+
+                ctx.strokeStyle =
+                    'rgba(56, 189, 248, 0.68)';
+
+                ctx.lineWidth =
+                    1.05 *
+                    this.scale;
+
+                ctx.stroke();
+
+                // Quiet interior fin rays.
+                for (
+                    let ray = 1;
+                    ray <= 2;
+                    ray++
+                ) {
+                    const t =
+                        ray / 3;
+
+                    ctx.beginPath();
+
+                    ctx.moveTo(
+                        anchor.x,
+                        anchor.y
+                    );
+
+                    ctx.lineTo(
+                        anchor.x +
+                            (tipX -
+                                anchor.x) *
+                                t,
+
+                        anchor.y +
+                            (tipY -
+                                anchor.y) *
+                                t
+                    );
+
+                    ctx.strokeStyle =
+                        'rgba(0, 240, 255, 0.28)';
+
+                    ctx.lineWidth =
+                        0.65 *
+                        this.scale;
+
+                    ctx.stroke();
+                }
+            }
+        }
+
+        drawPelvicFins(ctx) {
+            const anchorIndex = 6;
+
+            const anchor =
+                this.spine[
+                    anchorIndex
+                ];
+
+            const bodyAngle =
+                this.getBodyAngle(
+                    anchorIndex
+                );
+
+            const finLength =
+                11 *
+                this.scale;
+
+            for (
+                let side = -1;
+                side <= 1;
+                side += 2
+            ) {
+                const finAngle =
+                    bodyAngle +
+                    side *
+                        (Math.PI * 0.72) +
+                    0.08 *
+                        Math.sin(
+                            this.swimPhase *
+                                0.65 +
+                            side * 0.8
+                        );
+
+                const tipX =
+                    anchor.x +
+                    Math.cos(finAngle) *
+                        finLength;
+
+                const tipY =
+                    anchor.y +
+                    Math.sin(finAngle) *
+                        finLength;
+
+                ctx.beginPath();
+
+                ctx.moveTo(
+                    anchor.x,
+                    anchor.y
+                );
+
+                ctx.quadraticCurveTo(
+                    anchor.x +
+                        Math.cos(
+                            finAngle -
+                                side * 0.30
+                        ) *
+                            (7 *
+                                this.scale),
+
+                    anchor.y +
+                        Math.sin(
+                            finAngle -
+                                side * 0.30
+                        ) *
+                            (7 *
+                                this.scale),
+
+                    tipX,
+                    tipY
+                );
+
+                ctx.lineTo(
+                    anchor.x -
+                        Math.cos(
+                            bodyAngle
+                        ) *
+                            (4.5 *
+                                this.scale),
+
+                    anchor.y -
+                        Math.sin(
+                            bodyAngle
+                        ) *
+                            (4.5 *
+                                this.scale)
+                );
+
+                ctx.closePath();
+
+                ctx.fillStyle =
+                    'rgba(0, 240, 255, 0.15)';
+
+                ctx.fill();
+
+                ctx.strokeStyle =
+                    'rgba(56, 189, 248, 0.48)';
+
+                ctx.lineWidth =
+                    0.82 *
+                    this.scale;
+
+                ctx.stroke();
+            }
+        }
+
+        drawBody(ctx) {
+            const leftSide = [];
+            const rightSide = [];
+
+            const last =
+                this.numVertebrae - 1;
+
+            for (
+                let i = 0;
+                i < this.numVertebrae;
+                i++
+            ) {
+                let tx;
+                let ty;
+
+                if (i === 0) {
+                    tx =
+                        this.spine[1].x -
+                        this.spine[0].x;
+
+                    ty =
+                        this.spine[1].y -
+                        this.spine[0].y;
+                } else if (i === last) {
+                    tx =
+                        this.spine[last].x -
+                        this.spine[
+                            last - 1
+                        ].x;
+
+                    ty =
+                        this.spine[last].y -
+                        this.spine[
+                            last - 1
+                        ].y;
+                } else {
+                    tx =
+                        this.spine[i + 1].x -
+                        this.spine[i - 1].x;
+
+                    ty =
+                        this.spine[i + 1].y -
+                        this.spine[i - 1].y;
+                }
+
+                const length =
+                    Math.hypot(
+                        tx,
+                        ty
+                    ) || 1;
+
+                const perpX =
+                    -ty / length;
+
+                const perpY =
+                    tx / length;
+
+                const halfWidth =
+                    this.bodyWidths[i];
+
+                leftSide.push({
+                    x:
+                        this.spine[i].x +
+                        perpX *
+                            halfWidth,
+
+                    y:
+                        this.spine[i].y +
+                        perpY *
+                            halfWidth
+                });
+
+                rightSide.push({
+                    x:
+                        this.spine[i].x -
+                        perpX *
+                            halfWidth,
+
+                    y:
+                        this.spine[i].y -
+                        perpY *
+                            halfWidth
+                });
+            }
+
+            const snout =
+                this.spine[0];
+
+            const tailAnchor =
+                this.spine[last];
+
+            ctx.beginPath();
+
+            ctx.moveTo(
+                snout.x,
+                snout.y
+            );
+
+            // Left flank.
+            for (
+                let i = 0;
+                i < leftSide.length - 1;
+                i++
+            ) {
+                const current =
+                    leftSide[i];
+
+                const next =
+                    leftSide[i + 1];
+
+                const midX =
+                    (current.x +
+                        next.x) *
+                    0.5;
+
+                const midY =
+                    (current.y +
+                        next.y) *
+                    0.5;
+
+                ctx.quadraticCurveTo(
+                    current.x,
+                    current.y,
+                    midX,
+                    midY
+                );
+            }
+
+            ctx.quadraticCurveTo(
+                leftSide[
+                    leftSide.length - 1
+                ].x,
+
+                leftSide[
+                    leftSide.length - 1
+                ].y,
+
+                tailAnchor.x,
+                tailAnchor.y
+            );
+
+            // Right flank.
+            for (
+                let i =
+                    rightSide.length - 1;
+                i > 0;
+                i--
+            ) {
+                const current =
+                    rightSide[i];
+
+                const previous =
+                    rightSide[i - 1];
+
+                const midX =
+                    (current.x +
+                        previous.x) *
+                    0.5;
+
+                const midY =
+                    (current.y +
+                        previous.y) *
+                    0.5;
+
+                ctx.quadraticCurveTo(
+                    current.x,
+                    current.y,
+                    midX,
+                    midY
+                );
+            }
+
+            ctx.quadraticCurveTo(
+                rightSide[0].x,
+                rightSide[0].y,
+                snout.x,
+                snout.y
+            );
+
+            ctx.closePath();
+
+            // Midnight indigo-cyan body gradient.
+            const gradient =
+                ctx.createLinearGradient(
+                    this.spine[0].x,
+                    this.spine[0].y,
+                    this.spine[last].x,
+                    this.spine[last].y
+                );
+
+            gradient.addColorStop(
+                0,
+                '#061a2e'
+            );
+
+            gradient.addColorStop(
+                0.30,
+                '#0c2e4e'
+            );
+
+            gradient.addColorStop(
+                0.70,
+                '#072038'
+            );
+
+            gradient.addColorStop(
+                1,
+                '#030f1c'
+            );
+
+            ctx.fillStyle =
+                gradient;
+
+            ctx.fill();
+
+            ctx.strokeStyle =
+                'rgba(0, 240, 255, 0.74)';
+
+            ctx.lineWidth =
+                1.35 *
+                this.scale;
+
+            ctx.stroke();
+        }
+
+        drawMarkings(ctx) {
+            // Softer dorsal centerline.
+            ctx.beginPath();
+
+            ctx.moveTo(
+                this.spine[1].x,
+                this.spine[1].y
+            );
+
+            for (
+                let i = 2;
+                i <= 8;
+                i++
+            ) {
+                ctx.lineTo(
+                    this.spine[i].x,
+                    this.spine[i].y
+                );
+            }
+
+            ctx.strokeStyle =
+                'rgba(0, 240, 255, 0.44)';
+
+            ctx.lineWidth =
+                1.45 *
+                this.scale;
+
+            ctx.stroke();
+
+            const drawPatch = (
+                index,
+                radius,
+                alpha
+            ) => {
+                const point =
+                    this.spine[index];
+
+                ctx.beginPath();
+
+                ctx.arc(
+                    point.x,
+                    point.y,
+                    radius *
+                        this.scale,
+                    0,
+                    TAU
+                );
+
+                ctx.fillStyle =
+                    'rgba(56, 189, 248, ' +
+                    alpha +
+                    ')';
+
+                ctx.fill();
+            };
+
+            drawPatch(
+                2,
+                5.4,
+                0.29
+            );
+
+            drawPatch(
+                4,
+                6.6,
+                0.32
+            );
+
+            drawPatch(
+                7,
+                4.4,
+                0.25
+            );
+        }
+
+        drawEyes(ctx) {
+            const eyeIndex = 1;
+
+            const eyePoint =
+                this.spine[
+                    eyeIndex
+                ];
+
+            const dx =
+                this.spine[0].x -
+                this.spine[2].x;
+
+            const dy =
+                this.spine[0].y -
+                this.spine[2].y;
+
+            const length =
+                Math.hypot(
+                    dx,
+                    dy
+                ) || 1;
+
+            const forwardX =
+                dx / length;
+
+            const forwardY =
+                dy / length;
+
+            const perpX =
+                -forwardY;
+
+            const perpY =
+                forwardX;
+
+            const eyeDistance =
+                this.bodyWidths[
+                    eyeIndex
+                ] * 0.84;
+
+            for (
+                let side = -1;
+                side <= 1;
+                side += 2
+            ) {
+                const eyeX =
+                    eyePoint.x +
+                    perpX *
+                        side *
+                        eyeDistance +
+                    forwardX *
+                        (1.4 *
+                            this.scale);
+
+                const eyeY =
+                    eyePoint.y +
+                    perpY *
+                        side *
+                        eyeDistance +
+                    forwardY *
+                        (1.4 *
+                            this.scale);
+
+                // Ambient halo.
+                ctx.beginPath();
+
+                ctx.arc(
+                    eyeX,
+                    eyeY,
+                    4.7 *
+                        this.scale,
+                    0,
+                    TAU
+                );
+
+                ctx.fillStyle =
+                    'rgba(255, 42, 95, 0.24)';
+
+                ctx.fill();
+
+                // Ruby iris.
+                ctx.beginPath();
+
+                ctx.arc(
+                    eyeX,
+                    eyeY,
+                    2.45 *
+                        this.scale,
+                    0,
+                    TAU
+                );
+
+                ctx.fillStyle =
+                    'rgba(255, 20, 75, 0.84)';
+
+                ctx.fill();
+
+                // Bright pupil.
+                ctx.beginPath();
+
+                ctx.arc(
+                    eyeX,
+                    eyeY,
+                    1.3 *
+                        this.scale,
+                    0,
+                    TAU
+                );
+
+                ctx.fillStyle =
+                    '#ff0055';
+
+                ctx.fill();
+
+                // Tiny specular glint.
+                ctx.beginPath();
+
+                ctx.arc(
+                    eyeX -
+                        0.42 *
+                            this.scale,
+
+                    eyeY -
+                        0.42 *
+                            this.scale,
+
+                    0.48 *
+                        this.scale,
+
+                    0,
+                    TAU
+                );
+
+                ctx.fillStyle =
+                    '#ffffff';
+
+                ctx.fill();
+            }
         }
 
         draw(ctx) {
             ctx.save();
 
-            // 1. Glowing Blue Water Wake Lines (Stretching out behind the tail)
-            const drawWakeStream = (stream, alphaFactor, widthFactor) => {
-                if (stream.length < 3) return;
-                ctx.beginPath();
-                ctx.moveTo(stream[0].x, stream[0].y);
-                for (let i = 1; i < stream.length - 1; i++) {
-                    if (Math.hypot(stream[i].x - stream[i+1].x, stream[i].y - stream[i+1].y) > 50) break;
-                    const mx = (stream[i].x + stream[i + 1].x) / 2;
-                    const my = (stream[i].y + stream[i + 1].y) / 2;
-                    ctx.quadraticCurveTo(stream[i].x, stream[i].y, mx, my);
-                }
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                
-                // Soft outer wake wash
-                ctx.strokeStyle = 'rgba(0, 240, 255, ' + (0.22 * alphaFactor) + ')';
-                ctx.lineWidth = 3.4 * this.scale * widthFactor;
-                ctx.stroke();
-
-                // Core glowing streamline
-                ctx.strokeStyle = 'rgba(56, 189, 248, ' + (0.58 * alphaFactor) + ')';
-                ctx.lineWidth = 1.3 * this.scale * widthFactor;
-                ctx.stroke();
-            };
-
-            drawWakeStream(this.wakeLeft, 0.75, 0.85);
-            drawWakeStream(this.wakeRight, 0.75, 0.85);
-            drawWakeStream(this.wakeCenter, 1.0, 1.15);
-
-            // 2. Caudal Veil-Tail Fin (Fan-shaped Japanese veil tail with delicate rays)
-            const tailRoot = this.spine[this.spine.length - 1];
-            const preTail = this.spine[this.spine.length - 2];
-            const tailAngle = Math.atan2(tailRoot.y - preTail.y, tailRoot.x - preTail.x);
-            const tailFlutter = Math.sin(this.swimCycle - 2.8) * 0.45;
-            const tailLen = 26 * this.scale;
-            const tailSpread = 13 * this.scale;
-
-            const tipTopX = tailRoot.x + Math.cos(tailAngle - 0.45 + tailFlutter) * tailLen;
-            const tipTopY = tailRoot.y + Math.sin(tailAngle - 0.45 + tailFlutter) * tailLen;
-            const tipBottomX = tailRoot.x + Math.cos(tailAngle + 0.45 + tailFlutter) * tailLen;
-            const tipBottomY = tailRoot.y + Math.sin(tailAngle + 0.45 + tailFlutter) * tailLen;
-            const tipMidX = tailRoot.x + Math.cos(tailAngle + tailFlutter) * (tailLen * 0.75);
-            const tipMidY = tailRoot.y + Math.sin(tailAngle + tailFlutter) * (tailLen * 0.75);
-
-            ctx.beginPath();
-            ctx.moveTo(tailRoot.x, tailRoot.y);
-            ctx.quadraticCurveTo(
-                tailRoot.x + Math.cos(tailAngle - 0.7) * tailSpread,
-                tailRoot.y + Math.sin(tailAngle - 0.7) * tailSpread,
-                tipTopX, tipTopY
+            // 1. Wake behind the fish.
+            this.drawWake(
+                ctx,
+                this.wakeLeft,
+                0.72,
+                0.82
             );
-            ctx.quadraticCurveTo(tipMidX, tipMidY, tipBottomX, tipBottomY);
-            ctx.quadraticCurveTo(
-                tailRoot.x + Math.cos(tailAngle + 0.7) * tailSpread,
-                tailRoot.y + Math.sin(tailAngle + 0.7) * tailSpread,
-                tailRoot.x, tailRoot.y
+
+            this.drawWake(
+                ctx,
+                this.wakeRight,
+                0.72,
+                0.82
             );
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
-            ctx.lineWidth = 1.3 * this.scale;
-            ctx.stroke();
 
-            // Tail fin rays
-            for (let ray = -2; ray <= 2; ray++) {
-                const rx = tipMidX + (tipTopX - tipBottomX) * (ray / 5);
-                const ry = tipMidY + (tipTopY - tipBottomY) * (ray / 5);
-                ctx.beginPath();
-                ctx.moveTo(tailRoot.x, tailRoot.y);
-                ctx.lineTo(rx, ry);
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
-                ctx.lineWidth = 0.8;
-                ctx.stroke();
-            }
-
-            // 3. Pectoral Fins (Broad front fins attached at gills)
-            const pecVertebra = this.spine[2];
-            const pecBaseAngle = Math.atan2(this.spine[1].y - this.spine[3].y, this.spine[1].x - this.spine[3].x);
-            const pecLen = 21 * this.scale;
-            const pecSpread = 15 * this.scale;
-            const pecWave = Math.sin(this.swimCycle) * 0.25;
-
-            for (let side = -1; side <= 1; side += 2) {
-                const finAngle = pecBaseAngle + (side * (Math.PI * 0.58)) + (side * pecWave);
-                const fx = pecVertebra.x + Math.cos(finAngle) * pecLen;
-                const fy = pecVertebra.y + Math.sin(finAngle) * pecLen;
-                const ctrlX = pecVertebra.x + Math.cos(finAngle - side * 0.35) * pecSpread;
-                const ctrlY = pecVertebra.y + Math.sin(finAngle - side * 0.35) * pecSpread;
-                const rearX = pecVertebra.x - Math.cos(pecBaseAngle) * (pecLen * 0.35);
-                const rearY = pecVertebra.y - Math.sin(pecBaseAngle) * (pecLen * 0.35);
-
-                ctx.beginPath();
-                ctx.moveTo(pecVertebra.x, pecVertebra.y);
-                ctx.quadraticCurveTo(ctrlX, ctrlY, fx, fy);
-                ctx.quadraticCurveTo(rearX, rearY, pecVertebra.x, pecVertebra.y);
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
-                ctx.lineWidth = 1.2 * this.scale;
-                ctx.stroke();
-
-                // Fin ray detailing
-                ctx.beginPath();
-                ctx.moveTo(pecVertebra.x, pecVertebra.y);
-                ctx.lineTo(fx, fy);
-                ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
-                ctx.lineWidth = 0.8;
-                ctx.stroke();
-            }
-
-            // 4. Pelvic / Ventral Fins (Flank fins)
-            const pelvicVertebra = this.spine[6];
-            const pelvBaseAngle = Math.atan2(this.spine[5].y - this.spine[7].y, this.spine[5].x - this.spine[7].x);
-            const pelvLen = 11 * this.scale;
-
-            for (let side = -1; side <= 1; side += 2) {
-                const fAngle = pelvBaseAngle + (side * 2.2);
-                const px = pelvicVertebra.x + Math.cos(fAngle) * pelvLen;
-                const py = pelvicVertebra.y + Math.sin(fAngle) * pelvLen;
-
-                ctx.beginPath();
-                ctx.moveTo(pelvicVertebra.x, pelvicVertebra.y);
-                ctx.lineTo(px, py);
-                ctx.lineTo(pelvicVertebra.x - Math.cos(pelvBaseAngle) * (pelvLen * 0.4), pelvicVertebra.y - Math.sin(pelvBaseAngle) * (pelvLen * 0.4));
-                ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
-                ctx.fill();
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-                ctx.lineWidth = 1.0;
-                ctx.stroke();
-            }
-
-            // 5. Solid Organic Koi Body Outline
-            const leftSide = [];
-            const rightSide = [];
-
-            for (let i = 0; i < this.numVertebrae; i++) {
-                let nextPt = this.spine[Math.min(this.numVertebrae - 1, i + 1)];
-                let prevPt = this.spine[Math.max(0, i - 1)];
-                let segAngle = Math.atan2(prevPt.y - nextPt.y, prevPt.x - nextPt.x);
-                let perpX = -Math.sin(segAngle);
-                let perpY = Math.cos(segAngle);
-                let w = this.bodyWidths[i];
-
-                leftSide.push({ x: this.spine[i].x + perpX * w, y: this.spine[i].y + perpY * w });
-                rightSide.push({ x: this.spine[i].x - perpX * w, y: this.spine[i].y - perpY * w });
-            }
-
-            ctx.beginPath();
-            const snout = this.spine[0];
-            ctx.moveTo(snout.x, snout.y);
-
-            // Smooth curve along left flank
-            for (let i = 0; i < leftSide.length - 1; i++) {
-                const mx = (leftSide[i].x + leftSide[i + 1].x) / 2;
-                const my = (leftSide[i].y + leftSide[i + 1].y) / 2;
-                ctx.quadraticCurveTo(leftSide[i].x, leftSide[i].y, mx, my);
-            }
-            ctx.lineTo(this.spine[this.numVertebrae - 1].x, this.spine[this.numVertebrae - 1].y);
-
-            // Smooth curve along right flank
-            for (let i = rightSide.length - 1; i > 0; i--) {
-                const mx = (rightSide[i].x + rightSide[i - 1].x) / 2;
-                const my = (rightSide[i].y + rightSide[i - 1].y) / 2;
-                ctx.quadraticCurveTo(rightSide[i].x, rightSide[i].y, mx, my);
-            }
-            ctx.quadraticCurveTo(rightSide[0].x, rightSide[0].y, snout.x, snout.y);
-            ctx.closePath();
-
-            // Solid midnight indigo-cyan body fill
-            const grad = ctx.createLinearGradient(
-                this.spine[0].x, this.spine[0].y,
-                this.spine[this.numVertebrae - 1].x, this.spine[this.numVertebrae - 1].y
+            this.drawWake(
+                ctx,
+                this.wakeCenter,
+                1.0,
+                1.08
             );
-            grad.addColorStop(0, '#061a2e');
-            grad.addColorStop(0.3, '#0c2e4e');
-            grad.addColorStop(0.7, '#072038');
-            grad.addColorStop(1, '#030f1c');
-            ctx.fillStyle = grad;
-            ctx.fill();
 
-            // Luminous glowing outer contour
-            ctx.strokeStyle = 'rgba(0, 240, 255, 0.78)';
-            ctx.lineWidth = 1.5 * this.scale;
-            ctx.stroke();
+            // 2. Flexible caudal fin.
+            this.drawTail(ctx);
 
-            // 6. Ornamental Cyber Koi Markings (Scales & Dorsal Pattern)
-            ctx.beginPath();
-            ctx.moveTo(this.spine[1].x, this.spine[1].y);
-            for (let i = 2; i < 9; i++) {
-                ctx.lineTo(this.spine[i].x, this.spine[i].y);
-            }
-            ctx.strokeStyle = 'rgba(0, 240, 255, 0.55)';
-            ctx.lineWidth = 2.0 * this.scale;
-            ctx.stroke();
+            // 3. Secondary fins.
+            this.drawPectoralFins(ctx);
+            this.drawPelvicFins(ctx);
 
-            // Shimmering koi calico / cyber dorsal patches
-            const drawPatch = (vertIdx, radiusX, radiusY, col) => {
-                const pt = this.spine[vertIdx];
-                ctx.beginPath();
-                ctx.arc(pt.x, pt.y, radiusX, 0, Math.PI * 2);
-                ctx.fillStyle = col;
-                ctx.fill();
-            };
+            // 4. Body.
+            this.drawBody(ctx);
 
-            drawPatch(2, 5.5 * this.scale, 5.5 * this.scale, 'rgba(56, 189, 248, 0.35)');
-            drawPatch(4, 7.0 * this.scale, 7.0 * this.scale, 'rgba(0, 240, 255, 0.38)');
-            drawPatch(7, 4.5 * this.scale, 4.5 * this.scale, 'rgba(56, 189, 248, 0.32)');
+            // 5. Markings.
+            this.drawMarkings(ctx);
 
-            // 7. Glowing Red Pearl Eyes (Red Pearl Invites)
-            const eyeVert = this.spine[1];
-            const eyeAngle = Math.atan2(this.spine[0].y - this.spine[2].y, this.spine[0].x - this.spine[2].x);
-            const eyePerpX = -Math.sin(eyeAngle);
-            const eyePerpY = Math.cos(eyeAngle);
-            const eyeDist = this.bodyWidths[1] * 0.85;
-
-            for (let side = -1; side <= 1; side += 2) {
-                const eyeX = eyeVert.x + (eyePerpX * side * eyeDist) + Math.cos(eyeAngle) * (1.2 * this.scale);
-                const eyeY = eyeVert.y + (eyePerpY * side * eyeDist) + Math.sin(eyeAngle) * (1.2 * this.scale);
-
-                // Ambient red pearl outer halo
-                ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 4.8 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 42, 95, 0.28)';
-                ctx.fill();
-
-                // Saturated ruby iris
-                ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 2.5 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 20, 75, 0.85)';
-                ctx.fill();
-
-                // Core glowing ruby pupil
-                ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 1.4 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = '#ff0055';
-                ctx.fill();
-
-                // Specular jewel glint
-                ctx.beginPath();
-                ctx.arc(eyeX - 0.4, eyeY - 0.4, 0.5 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = '#ffffff';
-                ctx.fill();
-            }
+            // 6. Eyes.
+            this.drawEyes(ctx);
 
             ctx.restore();
         }
     }
 
     const koiSchool = [
-        new TrueKoi(width, height, 1.3),
-        new TrueKoi(width, height, 1.15),
-        new TrueKoi(width, height, 1.0),
-        new TrueKoi(width, height, 0.9),
-        new TrueKoi(width, height, 0.8),
-        new TrueKoi(width, height, 1.05)
+        new TrueKoi(
+            width,
+            height,
+            1.3
+        ),
+
+        new TrueKoi(
+            width,
+            height,
+            1.15
+        ),
+
+        new TrueKoi(
+            width,
+            height,
+            1.0
+        ),
+
+        new TrueKoi(
+            width,
+            height,
+            0.9
+        ),
+
+        new TrueKoi(
+            width,
+            height,
+            0.8
+        ),
+
+        new TrueKoi(
+            width,
+            height,
+            1.05
+        )
     ];
 
-    let isRunning = true;
-    document.addEventListener('visibilitychange', () => {
-        isRunning = !document.hidden;
-        if (isRunning) requestAnimationFrame(renderSea);
-    });
+    let isRunning =
+        !document.hidden;
 
-    function renderSea() {
+    let lastTime =
+        performance.now();
+
+    document.addEventListener(
+        'visibilitychange',
+        () => {
+            isRunning =
+                !document.hidden;
+
+            lastTime =
+                performance.now();
+
+            if (isRunning) {
+                requestAnimationFrame(
+                    renderSea
+                );
+            }
+        }
+    );
+
+    function renderSea(now) {
         if (!isRunning) return;
-        ctx.clearRect(0, 0, width, height);
 
-        for (let i = 0; i < koiSchool.length; i++) {
-            koiSchool[i].update(width, height);
+        const dt =
+            Math.min(
+                Math.max(
+                    (now - lastTime) /
+                        1000,
+                    0
+                ),
+                0.033
+            );
+
+        lastTime = now;
+
+        ctx.clearRect(
+            0,
+            0,
+            width,
+            height
+        );
+
+        for (
+            let i = 0;
+            i < koiSchool.length;
+            i++
+        ) {
+            koiSchool[i].update(
+                width,
+                height,
+                dt
+            );
+
             koiSchool[i].draw(ctx);
         }
 
-        requestAnimationFrame(renderSea);
+        requestAnimationFrame(
+            renderSea
+        );
     }
 
-    renderSea();
+    requestAnimationFrame(
+        renderSea
+    );
 }
 
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBioluminescentSea);
+if (
+    document.readyState ===
+    'loading'
+) {
+    document.addEventListener(
+        'DOMContentLoaded',
+        initBioluminescentSea
+    );
 } else {
     initBioluminescentSea();
 }
-
-
 
 
 // Remove banner from current active thread (moderator action)
