@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACQ0lEQVR4nO2bPVIDMQyFFaDIdWiYUOcsewpqTsFZqMnQcB0aBqplNoqsH1uyndivYSC79nufZWeZtQGmpqZG1q5mZ4f371/ttafjvoq30E4sgSVFAQlp1DM4ljcI18Yig2N5gXBpxBL88+NLvObp+VHddymIYgBSeE1gSRKQEghFALjwHsGxOBC5ELJuQsEXAHhbf4kIjoVAnPVvBWEGkBr1GsGxUhVhgXBn6bCn8Fy/lkXZBMBiopZK+1cDoKi2Dr+K8qGtAhWATWML12lLIT8LgA6CuFj0PPKUqIWRWxTNa4Bn+J+Xw9lPD1n9sQAin+1xeE8IWFwOUwV4jX4qrBcEi88kgKjRl0JGVUIqj7oCPEZfG84DgtYvCSBi9K2hIiqByqWqgNLR14S5fz1l3cdJ47v4UVgSFYIKm/p75LcDQDAAS3ju80gIFwC85n9OeO46Lwg4n1gBOfO/JDx3fQ4Eyb/7FPAIz93nPR3cAWDTueGj2sMKWQRXk15mvdvbKuxbwNtsRHiACs8BvWsCaG2gtSYA6QLLi8oeJfm/AFBrZ0Yr4XxzCrQ20FoqANe6Dmh8kwBudR2gcqmnwLVVgdZvEsCtVUEqj2kRvJYqsPh84D48Hfe7qBckUf/dUXJ9Odp7FVj9iQAQvSWnk1ra+PrfxyCtZeqFrvd9AtZ9AavUU4BqrJdKyA0P4PAo3BpCaf8mACmqrSB47BOcO0VLjAy7V3iroXeLrxr6vMBWw54YwRr2zBDWsKfGUurx3ODU1OD6A38GKwEXj9rUAAAAAElFTkSuQmCC">
+    <link rel="shortcut icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACQ0lEQVR4nO2bPVIDMQyFFaDIdWiYUOcsewpqTsFZqMnQcB0aBqplNoqsH1uyndivYSC79nufZWeZtQGmpqZG1q5mZ4f371/ttafjvoq30E4sgSVFAQlp1DM4ljcI18Yig2N5gXBpxBL88+NLvObp+VHddymIYgBSeE1gSRKQEghFALjwHsGxOBC5ELJuQsEXAHhbf4kIjoVAnPVvBWEGkBr1GsGxUhVhgXBn6bCn8Fy/lkXZBMBiopZK+1cDoKi2Dr+K8qGtAhWATWML12lLIT8LgA6CuFj0PPKUqIWRWxTNa4Bn+J+Xw9lPD1n9sQAin+1xeE8IWFwOUwV4jX4qrBcEi88kgKjRl0JGVUIqj7oCPEZfG84DgtYvCSBi9K2hIiqByqWqgNLR14S5fz1l3cdJ47v4UVgSFYIKm/p75LcDQDAAS3ju80gIFwC85n9OeO46Lwg4n1gBOfO/JDx3fQ4Eyb/7FPAIz93nPR3cAWDTueGj2sMKWQRXk15mvdvbKuxbwNtsRHiACs8BvWsCaG2gtSYA6QLLi8oeJfm/AFBrZ0Yr4XxzCrQ20FoqANe6Dmh8kwBudR2gcqmnwLVVgdZvEsCtVUEqj2kRvJYqsPh84D48Hfe7qBckUf/dUXJ9Odp7FVj9iQAQvSWnk1ra+PrfxyCtZeqFrvd9AtZ9AavUU4BqrJdKyA0P4PAo3BpCaf8mACmqrSB47BOcO0VLjAy7V3iroXeLrxr6vMBWw54YwRr2zBDWsKfGUurx3ODU1OD6A38GKwEXj9rUAAAAAElFTkSuQmCC">
+    <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAACQ0lEQVR4nO2bPVIDMQyFFaDIdWiYUOcsewpqTsFZqMnQcB0aBqplNoqsH1uyndivYSC79nufZWeZtQGmpqZG1q5mZ4f371/ttafjvoq30E4sgSVFAQlp1DM4ljcI18Yig2N5gXBpxBL88+NLvObp+VHddymIYgBSeE1gSRKQEghFALjwHsGxOBC5ELJuQsEXAHhbf4kIjoVAnPVvBWEGkBr1GsGxUhVhgXBn6bCn8Fy/lkXZBMBiopZK+1cDoKi2Dr+K8qGtAhWATWML12lLIT8LgA6CuFj0PPKUqIWRWxTNa4Bn+J+Xw9lPD1n9sQAin+1xeE8IWFwOUwV4jX4qrBcEi88kgKjRl0JGVUIqj7oCPEZfG84DgtYvCSBi9K2hIiqByqWqgNLR14S5fz1l3cdJ47v4UVgSFYIKm/p75LcDQDAAS3ju80gIFwC85n9OeO46Lwg4n1gBOfO/JDx3fQ4Eyb/7FPAIz93nPR3cAWDTueGj2sMKWQRXk15mvdvbKuxbwNtsRHiACs8BvWsCaG2gtSYA6QLLi8oeJfm/AFBrZ0Yr4XxzCrQ20FoqANe6Dmh8kwBudR2gcqmnwLVVgdZvEsCtVUEqj2kRvJYqsPh84D48Hfe7qBckUf/dUXJ9Odp7FVj9iQAQvSWnk1ra+PrfxyCtZeqFrvd9AtZ9AavUU4BqrJdKyA0P4PAo3BpCaf8mACmqrSB47BOcO0VLjAy7V3iroXeLrxr6vMBWw54YwRr2zBDWsKfGUurx3ODU1OD6A38GKwEXj9rUAAAAAElFTkSuQmCC">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='236' fill='%2338bdf8' opacity='0.4'/%3E%3Ccircle cx='256' cy='256' r='232' fill='%230284c7' stroke='%2338bdf8' stroke-width='4'/%3E%3Cpath d='M256 360 L256 156' stroke='%23ffffff' stroke-width='32' stroke-linecap='round'/%3E%3Cpath d='M174 238 L256 156 L338 238' stroke='%23ffffff' stroke-width='32' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <style>
         /* Core inline styles fallback */
@@ -1887,9 +1890,41 @@ img, video, canvas, pre, code {
             }
         }
 
+
+        /* --- BIOLUMINESCENT DEEP-SEA TRACER CANVAS --- */
+        .bioluminescent-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        /* --- UNCLIPPED THREAD ACTION BUTTON HOVER GLOW --- */
+        .thread-header-bar {
+            overflow: visible !important;
+        }
+        .thread-actions-bar {
+            overflow: visible !important;
+            padding: 8px 6px 10px 6px !important;
+            margin: -6px -6px -2px -6px !important;
+        }
+        .btn-thread-action {
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        .btn-thread-action:hover {
+            z-index: 5 !important;
+        }
+
 </style>
 </head>
 <body>
+    <!-- BIOLUMINESCENT DEEP-SEA TRACER CANVAS -->
+    <canvas id="bioluminescent-canvas" class="bioluminescent-canvas"></canvas>
+
     <!-- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER -->
     <div id="cyber-scroll-tracker" class="cyber-scroll-tracker"></div>
 
