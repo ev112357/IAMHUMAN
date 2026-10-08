@@ -1919,6 +1919,121 @@ img, video, canvas, pre, code {
             z-index: 5 !important;
         }
 
+
+        /* --- ENHANCED CYBER SCROLL TRACKER & LASER PULSE --- */
+        .cyber-scroll-tracker {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 3.5px;
+            width: 0%;
+            min-width: 6px;
+            background: linear-gradient(90deg, #00f0ff 0%, #38bdf8 25%, #ff007f 50%, #a855f7 75%, #00ff9d 100%);
+            box-shadow: 0 0 14px #00f0ff, 0 0 24px #ff007f, 0 0 10px #00ff9d;
+            z-index: 999999;
+            pointer-events: none;
+            transition: width 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .cyber-scroll-head {
+            position: absolute;
+            right: -4px;
+            top: -4px;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #ffffff;
+            box-shadow: 0 0 10px #ffffff, 0 0 20px #00f0ff, 0 0 30px #ff007f;
+            animation: laser-pulse 1.5s ease-in-out infinite alternate;
+        }
+        @keyframes laser-pulse {
+            0% { transform: scale(0.8); filter: brightness(1); }
+            100% { transform: scale(1.3); filter: brightness(1.6); }
+        }
+
+        /* --- POST ACTION BUTTONS & VOTE BOX --- */
+        .post-admin-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .btn-post-action {
+            height: 28px !important;
+            padding: 0 10px !important;
+            font-size: 0.76rem !important;
+            font-weight: 600 !important;
+            border-radius: 6px !important;
+            background: #090e1a !important;
+            border: 1px solid #1e293b !important;
+            color: #94a3b8 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 5px !important;
+            cursor: pointer !important;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            width: auto !important;
+            box-sizing: border-box !important;
+        }
+        .btn-post-action:hover {
+            border-color: #00f0ff !important;
+            color: #ffffff !important;
+            background: #0f172a !important;
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.35) !important;
+            transform: translateY(-1px) !important;
+        }
+        .btn-post-action.danger-text:hover {
+            border-color: #ef4444 !important;
+            color: #ef4444 !important;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.35) !important;
+        }
+
+        .vote-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: #64748b;
+            padding: 4px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s ease;
+        }
+        .vote-btn:hover {
+            color: #00f0ff;
+            transform: scale(1.18);
+        }
+        .vote-btn.upvoted {
+            color: #10b981 !important;
+            filter: drop-shadow(0 0 6px #10b981);
+        }
+        .vote-btn.downvoted {
+            color: #ef4444 !important;
+            filter: drop-shadow(0 0 6px #ef4444);
+        }
+
+        /* --- ICON BUTTONS & MOBILE NAV BAR --- */
+        .icon-btn {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .icon-btn:hover {
+            border-color: #00f0ff !important;
+            box-shadow: 0 0 16px rgba(0, 240, 255, 0.5) !important;
+            transform: translateY(-1px) !important;
+        }
+        .tab-btn svg {
+            transition: transform 0.2s ease, stroke 0.2s ease;
+        }
+        .tab-btn:hover svg, .tab-btn.active svg {
+            stroke: #00f0ff !important;
+            transform: scale(1.08);
+            filter: drop-shadow(0 0 8px rgba(0, 240, 255, 0.5));
+        }
+
 </style>
 </head>
 <body>
@@ -1926,7 +2041,7 @@ img, video, canvas, pre, code {
     <canvas id="bioluminescent-canvas" class="bioluminescent-canvas"></canvas>
 
     <!-- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER -->
-    <div id="cyber-scroll-tracker" class="cyber-scroll-tracker"></div>
+    <div id="cyber-scroll-tracker" class="cyber-scroll-tracker"><div class="cyber-scroll-head"></div></div>
 
 
 
@@ -1963,25 +2078,31 @@ img, video, canvas, pre, code {
 
 
             <!-- SECURITY ARCHITECTURE BUTTON (Moved outside desktop nav so it stays on mobile) -->
-            <button id="open-security-btn" class="icon-btn" title="Security Architecture" style="flex-shrink: 0;">🛡️</button>
+            <button id="open-security-btn" class="icon-btn" title="Security Architecture" style="flex-shrink: 0;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </button>
             
             <!-- DESKTOP ICONS (Hide automatically on mobile) -->
             <div class="desktop-nav-actions">
                 <div class="btn-badge-wrap">
-                    <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">🔔</button>
+                    <button id="open-notif-btn" class="icon-btn hidden" title="Notifications">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                </button>
                     <span id="activity-notif-badge" class="notif-badge hidden">0</span>
                 </div>
 
 
                 <div class="btn-badge-wrap">
-                    <button id="open-dm-btn" class="icon-btn hidden" title="Messages & Group Chats">✉️</button>
+                    <button id="open-dm-btn" class="icon-btn hidden" title="Messages & Group Chats">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </button>
                     <span id="notif-badge" class="notif-badge hidden">0</span>
                 </div>
 
 
                 <!-- Settings Button -->
                 <button id="open-settings-btn" class="icon-btn hidden" title="Settings Hub">
-                    ⚙️
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                 </button>
             </div>
             
@@ -2133,7 +2254,9 @@ img, video, canvas, pre, code {
 
 
         <div style="display: flex; align-items: center; gap: 12px;">
-            <button type="button" id="desktop-fab" class="desktop-fab" title="Create Post">➕</button>
+            <button type="button" id="desktop-fab" class="desktop-fab" title="Create Post">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#040711" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
             <div id="telemetry-pill" class="telemetry-pill" title="Click to view security monitor">
                 <span>🛡</span>
                 <span>Security: <strong id="pill-suspicion-tag">0/5 Risk</strong></span>
@@ -2144,16 +2267,31 @@ img, video, canvas, pre, code {
 
     <!-- MOBILE TAB BAR WITH FAB -->
     <nav id="mobile-tab-bar" class="mobile-tab-bar">
-        <button type="button" class="tab-btn active" id="tab-nav-feed"><span class="tab-icon">📜</span><span>Feed</span></button>
-        <button type="button" class="tab-btn" id="tab-nav-messages"><span class="tab-icon">✉️</span><span>Messages</span><span id="mobile-msg-badge" class="tab-badge hidden">0</span></button>
+        <button type="button" class="tab-btn active" id="tab-nav-feed">
+            <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+            <span>Feed</span>
+        </button>
+        <button type="button" class="tab-btn" id="tab-nav-messages">
+            <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+            <span>Messages</span>
+            <span id="mobile-msg-badge" class="tab-badge hidden">0</span>
+        </button>
         
         <div class="mobile-fab-wrap">
-            <button type="button" id="mobile-fab" class="mobile-fab-btn">➕</button>
+            <button type="button" id="mobile-fab" class="mobile-fab-btn" title="Create Post">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#040711" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
         </div>
 
-
-        <button type="button" class="tab-btn" id="tab-nav-notifs"><span class="tab-icon">🔔</span><span>Notifs</span><span id="mobile-activity-badge" class="tab-badge hidden">0</span></button>
-        <button type="button" class="tab-btn" id="tab-nav-settings"><span class="tab-icon">⚙️</span><span>Settings</span></button>
+        <button type="button" class="tab-btn" id="tab-nav-notifs">
+            <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></span>
+            <span>Notifs</span>
+            <span id="mobile-activity-badge" class="tab-badge hidden">0</span>
+        </button>
+        <button type="button" class="tab-btn" id="tab-nav-settings">
+            <span class="tab-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            <span>Settings</span>
+        </button>
     </nav>
 
 
@@ -2307,7 +2445,9 @@ img, video, canvas, pre, code {
                             <span id="chat-header">Select a conversation</span>
                         </div>
                         <div class="chat-header-actions" style="display: flex; align-items: center; gap: 6px;">
-                            <button type="button" id="start-call-btn" class="call-action-btn hidden" title="Start Audio Call">📞</button>
+                            <button type="button" id="start-call-btn" class="call-action-btn hidden" title="Start Audio Call">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                            </button>
                         </div>
                     </div>
                     <!-- ACTIVE 1-ON-1 AUDIO CALL BAR -->
@@ -2368,10 +2508,22 @@ img, video, canvas, pre, code {
 
             <!-- Settings Sub-Tabs (3 Tabs: Profile, Notifications, Privacy) -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px; flex-wrap: wrap;">
-                <button type="button" id="tab-btn-settings-profile" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px; cursor: pointer;">Profile</button>
-                <button type="button" id="tab-btn-settings-audio" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Audio & Calls</button>
-                <button type="button" id="tab-btn-settings-notifs" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Notifications</button>
-                <button type="button" id="tab-btn-settings-privacy" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Privacy</button>
+                <button type="button" id="tab-btn-settings-profile" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>Profile</span>
+                </button>
+                <button type="button" id="tab-btn-settings-audio" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+                    <span>Audio & Calls</span>
+                </button>
+                <button type="button" id="tab-btn-settings-notifs" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span>Notifications</span>
+                </button>
+                <button type="button" id="tab-btn-settings-privacy" style="flex: 1; min-width: 80px; padding: 8px 4px; font-size: 0.8rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>Privacy</span>
+                </button>
             </div>
             
             <!-- Tab 1: Profile Pane -->
@@ -2379,7 +2531,7 @@ img, video, canvas, pre, code {
                 <div class="profile-preview-wrap">
                     <img id="profile-preview-avatar" class="profile-avatar-preview" src="" alt="Avatar">
                     <label for="profile-avatar-file" class="editor-tool-btn" style="cursor: pointer;">
-                        📷 Change Profile Photo
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Change Profile Photo
                     </label>
                     <input type="file" id="profile-avatar-file" accept="image/*" style="display: none;">
                 </div>
@@ -2458,7 +2610,7 @@ img, video, canvas, pre, code {
                 <div class="setting-toggle-row" style="border: 1px solid #10b981; background: #0f172a; flex-direction: column; align-items: stretch; gap: 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title" style="color: #10b981;">🎤 Microphone Test & Live Meter</div>
+                            <div class="setting-toggle-title" style="color: #10b981;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg> Microphone Test & Live Meter</div>
                             <div class="setting-toggle-desc">Test your microphone input and visual waveform meter.</div>
                         </div>
                         <button type="button" id="mic-test-toggle-btn" class="secondary" style="font-size: 0.75rem; padding: 6px 12px; width: auto; margin: 0; border-color: #10b981; color: #10b981; cursor: pointer;">Start Test</button>
@@ -2472,7 +2624,7 @@ img, video, canvas, pre, code {
                     <!-- Hardware Echo Cancellation -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🔊 Acoustic Echo Cancellation</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> Acoustic Echo Cancellation</div>
                             <div class="setting-toggle-desc">Removes speaker feedback and room echoes automatically during calls.</div>
                         </div>
                         <input type="checkbox" id="audio-opt-echo" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
@@ -2481,7 +2633,7 @@ img, video, canvas, pre, code {
                     <!-- Noise Suppression -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🔇 Background Noise Suppression</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Background Noise Suppression</div>
                             <div class="setting-toggle-desc">Filters out keyboard clicks, fan hum, and ambient room noise.</div>
                         </div>
                         <input type="checkbox" id="audio-opt-noise" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
@@ -2490,7 +2642,7 @@ img, video, canvas, pre, code {
                     <!-- Automatic Gain Control -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🎚️ Automatic Gain Control</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg> Automatic Gain Control</div>
                             <div class="setting-toggle-desc">Normalizes your voice volume so you stay loud and clear.</div>
                         </div>
                         <input type="checkbox" id="audio-opt-gain" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
@@ -2499,7 +2651,7 @@ img, video, canvas, pre, code {
                     <!-- High-Fidelity Studio Mode -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🎧 High-Fidelity Voice (Opus Stereo)</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg> High-Fidelity Voice (Opus Stereo)</div>
                             <div class="setting-toggle-desc">Enables 48kHz audio quality for studio-grade voice forum streaming.</div>
                         </div>
                         <input type="checkbox" id="audio-opt-hifi" style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
@@ -2508,7 +2660,7 @@ img, video, canvas, pre, code {
                     <!-- Global Deafen Mode -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🔇 Global Deafen (Silence Incoming Audio)</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg> Global Deafen (Silence Audio)</div>
                             <div class="setting-toggle-desc">Mutes all incoming voices from calls and voice stages instantly.</div>
                         </div>
                         <input type="checkbox" id="audio-opt-deafen" style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #ef4444;">
@@ -2520,7 +2672,7 @@ img, video, canvas, pre, code {
                 <!-- Master Alert Toggle -->
                 <div class="setting-toggle-row" style="border: 1px solid #38bdf8; background: #0f172a; margin-bottom: 8px;">
                     <div class="setting-toggle-info">
-                        <div class="setting-toggle-title" style="color: #38bdf8;">🔔 Visual Popups & Alerts</div>
+                        <div class="setting-toggle-title" style="color: #38bdf8;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Visual Popups & Alerts</div>
                         <div class="setting-toggle-desc">Master switch to enable or disable all onscreen techno-toast cards and call banners.</div>
                     </div>
                     <input type="checkbox" id="notif-master-toggle-chk" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
@@ -2529,7 +2681,7 @@ img, video, canvas, pre, code {
                 <!-- Master Audio Toggle (Mutes Sounds WITHOUT turning off popups) -->
                 <div class="setting-toggle-row" style="border: 1px solid #10b981; background: #0f172a; margin-bottom: 14px;">
                     <div class="setting-toggle-info">
-                        <div class="setting-toggle-title" style="color: #10b981;">🔊 Notification & Call Sounds</div>
+                        <div class="setting-toggle-title" style="color: #10b981;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg> Notification & Call Sounds</div>
                         <div class="setting-toggle-desc">Mute all incoming notification chimes, message chirps, and call ringtones while keeping all sleek popups active.</div>
                     </div>
                     <input type="checkbox" id="notif-toggle-sounds" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
@@ -2539,7 +2691,7 @@ img, video, canvas, pre, code {
                     <!-- Microphone Hardware Privacy -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🎤 Microphone Hardware Privacy</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Microphone Hardware Privacy</div>
                             <div class="setting-toggle-desc">Microphone is strictly active only during connected voice calls and completely powers down when hanging up.</div>
                         </div>
                         <span class="badge badge-green" style="font-size: 0.72rem; padding: 4px 8px; flex-shrink: 0;">Active On Call Only</span>
@@ -2547,7 +2699,7 @@ img, video, canvas, pre, code {
                     <!-- Direct Messages -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">✉️ Direct Messages</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Direct Messages</div>
                             <div class="setting-toggle-desc">Alerts when friends send you messages or group updates.</div>
                         </div>
                         <input type="checkbox" id="notif-toggle-messages" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
@@ -2556,7 +2708,7 @@ img, video, canvas, pre, code {
                     <!-- Audio Calls -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">📞 Audio Calls</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg> Audio Calls</div>
                             <div class="setting-toggle-desc">Incoming call ringing, green ambient glow, and incoming call alerts.</div>
                         </div>
                         <input type="checkbox" id="notif-toggle-calls" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
@@ -2565,7 +2717,7 @@ img, video, canvas, pre, code {
                     <!-- Post & Comment Likes -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">⚡ Post Upvotes</div>
+                            <div class="setting-toggle-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Post Upvotes</div>
                             <div class="setting-toggle-desc">Notify when another human upvotes your posts or contributions.</div>
                         </div>
                         <input type="checkbox" id="notif-toggle-upvotes" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
