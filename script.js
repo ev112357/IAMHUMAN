@@ -3816,55 +3816,62 @@ safeAddListener(addFriendBtn, 'click', async () => {
 async function loadConversations() {
     if (!currentUser || !db || !groupsContainer) return;
 
+    try {
+        const { data: memberships, error: memErr } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
 
-    const { data: memberships } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
+        if (memErr) {
+            console.error("loadConversations memberships error:", memErr);
+        }
 
+        if (!memberships || memberships.length === 0) {
+            groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+            return;
+        }
 
-    if (!memberships || memberships.length === 0) {
-        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
-        return;
+        const convIds = memberships.map(m => m.conversation_id);
+        const { data: convs, error: convErr } = await db
+            .from('conversations')
+            .select('*')
+            .in('id', convIds);
+
+        if (convErr) {
+            console.error("loadConversations convs error:", convErr);
+        }
+
+        groupsContainer.innerHTML = '';
+        // Match any conversation flagged as a group OR possessing a group name
+        const groupConvs = (convs || []).filter(c => c.is_group === true || (c.name && c.name.trim() !== ''));
+
+        if (groupConvs.length === 0) {
+            groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
+            return;
+        }
+
+        groupConvs.forEach(conv => {
+            const div = document.createElement('div');
+            div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
+            div.setAttribute('data-conv-id', conv.id);
+
+            const unreadCount = unreadCountsByConv.get(conv.id) || 0;
+            const badgeHidden = unreadCount === 0 ? 'hidden' : '';
+            const gTitle = conv.name || 'Group Chat';
+
+            div.innerHTML = `
+                <div class="conv-item-label">
+                    <span>💬 ${escapeHTML(gTitle)}</span>
+                </div>
+                <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+            `;
+
+            div.addEventListener('click', () => selectConversation(conv.id, `Group: ${gTitle}`, null, null, true));
+            groupsContainer.appendChild(div);
+        });
+    } catch (err) {
+        console.error("loadConversations error:", err);
     }
-
-
-    const convIds = memberships.map(m => m.conversation_id);
-    const { data: convs } = await db
-        .from('conversations')
-        .select('*')
-        .in('id', convIds)
-        .eq('is_group', true);
-
-
-    groupsContainer.innerHTML = '';
-    if (!convs || convs.length === 0) {
-        groupsContainer.innerHTML = '<div class="no-posts" style="padding: 6px; font-size: 0.8rem;">No groups yet</div>';
-        return;
-    }
-
-
-    convs.forEach(conv => {
-        const div = document.createElement('div');
-        div.className = `conv-item ${activeConversationId === conv.id ? 'active' : ''}`;
-        div.setAttribute('data-conv-id', conv.id);
-
-
-        const unreadCount = unreadCountsByConv.get(conv.id) || 0;
-        const badgeHidden = unreadCount === 0 ? 'hidden' : '';
-
-
-        div.innerHTML = `
-            <div class="conv-item-label">
-                <span>💬 ${escapeHTML(conv.name)}</span>
-            </div>
-            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
-        `;
-
-
-        div.addEventListener('click', () => selectConversation(conv.id, `Group: ${conv.name}`, null, null, true));
-        groupsContainer.appendChild(div);
-    });
 }
 
 
@@ -6686,8 +6693,10 @@ safeAddListener(document.getElementById('open-live-chat-btn'), 'click', () => {
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'none';
 
-
     liveChatModal.classList.remove('hidden');
+
+    // Initialize & Sync Built-in Voice Stage
+    openVoiceStageInsideLiveChat(activeThread);
     
     // Only auto-focus on desktop to avoid triggering the mobile keyboard on modal open
     if ((window.currentLiveChatIsOpen || canBypassLock) && window.innerWidth > 768) {
@@ -6703,6 +6712,13 @@ function closeLiveChatModal() {
     // Restore floating telemetry monitor
     const telemetryHud = document.getElementById('floating-telemetry');
     if (telemetryHud) telemetryHud.style.display = 'flex';
+
+    // If not connected to voice stage, clean up room channel subscription to save bandwidth
+    if (!voiceStageIsConnected && voiceStageChannel) {
+        try { db.removeChannel(voiceStageChannel); } catch (e) {}
+        voiceStageChannel = null;
+        voiceStageParticipants.clear();
+    }
 }
 
 
@@ -8004,7 +8020,7 @@ async function navigateToThread(tName) {
 
 const openVoiceStageBtn = document.getElementById('open-voice-stage-btn');
 const voiceStageCountBadge = document.getElementById('voice-stage-count');
-const voiceForumModal = document.getElementById('voice-forum-modal');
+const voiceForumModal = document.getElementById('live-chat-modal');
 const closeVoiceForumBtn = document.getElementById('close-voice-forum-btn');
 const voiceStageThreadTitle = document.getElementById('voice-stage-thread-title');
 const voiceStageStatusDesc = document.getElementById('voice-stage-status-desc');
@@ -8964,5 +8980,88 @@ safeAddListener(voiceInviteModal, 'click', (e) => {
     if (e.target === voiceInviteModal) voiceInviteModal.classList.add('hidden');
 });
 safeAddListener(sendVoiceInviteBtn, 'click', sendVoiceStageInvite);
+
+
+
+// =============================================================================
+// GUEST / NEW VISITOR DISCLAIMER SYSTEM
+// =============================================================================
+const GUEST_DISCLAIMER_KEY = 'tg_guest_disclaimer_dismissed';
+
+function initGuestDisclaimer() {
+    try {
+        const hasDismissed = localStorage.getItem(GUEST_DISCLAIMER_KEY);
+        if (hasDismissed === 'true') return;
+    } catch (e) {
+        return;
+    }
+
+    const modal = document.getElementById('guest-disclaimer-modal');
+    const closeBtn = document.getElementById('close-guest-disclaimer-btn');
+    const ackBtn = document.getElementById('acknowledge-guest-disclaimer-btn');
+    const loginBtn = document.getElementById('guest-disclaimer-login-btn');
+
+    if (!modal) return;
+
+    const dismissModal = () => {
+        modal.classList.add('hidden');
+        try {
+            localStorage.setItem(GUEST_DISCLAIMER_KEY, 'true');
+        } catch (e) {}
+    };
+
+    safeAddListener(closeBtn, 'click', dismissModal);
+    safeAddListener(ackBtn, 'click', dismissModal);
+    safeAddListener(modal, 'click', (e) => {
+        if (e.target === modal) dismissModal();
+    });
+
+    safeAddListener(loginBtn, 'click', () => {
+        dismissModal();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        const authEmail = document.getElementById('auth-email');
+        if (authEmail) authEmail.focus();
+    });
+
+    // Display politely after initial page load (700ms)
+    setTimeout(() => {
+        if (currentUser) {
+            try { localStorage.setItem(GUEST_DISCLAIMER_KEY, 'true'); } catch (e) {}
+            return;
+        }
+        modal.classList.remove('hidden');
+    }, 700);
+}
+
+// Call on startup
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGuestDisclaimer);
+} else {
+    initGuestDisclaimer();
+}
+
+function openVoiceStageInsideLiveChat(threadName) {
+    const targetThread = threadName || activeThread || 'General';
+
+    if (voiceStageIsConnected && activeVoiceStageThread !== targetThread) {
+        if (!confirm(`You are currently in the voice stage for "${activeVoiceStageThread}". Disconnect and switch to "${targetThread}"?`)) {
+            return;
+        }
+        disconnectFromVoiceStage();
+    }
+
+    activeVoiceStageThread = targetThread;
+
+    const role = getThreadRole(activeVoiceStageThread);
+    const isModOrOwner = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+
+    if (voiceStageModBar) {
+        if (isModOrOwner) voiceStageModBar.classList.remove('hidden');
+        else voiceStageModBar.classList.add('hidden');
+    }
+
+    updateVoiceStagePrivacyUI();
+    initVoiceStageRoomChannel(activeVoiceStageThread);
+}
 
 
