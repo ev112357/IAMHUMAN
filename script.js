@@ -2071,6 +2071,7 @@ async function syncUserState(user) {
         if (userProfileModal) userProfileModal.classList.add('hidden');
         if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
         if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
+        if (typeof triggerGuestDisclaimer === 'function') triggerGuestDisclaimer();
 
 
         await syncCloudThreads();
@@ -9361,18 +9362,29 @@ safeAddListener(sendVoiceInviteBtn, 'click', sendVoiceStageInvite);
 
 
 // =============================================================================
-// GUEST / NEW VISITOR DISCLAIMER SYSTEM
+// GUEST / NON-SIGNED IN USER DISCLAIMER SYSTEM
+// Alerts every guest visitor that an invite ticket is required to post or interact.
 // =============================================================================
-const GUEST_DISCLAIMER_KEY = 'tg_guest_disclaimer_dismissed';
+function triggerGuestDisclaimer() {
+    // If logged in, do not show
+    if (currentUser) return;
 
-function initGuestDisclaimer() {
-    try {
-        const hasDismissed = localStorage.getItem(GUEST_DISCLAIMER_KEY);
-        if (hasDismissed === 'true') return;
-    } catch (e) {
+    const modal = document.getElementById('guest-disclaimer-modal');
+    if (!modal) return;
+
+    // Check if dismissed during current browser session
+    if (sessionStorage.getItem('tg_guest_disclaimer_dismissed_session') === 'true') {
         return;
     }
 
+    setTimeout(() => {
+        if (!currentUser && modal) {
+            modal.classList.remove('hidden');
+        }
+    }, 600);
+}
+
+function initGuestDisclaimer() {
     const modal = document.getElementById('guest-disclaimer-modal');
     const closeBtn = document.getElementById('close-guest-disclaimer-btn');
     const ackBtn = document.getElementById('acknowledge-guest-disclaimer-btn');
@@ -9383,34 +9395,33 @@ function initGuestDisclaimer() {
     const dismissModal = () => {
         modal.classList.add('hidden');
         try {
-            localStorage.setItem(GUEST_DISCLAIMER_KEY, 'true');
+            sessionStorage.setItem('tg_guest_disclaimer_dismissed_session', 'true');
         } catch (e) {}
     };
 
     safeAddListener(closeBtn, 'click', dismissModal);
     safeAddListener(ackBtn, 'click', dismissModal);
-    safeAddListener(modal, 'click', (e) => {
-        if (e.target === modal) dismissModal();
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            dismissModal();
+        }
     });
 
     safeAddListener(loginBtn, 'click', () => {
         dismissModal();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        const authEmail = document.getElementById('auth-email');
-        if (authEmail) authEmail.focus();
+        const authWrapper = document.getElementById('auth-panel-wrapper');
+        if (authWrapper) {
+            authWrapper.classList.remove('hidden');
+            authWrapper.scrollIntoView({ behavior: 'smooth' });
+        }
+        const userInp = document.getElementById('auth-username');
+        if (userInp) userInp.focus();
     });
 
-    // Display politely after initial page load (700ms)
-    setTimeout(() => {
-        if (currentUser) {
-            try { localStorage.setItem(GUEST_DISCLAIMER_KEY, 'true'); } catch (e) {}
-            return;
-        }
-        modal.classList.remove('hidden');
-    }, 700);
+    triggerGuestDisclaimer();
 }
 
-// Call on startup
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initGuestDisclaimer);
 } else {
@@ -9550,4 +9561,127 @@ function updateScrollProgress() {
 window.addEventListener('scroll', updateScrollProgress, { passive: true });
 window.addEventListener('resize', updateScrollProgress, { passive: true });
 document.addEventListener('DOMContentLoaded', updateScrollProgress, { passive: true });
+
+
+// =============================================================================
+// BIOLUMINESCENT DEEP-SEA TRACER SYSTEM (BACKGROUND LIGHT ACCENTS)
+// Renders graceful, luminous cyan/azure organisms tracing undulating glowing trails
+// across the deep void background, mimicking bioluminescent marine life.
+// =============================================================================
+function initBioluminescentSea() {
+    const canvas = document.getElementById('bioluminescent-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let width = (canvas.width = window.innerWidth);
+    let height = (canvas.height = window.innerHeight);
+
+    window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
+    }, { passive: true });
+
+    // Bioluminescent Swimmers
+    const COUNT = 7;
+    const swimmers = [];
+
+    const PALETTES = [
+        { head: '#00f0ff', glow: 'rgba(0, 240, 255, 0.45)', trail: 'rgba(2, 132, 199, 0.25)' },
+        { head: '#38bdf8', glow: 'rgba(56, 189, 248, 0.5)',  trail: 'rgba(14, 165, 233, 0.22)' },
+        { head: '#7dd3fc', glow: 'rgba(125, 211, 252, 0.4)', trail: 'rgba(3, 105, 161, 0.2)' },
+        { head: '#0284c7', glow: 'rgba(2, 132, 199, 0.55)', trail: 'rgba(0, 240, 255, 0.18)' }
+    ];
+
+    for (let i = 0; i < COUNT; i++) {
+        swimmers.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            speed: 0.7 + Math.random() * 0.9,
+            angle: Math.random() * Math.PI * 2,
+            turnSpeed: (Math.random() - 0.5) * 0.02,
+            tailLength: 22 + Math.floor(Math.random() * 14),
+            history: [],
+            palette: PALETTES[i % PALETTES.length],
+            pulseOffset: Math.random() * Math.PI * 2,
+            size: 2.5 + Math.random() * 1.5
+        });
+    }
+
+    let isRunning = true;
+    document.addEventListener('visibilitychange', () => {
+        isRunning = !document.hidden;
+        if (isRunning) requestAnimationFrame(renderSea);
+    });
+
+    let time = 0;
+    function renderSea() {
+        if (!isRunning) return;
+        time += 0.015;
+        ctx.clearRect(0, 0, width, height);
+
+        swimmers.forEach(s => {
+            // Gentle serpentine swimming physics
+            s.angle += Math.sin(time + s.pulseOffset) * 0.025 + s.turnSpeed;
+            s.x += Math.cos(s.angle) * s.speed;
+            s.y += Math.sin(s.angle) * s.speed;
+
+            // Soft screen wrap with generous boundary padding
+            const pad = 60;
+            if (s.x < -pad) s.x = width + pad;
+            if (s.x > width + pad) s.x = -pad;
+            if (s.y < -pad) s.y = height + pad;
+            if (s.y > height + pad) s.y = -pad;
+
+            s.history.unshift({ x: s.x, y: s.y });
+            if (s.history.length > s.tailLength) {
+                s.history.pop();
+            }
+
+            // Draw glowing luminous trailing path
+            if (s.history.length > 2) {
+                ctx.save();
+                ctx.shadowBlur = 14;
+                ctx.shadowColor = s.palette.glow;
+
+                for (let j = 0; j < s.history.length - 1; j++) {
+                    const p1 = s.history[j];
+                    const p2 = s.history[j + 1];
+                    const progress = 1 - (j / s.history.length);
+                    const lineWidth = s.size * progress;
+
+                    ctx.beginPath();
+                    ctx.moveTo(p1.x, p1.y);
+                    ctx.lineTo(p2.x, p2.y);
+                    ctx.strokeStyle = s.palette.head;
+                    ctx.globalAlpha = progress * 0.42;
+                    ctx.lineWidth = lineWidth;
+                    ctx.lineCap = 'round';
+                    ctx.stroke();
+                }
+
+                // Radiant bioluminescent head core
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size * 1.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = 0.85;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = s.palette.head;
+                ctx.fill();
+
+                ctx.restore();
+            }
+        });
+
+        requestAnimationFrame(renderSea);
+    }
+
+    renderSea();
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBioluminescentSea);
+} else {
+    initBioluminescentSea();
+}
 
