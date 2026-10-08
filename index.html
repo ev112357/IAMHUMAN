@@ -868,73 +868,8 @@ img, video, canvas, pre, code {
         min-height: 0 !important;
     }
 }
-    .post-item {
-        padding: 12px 10px !important;
-        gap: 10px !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-    }
-    .post-body {
-        min-width: 0 !important;
-        max-width: 100% !important;
-        overflow: hidden !important;
-    }
-    .vote-box {
-        width: 34px !important;
-        min-width: 34px !important;
-        padding: 4px 2px !important;
-    }
-    .vote-btn {
-        font-size: 0.9rem !important;
-    }
-    .vote-score {
-        font-size: 0.75rem !important;
-    }
 
-
-    /* Live Chat Portrait Safe Fit */
-    #live-chat-modal {
-        padding: calc(6px + env(safe-area-inset-top, 0px)) 6px calc(6px + env(safe-area-inset-bottom, 0px)) 6px !important;
-        align-items: stretch !important;
-        justify-content: center !important;
-    }
-    #live-chat-modal .modal-box {
-        width: 100% !important;
-        max-width: 100% !important;
-        height: auto !important;
-        max-height: 100% !important;
-        flex: 1 1 0% !important; /* Fills visible area safely without pushing input off-screen */
-        min-height: 0 !important;
-        padding: 12px !important;
-        border-radius: 12px !important;
-        margin: 0 !important;
-    }
-    #live-chat-input {
-        font-size: 16px !important; /* Prevents mobile browser auto-zoom cutoffs */
-        height: 44px !important;
-        margin-bottom: 0 !important;
-    }
-    #live-chat-form button {
-        height: 44px !important;
-        padding: 0 16px !important;
-        flex-shrink: 0 !important;
-    }
-}
-
-
-/* Mobile Landscape Height Guard (Preserves layout on short landscape screens) */
-@media (max-height: 500px) and (orientation: landscape) {
-    #live-chat-modal {
-        padding: 6px 12px !important;
-    }
-    #live-chat-modal .modal-box {
-        height: 94vh !important;
-        max-height: 94vh !important;
-        min-height: 0 !important;
-    }
-}
-
-        /* 1-on-1 Audio Calling UI */
+/* 1-on-1 Audio Calling UI */
         .call-action-btn {
             background: #0f172a;
             border: 1px solid #334155;
@@ -1321,7 +1256,64 @@ img, video, canvas, pre, code {
         .tech-toast.toast-error .tech-toast-progress {
             background: linear-gradient(90deg, #ef4444, #f97316);
         }
-    </style>
+    
+        /* --- THREAD HEADER & TITLE FORMATTING (DESKTOP & MOBILE FIX) --- */
+        .thread-title-heading { 
+            margin-bottom: 0 !important; 
+            font-size: 1.25rem !important; 
+            display: inline-flex !important; 
+            align-items: center !important; 
+            justify-content: flex-start !important; 
+            gap: 8px !important; 
+            color: #f8fafc !important; 
+            line-height: 1.3 !important; 
+            word-break: break-word !important; 
+            text-align: left !important;
+            width: auto !important;
+            max-width: 100% !important;
+        }
+        .thread-title-heading span { 
+            color: #f8fafc !important; 
+            font-weight: 700 !important; 
+            text-align: left !important; 
+        }
+        #open-thread-options-btn {
+            border-color: #38bdf8 !important;
+            color: #38bdf8 !important;
+        }
+        #open-thread-options-btn:hover {
+            background: rgba(56, 189, 248, 0.15) !important;
+            color: #ffffff !important;
+        }
+        @media (max-width: 768px) {
+            .desktop-only-btn {
+                display: none !important;
+            }
+            .thread-title-heading {
+                font-size: 1.15rem !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: flex-start !important;
+                gap: 8px !important;
+                width: 100% !important;
+                text-align: left !important;
+            }
+            .thread-badge-wrap {
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                gap: 8px !important;
+                width: 100% !important;
+            }
+            .thread-actions-bar {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                gap: 6px !important;
+                width: 100% !important;
+                overflow-x: visible !important;
+            }
+        }
+
+</style>
 </head>
 <body>
 
@@ -1467,10 +1459,11 @@ img, video, canvas, pre, code {
                     </div>
                     <div class="thread-actions-bar">
                         <button type="button" id="share-thread-btn" class="secondary btn-thread-action">📤 Share</button>
-                        <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden">⚙️ Roles</button>
-                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden">🔴 Live Config</button>
+                        <button type="button" id="open-thread-options-btn" class="secondary btn-thread-action" style="color: #38bdf8; border-color: #38bdf8;">⚙️ Options</button>
+                        <button type="button" id="manage-perms-btn" class="secondary btn-thread-action hidden desktop-only-btn">⚙️ Roles</button>
+                        <button type="button" id="manage-chat-btn" class="secondary btn-thread-action hidden desktop-only-btn">🔴 Live Config</button>
                         <button type="button" id="join-leave-active-thread-btn" class="secondary btn-thread-action hidden">Leave Thread</button>
-                        <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden">🗑 Delete</button>
+                        <button type="button" id="delete-thread-btn" class="danger btn-thread-action hidden desktop-only-btn">🗑 Delete</button>
                     </div>
                 </div>
 
@@ -2423,6 +2416,57 @@ img, video, canvas, pre, code {
                 </button>
                 <button type="button" id="guest-disclaimer-login-btn" class="secondary" style="font-size: 0.85rem; padding: 8px; margin-top: 0;">
                     Have an Invite Code? Log In / Sign Up
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- THREAD OPTIONS MODAL (MOBILE & COMPACT MENU) -->
+    <div id="thread-options-modal" class="modal-overlay hidden" style="z-index: 10030;">
+        <div class="modal-box modal-box-small" style="max-width: 440px; background: #0f172a; border: 1px solid #38bdf8; box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px rgba(56, 189, 248, 0.2); padding: 20px;">
+            <div class="modal-header" style="border-bottom: 1px solid #1e293b; padding-bottom: 8px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.2rem;">⚙️</span>
+                    <h3 style="color: #38bdf8; font-size: 1.1rem; margin: 0;">Options: <span id="thread-options-modal-title" style="color: #f8fafc;"></span></h3>
+                </div>
+                <button type="button" id="close-thread-options-btn" class="close-btn">&times;</button>
+            </div>
+            
+            <div id="thread-options-list" style="display: flex; flex-direction: column; gap: 8px;">
+                <!-- Set Banner (Mods and Owners only) -->
+                <button type="button" id="opt-set-banner-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>🖼️</span> <span>Set Community Banner</span>
+                </button>
+
+                <!-- Roles & Permissions (Mods and Owners only) -->
+                <button type="button" id="opt-manage-perms-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>⚙️</span> <span>Manage Roles & Permissions</span>
+                </button>
+
+                <!-- Live Chat Config (Mods and Owners only) -->
+                <button type="button" id="opt-manage-chat-btn" class="secondary hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>🔴</span> <span>Live Chat Schedule & Lock</span>
+                </button>
+
+                <!-- Set Flair -->
+                <button type="button" id="opt-set-flair-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>🏷️</span> <span>Set Community Flair</span>
+                </button>
+
+                <!-- Share Thread -->
+                <button type="button" id="opt-share-thread-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>📤</span> <span>Share Community Thread</span>
+                </button>
+
+                <!-- Join / Leave Thread -->
+                <button type="button" id="opt-join-leave-btn" class="secondary" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px;">
+                    <span>🚪</span> <span id="opt-join-leave-text">Leave Thread</span>
+                </button>
+
+                <!-- Delete Thread (Owner & Admin only) -->
+                <button type="button" id="opt-delete-thread-btn" class="danger hidden" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left; font-size: 0.9rem; font-weight: 600; width: 100%; margin: 0; border-radius: 8px; margin-top: 4px;">
+                    <span>🗑️</span> <span>Delete Community Thread</span>
                 </button>
             </div>
         </div>
