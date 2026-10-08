@@ -1405,13 +1405,30 @@ function isSiteAdmin(username = currentUsername) {
 function getThreadRole(threadName = activeThread, username = currentUsername) {
     if (!username) return "Guest";
     const cleanUser = username.toLowerCase().replace('@', '');
-    if (cleanUser === SITE_ADMIN_USERNAME.toLowerCase()) return "Site Admin";
+    if (cleanUser === SITE_ADMIN_USERNAME.toLowerCase() || (typeof isSiteAdmin === 'function' && isSiteAdmin(cleanUser))) return "Site Admin";
 
+    // 1. Authoritative check against cloud threads from DB
+    if (Array.isArray(allCloudThreads) && allCloudThreads.length > 0) {
+        const cloudThread = allCloudThreads.find(t => t.name && t.name.toLowerCase() === (threadName || '').toLowerCase());
+        if (cloudThread) {
+            const cloudOwner = (cloudThread.owner_username || cloudThread.owner || '').toLowerCase().replace('@', '');
+            if (cloudOwner && cloudOwner === cleanUser) return "Owner";
+            const cloudMods = (cloudThread.moderators || []).map(m => String(m).toLowerCase().replace('@', ''));
+            if (cloudMods.includes(cleanUser)) return "Moderator";
+            const cloudBanned = (cloudThread.banned || []).map(b => String(b).toLowerCase().replace('@', ''));
+            if (cloudBanned.includes(cleanUser)) return "Banned";
+        }
+    }
 
+    // 2. Local metadata fallback
     const meta = threadMetaMap[threadName] || { owner: '', moderators: [], banned: [] };
-    if (meta.owner && meta.owner.toLowerCase() === cleanUser) return "Owner";
-    if (meta.moderators && meta.moderators.map(m => m.toLowerCase()).includes(cleanUser)) return "Moderator";
-    if (meta.banned && meta.banned.map(b => b.toLowerCase()).includes(cleanUser)) return "Banned";
+    const metaOwner = (meta.owner || '').toLowerCase().replace('@', '');
+    if (metaOwner && metaOwner === cleanUser) return "Owner";
+    const metaMods = (meta.moderators || []).map(m => String(m).toLowerCase().replace('@', ''));
+    if (metaMods.includes(cleanUser)) return "Moderator";
+    const metaBanned = (meta.banned || []).map(b => String(b).toLowerCase().replace('@', ''));
+    if (metaBanned.includes(cleanUser)) return "Banned";
+
     return "Member";
 }
 
@@ -1438,7 +1455,7 @@ function canManagePermissions(threadName = activeThread) {
     if (!currentUsername) return false;
     if (threadName === "Welcome & Security") return isSiteAdmin();
     const role = getThreadRole(threadName);
-    return isSiteAdmin() || role === "Owner";
+    return isSiteAdmin() || role === "Owner" || role === "Moderator";
 }
 
 
@@ -2446,6 +2463,16 @@ async function syncCloudThreads() {
 
 
     allCloudThreads = mergedThreads;
+
+    // Synchronize cloud thread ownership & moderation into metadata cache
+    (mergedThreads || []).forEach(t => {
+        if (t.name) {
+            if (!threadMetaMap[t.name]) threadMetaMap[t.name] = { owner: '', moderators: [], banned: [] };
+            if (t.owner_username) threadMetaMap[t.name].owner = t.owner_username;
+            if (t.moderators && Array.isArray(t.moderators)) threadMetaMap[t.name].moderators = t.moderators;
+        }
+    });
+    try { localStorage.setItem('forum_thread_metadata', JSON.stringify(threadMetaMap)); } catch (e) {}
     
     if (currentUser) {
         // Guarantee Trending is always in the sidebar alongside mandatory threads
@@ -2972,7 +2999,7 @@ function updateThreadControlsUI() {
             bannerBtn = document.createElement('button');
             bannerBtn.id = 'set-banner-btn';
             bannerBtn.type = 'button';
-            bannerBtn.className = 'secondary btn-thread-action';
+            bannerBtn.className = 'secondary btn-thread-action desktop-only-btn';
             bannerBtn.textContent = '🖼️ Set Banner';
             bannerBtn.onclick = () => document.getElementById('banner-upload-input').click();
             actionsBar.prepend(bannerBtn);
@@ -2987,7 +3014,7 @@ function updateThreadControlsUI() {
             flairBtn = document.createElement('button');
             flairBtn.id = 'set-flair-btn';
             flairBtn.type = 'button';
-            flairBtn.className = 'secondary btn-thread-action';
+            flairBtn.className = 'secondary btn-thread-action desktop-only-btn';
             flairBtn.textContent = '🏷️ Set Flair';
             flairBtn.onclick = async () => {
                 const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
@@ -3071,6 +3098,54 @@ function updateThreadControlsUI() {
     if (deleteThreadBtn) {
         if (canDeleteThread(activeThread)) deleteThreadBtn.classList.remove('hidden');
         else deleteThreadBtn.classList.add('hidden');
+    }
+
+    // --- POPULATE THREAD OPTIONS MODAL (FOR MOBILE COMPACT POPUP & DESKTOP) ---
+    const optSetBanner = document.getElementById('opt-set-banner-btn');
+    const optManagePerms = document.getElementById('opt-manage-perms-btn');
+    const optManageChat = document.getElementById('opt-manage-chat-btn');
+    const optSetFlair = document.getElementById('opt-set-flair-btn');
+    const optJoinLeave = document.getElementById('opt-join-leave-btn');
+    const optJoinLeaveText = document.getElementById('opt-join-leave-text');
+    const optDeleteThread = document.getElementById('opt-delete-thread-btn');
+    const optThreadTitle = document.getElementById('thread-options-modal-title');
+
+    if (optThreadTitle) optThreadTitle.textContent = activeThread;
+
+    const isModOrOwner = (role === 'Owner' || role === 'Moderator' || role === 'Site Admin');
+
+    if (optSetBanner) {
+        if (currentUser && isModOrOwner) optSetBanner.classList.remove('hidden');
+        else optSetBanner.classList.add('hidden');
+    }
+
+    if (optManagePerms) {
+        if (canManagePermissions(activeThread)) optManagePerms.classList.remove('hidden');
+        else optManagePerms.classList.add('hidden');
+    }
+
+    if (optManageChat) {
+        if (canManagePermissions(activeThread)) optManageChat.classList.remove('hidden');
+        else optManageChat.classList.add('hidden');
+    }
+
+    if (optSetFlair) {
+        if (currentUser) optSetFlair.classList.remove('hidden');
+        else optSetFlair.classList.add('hidden');
+    }
+
+    if (optJoinLeave) {
+        if (!isMandatory && currentUser) {
+            optJoinLeave.classList.remove('hidden');
+            if (optJoinLeaveText) optJoinLeaveText.textContent = isJoined ? 'Leave Community Thread' : '+ Join Community Thread';
+        } else {
+            optJoinLeave.classList.add('hidden');
+        }
+    }
+
+    if (optDeleteThread) {
+        if (canDeleteThread(activeThread)) optDeleteThread.classList.remove('hidden');
+        else optDeleteThread.classList.add('hidden');
     }
     
     // Update live member count for the active thread
@@ -9063,5 +9138,101 @@ function openVoiceStageInsideLiveChat(threadName) {
     updateVoiceStagePrivacyUI();
     initVoiceStageRoomChannel(activeVoiceStageThread);
 }
+
+
+
+// =============================================================================
+// THREAD OPTIONS MODAL EVENT LISTENERS
+// =============================================================================
+const threadOptionsModal = document.getElementById('thread-options-modal');
+const openThreadOptionsBtn = document.getElementById('open-thread-options-btn');
+const closeThreadOptionsBtn = document.getElementById('close-thread-options-btn');
+
+function openThreadOptionsModal() {
+    if (threadOptionsModal) {
+        if (typeof updateThreadControlsUI === 'function') updateThreadControlsUI();
+        threadOptionsModal.classList.remove('hidden');
+    }
+}
+
+function closeThreadOptionsModal() {
+    if (threadOptionsModal) {
+        threadOptionsModal.classList.add('hidden');
+    }
+}
+
+safeAddListener(openThreadOptionsBtn, 'click', openThreadOptionsModal);
+safeAddListener(closeThreadOptionsBtn, 'click', closeThreadOptionsModal);
+safeAddListener(threadOptionsModal, 'click', (e) => {
+    if (e.target === threadOptionsModal) closeThreadOptionsModal();
+});
+
+safeAddListener(document.getElementById('opt-set-banner-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    const input = document.getElementById('banner-upload-input');
+    if (input) input.click();
+});
+
+safeAddListener(document.getElementById('opt-manage-perms-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    if (typeof openPermissionsManager === 'function') openPermissionsManager();
+});
+
+safeAddListener(document.getElementById('opt-manage-chat-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    const chatBtn = document.getElementById('manage-chat-btn');
+    if (chatBtn) chatBtn.click();
+});
+
+safeAddListener(document.getElementById('opt-set-flair-btn'), 'click', async () => {
+    closeThreadOptionsModal();
+    const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
+    const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
+    if (input === null) return;
+
+    const trimmed = input.trim().substring(0, 18);
+
+    if (trimmed === '') {
+        await db
+            .from('user_thread_flairs')
+            .delete()
+            .eq('thread_name', activeThread)
+            .eq('username', currentUsername.toLowerCase());
+        threadFlairMap.delete(currentUsername.toLowerCase());
+    } else {
+        const { error } = await db
+            .from('user_thread_flairs')
+            .upsert({
+                thread_name: activeThread,
+                username: currentUsername.toLowerCase(),
+                flair: trimmed
+            });
+
+        if (error) {
+            alert(`Could not save flair: ${error.message}`);
+            return;
+        }
+        threadFlairMap.set(currentUsername.toLowerCase(), trimmed);
+    }
+    renderCurrentFeed();
+});
+
+safeAddListener(document.getElementById('opt-share-thread-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    const shareBtn = document.getElementById('share-thread-btn');
+    if (shareBtn) shareBtn.click();
+});
+
+safeAddListener(document.getElementById('opt-join-leave-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    const joinLeaveBtn = document.getElementById('join-leave-active-thread-btn');
+    if (joinLeaveBtn) joinLeaveBtn.click();
+});
+
+safeAddListener(document.getElementById('opt-delete-thread-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    const delBtn = document.getElementById('delete-thread-btn');
+    if (delBtn) delBtn.click();
+});
 
 
