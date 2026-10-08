@@ -89,6 +89,10 @@ function playTechChirp(type = 'info') {
             } else if (type === 'error') {
                 osc.frequency.setValueAtTime(329.63, now); // E4
                 osc.frequency.exponentialRampToValueAtTime(220, now + 0.15); // A3
+            } else if (type === 'pop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(950, now);
+                osc.frequency.exponentialRampToValueAtTime(280, now + 0.12);
             } else {
                 osc.frequency.setValueAtTime(440, now); // A4
                 osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1); // E5
@@ -2261,11 +2265,24 @@ safeAddListener(authForm, 'submit', async (e) => {
         }
 
 
-        // Mark invite as claimed securely from the client side
+        // Mark invite as claimed and log chain-of-custody lineage
         if (inviteCode) {
-            await db.from('invitations')
-                .update({ status: 'claimed' })
-                .eq('code', inviteCode);
+            try {
+                const { data: { user: newUser } } = await db.auth.getUser().catch(() => ({ data: {} }));
+                const claimPayload = {
+                    status: 'claimed',
+                    claimed_by_id: newUser ? newUser.id : null,
+                    claimed_by_username: username,
+                    claimed_at: new Date().toISOString()
+                };
+                const { error: claimErr } = await db.from('invitations').update(claimPayload).eq('code', inviteCode);
+                if (claimErr) {
+                    // Fallback if schema migration hasn't been applied yet
+                    await db.from('invitations').update({ status: 'claimed' }).eq('code', inviteCode);
+                }
+            } catch (e) {
+                console.warn("Chain-of-custody claim logging notice:", e);
+            }
         }
 
 
@@ -6599,145 +6616,420 @@ async function initLiveUserCount() {
 
 
 
-// --- WEB OF TRUST: INVITES LOGIC ---
+// --- WEB OF TRUST: BIOMECHANICAL RED PEARL INCUBATOR & TRACEABILITY LEDGER ---
+// 3 Red Pearl keys are allocated per 30-day incubation cycle.
+// Vouching creates an immutable lineage ledger so malicious automated bots can be traced
+// directly back to the verified inviter who vouched for them.
+
+let incubatorCountdownInterval = null;
+
+function formatCountdown(ms) {
+    if (ms <= 0) return "Ready";
+    const totalSecs = Math.floor(ms / 1000);
+    const days = Math.floor(totalSecs / 86400);
+    const hours = Math.floor((totalSecs % 86400) / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    if (days > 0) {
+        return `${days}d ${hours}h ${mins}m ${secs}s`;
+    }
+    return `${hours}h ${mins}m ${secs}s`;
+}
+
 async function loadUserInvites() {
-    const container = document.getElementById('invites-container');
-    const btn = document.getElementById('generate-invite-btn');
-    if (!container || !btn || !currentUser || !db) return;
+    const grid = document.getElementById('pearl-incubator-grid');
+    const adminOverdriveContainer = document.getElementById('admin-overdrive-container');
+    const adminLedgerFilterRow = document.getElementById('admin-ledger-filter-row');
+    
+    if (!currentUser || !db) return;
 
+    if (incubatorCountdownInterval) {
+        clearInterval(incubatorCountdownInterval);
+        incubatorCountdownInterval = null;
+    }
 
+    const isAdmin = isSiteAdmin();
+    if (adminOverdriveContainer) {
+        if (isAdmin) adminOverdriveContainer.classList.remove('hidden');
+        else adminOverdriveContainer.classList.add('hidden');
+    }
+    if (adminLedgerFilterRow) {
+        if (isAdmin) adminLedgerFilterRow.classList.remove('hidden');
+        else adminLedgerFilterRow.classList.add('hidden');
+    }
+
+    // Fetch user invites (or all invites if admin, for ledger)
     const { data: invites, error } = await db.from('invitations')
         .select('*')
         .eq('inviter_id', currentUser.id)
         .order('created_at', { ascending: false });
-
 
     if (error) {
         console.warn("Could not load invitations:", error.message);
         return;
     }
 
+    const allUserInvites = invites || [];
+    const REGEN_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 
-    container.innerHTML = '';
-    const allGeneratedInvites = invites || [];
-    
-    // Quota counts EVERY invite ever generated (including hidden ones)
-    const totalLifetimeCreated = allGeneratedInvites.length;
-    const remainingQuota = Math.max(0, 3 - totalLifetimeCreated);
-    const isAdmin = isSiteAdmin();
+    // Determine the state of the 3 biological incubator slots (0, 1, 2)
+    const slotData = [null, null, null];
+    const assignedBySlot = new Map();
+    allUserInvites.forEach(inv => {
+        if (inv.slot_index !== null && inv.slot_index !== undefined && inv.slot_index >= 0 && inv.slot_index < 3) {
+            if (!assignedBySlot.has(inv.slot_index)) {
+                assignedBySlot.set(inv.slot_index, inv);
+            }
+        }
+    });
 
-
-    if (!isAdmin && totalLifetimeCreated >= 3) {
-        btn.style.display = 'none';
-    } else {
-        btn.style.display = 'block';
-        if (isAdmin) {
-            btn.textContent = `+ Generate Invite Link (Unlimited Admin)`;
-        } else {
-            btn.textContent = `+ Generate Invite Link (${remainingQuota} remaining)`;
+    const unslotted = allUserInvites.filter(inv => inv.slot_index === null || inv.slot_index === undefined || inv.slot_index < 0 || inv.slot_index > 2);
+    let unslottedIdx = 0;
+    for (let s = 0; s < 3; s++) {
+        if (assignedBySlot.has(s)) {
+            slotData[s] = assignedBySlot.get(s);
+        } else if (unslottedIdx < unslotted.length) {
+            slotData[s] = unslotted[unslottedIdx++];
         }
     }
 
+    // Render the 3 Biomechanical Pods
+    if (grid) {
+        grid.innerHTML = '';
+        const now = Date.now();
 
-    // Only render invites that have not been cleared by the user
-    const visibleInvites = allGeneratedInvites.filter(inv => !inv.is_hidden);
+        slotData.forEach((inv, slotIndex) => {
+            const podEl = document.createElement('div');
+            podEl.className = 'pearl-pod';
+            podEl.dataset.slot = slotIndex;
 
+            let isReady = true;
+            let msRemaining = 0;
+            let regenTarget = 0;
 
-    if (visibleInvites.length === 0) {
-        container.innerHTML = '<div style="font-size:0.8rem; color:#64748b;">No active codes displayed.</div>';
+            if (inv) {
+                const createdTime = new Date(inv.created_at).getTime();
+                regenTarget = inv.regenerates_at ? new Date(inv.regenerates_at).getTime() : (createdTime + REGEN_DURATION);
+                msRemaining = regenTarget - now;
+                if (msRemaining > 0) {
+                    isReady = false;
+                }
+            }
+
+            if (isReady) {
+                // Pod is in READY state: luminous red pearl ready for genetic extraction
+                podEl.classList.add('state-ready');
+                podEl.innerHTML = `
+                    <div class="pod-badge-bar">
+                        <span>POD 0${slotIndex + 1}</span>
+                        <span class="pod-status-badge pod-status-ready">READY</span>
+                    </div>
+                    <div class="pod-chamber">
+                        <div class="red-pearl" title="Red Pearl Ready — Click to extract key"></div>
+                    </div>
+                    <div class="pod-info">
+                        <div style="font-size: 0.72rem; color: #cbd5e1; font-weight: 600;">Genetic Access Pearl</div>
+                        <button type="button" class="btn-pod-action" style="background: linear-gradient(135deg, #ff2a5f, #b3002b); color: #fff; border: 1px solid #ff2a5f; cursor: pointer;">
+                            Extract Key
+                        </button>
+                    </div>
+                `;
+
+                const extractBtn = podEl.querySelector('.btn-pod-action');
+                const pearlEl = podEl.querySelector('.red-pearl');
+
+                const handleExtract = async () => {
+                    extractBtn.disabled = true;
+                    extractBtn.textContent = 'Synthesizing...';
+
+                    if (pearlEl) {
+                        pearlEl.classList.add('popping');
+                    }
+                    playTechChirp('pop');
+
+                    setTimeout(async () => {
+                        const newCode = 'TG-' + Math.random().toString(16).substr(2, 8).toUpperCase();
+                        const regenIso = new Date(Date.now() + REGEN_DURATION).toISOString();
+
+                        const fullPayload = {
+                            inviter_id: currentUser.id,
+                            inviter_username: currentUsername,
+                            code: newCode,
+                            slot_index: slotIndex,
+                            regenerates_at: regenIso,
+                            status: 'pending'
+                        };
+
+                        let { error: insertErr } = await db.from('invitations').insert([fullPayload]);
+                        if (insertErr) {
+                            const { error: fallbackErr } = await db.from('invitations').insert([{
+                                inviter_id: currentUser.id,
+                                code: newCode,
+                                status: 'pending'
+                            }]);
+                            if (fallbackErr) {
+                                alert("Could not generate invite: " + fallbackErr.message);
+                                extractBtn.disabled = false;
+                                return;
+                            }
+                        }
+
+                        try {
+                            await navigator.clipboard.writeText(newCode);
+                        } catch (e) {}
+
+                        showToast({
+                            title: `Genetic Key Minted: ${newCode}`,
+                            message: `Copied to clipboard. Pod 0${slotIndex + 1} entered 30-day incubation cycle.`,
+                            type: 'success',
+                            icon: '◈',
+                            duration: 5000
+                        });
+
+                        await loadUserInvites();
+                    }, 460);
+                };
+
+                extractBtn.addEventListener('click', handleExtract);
+                pearlEl.addEventListener('click', handleExtract);
+
+            } else {
+                // Pod is in INCUBATING state
+                podEl.classList.add('state-incubating');
+                const isClaimed = inv.status === 'claimed';
+                const percentDone = Math.min(100, Math.max(1, Math.floor(((REGEN_DURATION - msRemaining) / REGEN_DURATION) * 100)));
+
+                podEl.innerHTML = `
+                    <div class="pod-badge-bar">
+                        <span>POD 0${slotIndex + 1}</span>
+                        <span class="pod-status-badge pod-status-incubating">${isClaimed ? 'CLAIMED' : 'ACTIVE'}</span>
+                    </div>
+                    <div class="pod-chamber">
+                        <div class="bio-chamber-active">
+                            <div class="bio-particles"></div>
+                            <div class="nano-nucleus"></div>
+                        </div>
+                    </div>
+                    <div class="pod-info">
+                        <div class="pod-code-label" title="${escapeHTML(inv.code)}">${escapeHTML(inv.code)}</div>
+                        <div class="pod-timer-text" data-regen="${regenTarget}">${formatCountdown(msRemaining)}</div>
+                        <div class="pod-progress-bar-wrap">
+                            <div class="pod-progress-bar-fill" style="width: ${percentDone}%;"></div>
+                        </div>
+                        <button type="button" class="btn-pod-action secondary ${isClaimed ? 'disabled' : ''}" style="margin-top: 3px; font-size: 0.72rem; height: 28px; cursor: ${isClaimed ? 'default' : 'pointer'};">
+                            ${isClaimed ? `Claimed by @${escapeHTML(inv.claimed_by_username || 'human')}` : 'Copy Key'}
+                        </button>
+                    </div>
+                `;
+
+                if (!isClaimed) {
+                    const copyBtn = podEl.querySelector('.btn-pod-action');
+                    copyBtn.addEventListener('click', () => {
+                        navigator.clipboard.writeText(inv.code);
+                        copyBtn.textContent = 'Copied!';
+                        setTimeout(() => copyBtn.textContent = 'Copy Key', 2000);
+                    });
+                }
+            }
+
+            grid.appendChild(podEl);
+        });
+
+        // Start live ticker to update countdown strings every second
+        incubatorCountdownInterval = setInterval(() => {
+            const timerEls = grid.querySelectorAll('.pod-timer-text');
+            const nowTime = Date.now();
+            let anyActive = false;
+
+            timerEls.forEach(timerEl => {
+                const target = parseInt(timerEl.dataset.regen, 10);
+                if (target) {
+                    const diff = target - nowTime;
+                    if (diff <= 0) {
+                        timerEl.textContent = 'Regenerated!';
+                        if (!timerEl.dataset.reloaded) {
+                            timerEl.dataset.reloaded = 'true';
+                            setTimeout(() => loadUserInvites(), 1000);
+                        }
+                    } else {
+                        anyActive = true;
+                        timerEl.textContent = formatCountdown(diff);
+                        const podFill = timerEl.parentElement.querySelector('.pod-progress-bar-fill');
+                        if (podFill) {
+                            const pct = Math.min(100, Math.max(1, Math.floor(((REGEN_DURATION - diff) / REGEN_DURATION) * 100)));
+                            podFill.style.width = pct + '%';
+                        }
+                    }
+                }
+            });
+
+            if (!anyActive && incubatorCountdownInterval) {
+                clearInterval(incubatorCountdownInterval);
+                incubatorCountdownInterval = null;
+            }
+        }, 1000);
+    }
+
+    // Render Lineage Ledger
+    await renderInviteLedger(allUserInvites, isAdmin);
+}
+
+async function renderInviteLedger(userInvites, isAdmin) {
+    const ledgerList = document.getElementById('invite-ledger-list');
+    const ledgerCountBadge = document.getElementById('ledger-count-badge');
+    if (!ledgerList) return;
+
+    let displayList = userInvites;
+
+    // If site admin, fetch all recent system invites so admin can trace any lineage
+    if (isAdmin) {
+        const { data: allSystemInvites } = await db.from('invitations')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100);
+        if (allSystemInvites && allSystemInvites.length > 0) {
+            displayList = allSystemInvites;
+        }
+    }
+
+    if (ledgerCountBadge) {
+        ledgerCountBadge.textContent = `${displayList.length} ${isAdmin ? 'Total System' : 'Vouched'}`;
+    }
+
+    ledgerList.innerHTML = '';
+    if (displayList.length === 0) {
+        ledgerList.innerHTML = '<div style="font-size: 0.75rem; color: #64748b; padding: 8px; text-align: center;">No cryptographic lineage records found.</div>';
         return;
     }
 
+    const filterInput = document.getElementById('ledger-search-input');
+    const filterQuery = (filterInput ? filterInput.value.trim().toLowerCase() : '');
 
-    visibleInvites.forEach(inv => {
-        const div = document.createElement('div');
-        div.className = 'invite-code-box';
+    const filtered = displayList.filter(inv => {
+        if (!filterQuery) return true;
+        const c = (inv.code || '').toLowerCase();
+        const by = (inv.inviter_username || '').toLowerCase();
+        const to = (inv.claimed_by_username || '').toLowerCase();
+        return c.includes(filterQuery) || by.includes(filterQuery) || to.includes(filterQuery);
+    });
+
+    filtered.forEach(inv => {
+        const row = document.createElement('div');
+        row.className = 'ledger-row';
+        if (inv.is_bot_flagged) row.classList.add('is-tainted');
+
         const isClaimed = inv.status === 'claimed';
+        const createdDate = inv.created_at ? new Date(inv.created_at).toLocaleDateString() : 'N/A';
+        const claimedDate = inv.claimed_at ? new Date(inv.claimed_at).toLocaleDateString() : '';
 
-
-        div.innerHTML = `
-            <span style="opacity: ${isClaimed ? '0.5' : '1'}; text-decoration: ${isClaimed ? 'line-through' : 'none'}; font-weight: 600;">${escapeHTML(inv.code)}</span>
-            <div style="display: flex; gap: 6px; align-items: center;">
-                <button type="button" class="btn-copy-invite" ${isClaimed ? 'disabled style="background:#334155; color:#94a3b8; cursor:default;"' : ''}>
-                    ${isClaimed ? 'Claimed' : 'Copy'}
-                </button>
-                <button type="button" class="btn-clear-invite" title="Clear code from display">
-                    ✕
-                </button>
+        row.innerHTML = `
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span class="ledger-code">${escapeHTML(inv.code)}</span>
+                    ${inv.is_bot_flagged ? '<span class="badge badge-red" style="font-size: 0.65rem;">⚠️ TAINTED BOT</span>' : (isClaimed ? '<span class="badge badge-green" style="font-size: 0.65rem;">✓ VERIFIED</span>' : '<span class="badge badge-blue" style="font-size: 0.65rem;">PENDING</span>')}
+                </div>
+                <span class="ledger-meta">Issued: ${createdDate} by <strong>@${escapeHTML(inv.inviter_username || (inv.inviter_id === currentUser.id ? currentUsername : 'inviter'))}</strong></span>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+                <span style="font-size: 0.72rem; color: ${isClaimed ? '#38bdf8' : '#94a3b8'};">
+                    ${isClaimed ? `Claimed by: <strong>@${escapeHTML(inv.claimed_by_username || 'human')}</strong> (${claimedDate})` : 'Awaiting Redemption'}
+                </span>
+                ${isAdmin ? `
+                    <button type="button" class="btn-flag-bot" style="width: auto; padding: 2px 6px; font-size: 0.65rem; background: transparent; border: 1px solid ${inv.is_bot_flagged ? '#10b981' : '#ef4444'}; color: ${inv.is_bot_flagged ? '#10b981' : '#ef4444'}; border-radius: 4px; cursor: pointer;">
+                        ${inv.is_bot_flagged ? 'Clear Bot Flag' : 'Flag Lineage as Bot'}
+                    </button>
+                ` : ''}
             </div>
         `;
-        
-        // Copy link action for unclaimed invites
-        if (!isClaimed) {
-            const copyBtn = div.querySelector('.btn-copy-invite');
-            copyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(inv.code);
-                copyBtn.textContent = 'Copied!';
-                setTimeout(() => copyBtn.textContent = 'Copy', 2000);
-            });
+
+        if (isAdmin) {
+            const flagBtn = row.querySelector('.btn-flag-bot');
+            if (flagBtn) {
+                flagBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const newFlag = !inv.is_bot_flagged;
+                    const { error: flagErr } = await db.from('invitations')
+                        .update({ is_bot_flagged: newFlag, flagged_reason: newFlag ? 'Flagged by Site Administrator' : null })
+                        .eq('id', inv.id);
+                    if (flagErr) {
+                        alert(`Could not update ledger: ${flagErr.message}`);
+                    } else {
+                        showToast({
+                            title: newFlag ? 'Lineage Flagged' : 'Flag Cleared',
+                            message: `Code ${inv.code} is now marked ${newFlag ? 'TAINTED BOT' : 'CLEAN'}.`,
+                            type: newFlag ? 'error' : 'success',
+                            icon: '🛡️'
+                        });
+                        await loadUserInvites();
+                    }
+                });
+            }
         }
 
-
-        // Soft-delete action: hides code from dashboard without refunding quota
-        const clearBtn = div.querySelector('.btn-clear-invite');
-        clearBtn.addEventListener('click', async () => {
-            if (!confirm("Remove this code from your list? (Note: your 3-invite quota will not be refunded)")) return;
-
-
-            clearBtn.disabled = true;
-            clearBtn.textContent = '...';
-
-
-            const { error: updateErr } = await db
-                .from('invitations')
-                .update({ is_hidden: true })
-                .eq('id', inv.id);
-
-
-            if (updateErr) {
-                alert(`Could not clear code: ${updateErr.message}`);
-                clearBtn.disabled = false;
-                clearBtn.textContent = '✕';
-                return;
-            }
-
-
-            await loadUserInvites();
-        });
-
-
-        container.appendChild(div);
+        ledgerList.appendChild(row);
     });
 }
 
-
-safeAddListener(document.getElementById('generate-invite-btn'), 'click', async () => {
-    if (!currentUser || !db) return;
-    const btn = document.getElementById('generate-invite-btn');
+// Setup Admin Quantum Overdrive Listener
+safeAddListener(document.getElementById('admin-overdrive-btn'), 'click', async () => {
+    if (!currentUser || !db || !isSiteAdmin()) return;
+    const btn = document.getElementById('admin-overdrive-btn');
     btn.disabled = true;
-    btn.textContent = 'Generating...';
+    btn.textContent = '⚡ Minting Quantum Key...';
 
-
-    // Generate a random 8-character hex code
-    const newCode = 'TG-' + Math.random().toString(16).substr(2, 8).toUpperCase();
-
-
+    const newCode = 'TG-ADM-' + Math.random().toString(16).substr(2, 6).toUpperCase();
     const { error } = await db.from('invitations').insert([{
         inviter_id: currentUser.id,
+        inviter_username: currentUsername,
         code: newCode,
+        slot_index: -1,
         status: 'pending'
     }]);
 
+    btn.disabled = false;
+    btn.textContent = '⚡ Quantum Core Overdrive (Infinite)';
 
     if (error) {
-        alert("Could not generate invite: " + error.message);
+        alert("Admin mint error: " + error.message);
+        return;
     }
-    
-    btn.disabled = false;
+
+    try {
+        await navigator.clipboard.writeText(newCode);
+    } catch (e) {}
+
+    showToast({
+        title: "⚡ Quantum Key Minted",
+        message: `Admin code ${newCode} copied to clipboard!`,
+        type: "success",
+        icon: "⚡",
+        duration: 5000
+    });
+
     await loadUserInvites();
 });
 
+// Ledger Accordion Toggle & Live Search
+safeAddListener(document.getElementById('toggle-invite-ledger-btn'), 'click', () => {
+    const content = document.getElementById('invite-ledger-content');
+    const chevron = document.getElementById('ledger-chevron');
+    if (!content) return;
+    const isHidden = content.classList.contains('hidden');
+    if (isHidden) {
+        content.classList.remove('hidden');
+        if (chevron) chevron.textContent = '▲ Hide';
+    } else {
+        content.classList.add('hidden');
+        if (chevron) chevron.textContent = '▼ Show';
+    }
+});
 
+const ledgerSearchInput = document.getElementById('ledger-search-input');
+if (ledgerSearchInput) {
+    ledgerSearchInput.addEventListener('input', () => {
+        loadUserInvites();
+    });
+}
 
 
 // --- SYNCHRONOUS LIVE EVENTS LOGIC ---
@@ -9244,4 +9536,18 @@ safeAddListener(document.getElementById('opt-delete-thread-btn'), 'click', () =>
     const delBtn = document.getElementById('delete-thread-btn');
     if (delBtn) delBtn.click();
 });
+
+
+
+// --- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER ---
+function updateScrollProgress() {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop;
+    const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    const percent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+    const bar = document.getElementById('cyber-scroll-tracker');
+    if (bar) bar.style.width = Math.min(100, Math.max(0, percent)) + '%';
+}
+window.addEventListener('scroll', updateScrollProgress, { passive: true });
+window.addEventListener('resize', updateScrollProgress, { passive: true });
+document.addEventListener('DOMContentLoaded', updateScrollProgress, { passive: true });
 
