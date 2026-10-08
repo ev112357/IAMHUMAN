@@ -1462,7 +1462,7 @@ img, video, canvas, pre, code {
                             <span id="thread-member-count-badge" class="thread-role-badge">👥 <span id="thread-member-count">...</span></span>
                             <span id="current-user-thread-role" class="thread-role-badge badge-blue">Member</span>
                             <button type="button" id="open-live-chat-btn" class="live-chat-btn"><div class="live-pulse"></div> Live Chat (<span id="live-viewers-badge">1</span>)</button>
-                            <button type="button" id="open-voice-stage-btn" class="live-voice-btn" title="Join Live Voice Forum"><div class="voice-pulse-dot"></div> 🎙️ Voice Stage (<span id="voice-stage-count">0</span>)</button>
+                            
                         </div>
                     </div>
                     <div class="thread-actions-bar">
@@ -2192,93 +2192,85 @@ img, video, canvas, pre, code {
     </div>
 
 
-    <!-- LIVE CHAT MODAL -->
-    <div id="live-chat-modal" class="modal-overlay hidden">
-        <div class="modal-box">
-            <div class="modal-header" style="margin-bottom: 8px; padding-bottom: 8px;">
-                <h2 style="font-size: 1.15rem; color: #10b981;">🔴 Live: <span id="live-chat-thread-name"></span></h2>
-                <div style="display: flex; gap: 8px; align-items: center;">
+    <!-- LIVE CHAT MODAL WITH INTEGRATED DISCORD-STYLE VOICE STAGE -->
+    <div id="live-chat-modal" class="modal-overlay hidden" style="z-index: 10020;">
+        <div class="modal-box modal-box-large live-chat-box" style="max-width: 800px; height: 680px; max-height: 94vh; display: flex; flex-direction: column;">
+            
+            <!-- Live Chat Header -->
+            <div class="modal-header" style="margin-bottom: 8px; padding-bottom: 8px; flex-shrink: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h2 style="font-size: 1.15rem; color: #10b981; margin: 0;">🔴 Live: <span id="live-chat-thread-name"></span></h2>
+                    <span id="voice-stage-privacy-badge" class="badge badge-green" style="font-size: 0.72rem;">🔓 Open Stage</span>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
                     <span style="font-size: 0.8rem; color: #94a3b8;"><strong id="live-chat-viewer-count" style="color:#10b981;">1</strong> online</span>
                     <button id="close-live-chat-btn" class="close-btn">&times;</button>
                 </div>
             </div>
-            <div id="live-chat-history" class="chat-history" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 8px; background: #020617; border-radius: 8px; border: 1px solid #1e293b;">
-                <div class="no-posts" style="font-size: 0.8rem;">Welcome to the ephemeral live chat. Messages are not saved.</div>
-            </div>
-            <form id="live-chat-form" style="display: flex; gap: 8px; flex-shrink: 0;">
-                <input type="text" id="live-chat-input" placeholder="Send a live message..." autocomplete="off" style="margin-bottom: 0; flex: 1;">
-                <button type="submit" style="width: auto; padding: 0 16px; background: #10b981; color: #0f172a;">Send</button>
-            </form>
-            <div id="live-chat-locked-msg" class="hidden" style="text-align: center; padding: 12px; background: #1e293b; border: 1px dashed #ef4444; border-radius: 8px; color: #f87171; font-weight: bold; flex-shrink: 0;">
-                🔒 Chat is currently locked by the community schedule.
-            </div>
-        </div>
-    </div>
 
-    <!-- DISCORD-STYLE LIVE VOICE FORUM MODAL -->
-    <div id="voice-forum-modal" class="modal-overlay hidden" style="z-index: 24000;">
-        <div class="modal-box modal-box-large voice-stage-box" style="max-width: 780px; height: 640px; max-height: 92vh; display: flex; flex-direction: column; background: #0b0f19; border: 1px solid #10b981; box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 24px rgba(16, 185, 129, 0.2);">
-            <!-- Stage Header -->
-            <div class="modal-header" style="border-bottom: 1px solid #1e293b; padding-bottom: 10px; margin-bottom: 12px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.3rem;">🎙️</span>
-                    <div>
-                        <h2 style="font-size: 1.15rem; color: #f8fafc; margin: 0;">Voice Stage: <span id="voice-stage-thread-title" style="color: #10b981;">General</span></h2>
-                        <span id="voice-stage-status-desc" style="font-size: 0.75rem; color: #94a3b8;">Decentralized WebRTC Voice Mesh • High Fidelity</span>
+            <!-- Integrated Voice Stage Panel -->
+            <div id="live-voice-stage-section" class="live-voice-stage-section" style="background: #0b0f19; border: 1px solid #10b981; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; flex-shrink: 0; box-shadow: 0 4px 14px rgba(0,0,0,0.5);">
+                <!-- Voice Stage Bar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div class="voice-pulse-dot"></div>
+                        <strong style="color: #f8fafc; font-size: 0.88rem; display: flex; align-items: center; gap: 6px;">
+                            🎙️ Voice Stage (<span id="voice-speakers-count">0</span>)
+                        </strong>
+                        <span id="voice-stage-connection-status" style="font-size: 0.75rem; color: #10b981; font-weight: 600;">Ready</span>
+                    </div>
+                    
+                    <!-- Stage Action Buttons -->
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button type="button" id="voice-stage-connect-btn" style="background: #10b981; color: #0f172a; font-weight: 700; font-size: 0.78rem; padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; width: auto; margin: 0;">
+                            🎙️ Join Stage
+                        </button>
+                        <button type="button" id="voice-stage-mute-btn" class="secondary hidden" style="font-size: 0.78rem; padding: 6px 10px; width: auto; margin: 0; border-radius: 6px;">
+                            🎤 Mute Mic
+                        </button>
+                        <button type="button" id="voice-stage-deafen-btn" class="secondary" style="font-size: 0.78rem; padding: 6px 10px; width: auto; margin: 0; border-radius: 6px;" title="Mute incoming audio">
+                            🎧 Deafen
+                        </button>
+                        <button type="button" id="voice-stage-settings-btn" class="secondary" style="font-size: 0.78rem; padding: 6px 8px; width: auto; margin: 0; border-radius: 6px;" title="Audio Settings">
+                            ⚙️
+                        </button>
+                        <button type="button" id="voice-stage-disconnect-btn" class="danger hidden" style="font-size: 0.78rem; padding: 6px 14px; width: auto; margin: 0; border-radius: 6px; font-weight: 700;">
+                            🔴 Leave Stage
+                        </button>
                     </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span id="voice-stage-privacy-badge" class="badge badge-green" style="font-size: 0.72rem;">🔓 Open Stage</span>
-                    <button type="button" id="close-voice-forum-btn" class="close-btn">&times;</button>
+
+                <!-- Moderator Controls (Visible to Owner, Site Admin, Moderator) -->
+                <div id="voice-stage-mod-bar" class="voice-mod-bar hidden" style="display: flex; gap: 6px; align-items: center; background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; margin-top: 8px; flex-wrap: wrap;">
+                    <span style="font-size: 0.7rem; color: #38bdf8; font-weight: 700; text-transform: uppercase;">🛡️ Mod Controls:</span>
+                    <button type="button" id="toggle-voice-stage-privacy-btn" class="secondary" style="font-size: 0.7rem; padding: 3px 8px; width: auto; margin: 0;">Make Invite Only</button>
+                    <button type="button" id="open-voice-invite-modal-btn" class="secondary" style="font-size: 0.7rem; padding: 3px 8px; width: auto; margin: 0;">✉️ Invite Speaker</button>
+                    <button type="button" id="voice-stage-mute-all-btn" class="secondary" style="font-size: 0.7rem; padding: 3px 8px; width: auto; margin: 0; color: #f87171; border-color: #ef4444;">🔇 Mute Stage</button>
+                </div>
+
+                <!-- Active Stage Grid -->
+                <div id="voice-stage-grid-wrapper" style="margin-top: 8px; max-height: 180px; overflow-y: auto;">
+                    <div id="voice-stage-grid" class="voice-stage-grid" style="grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; padding: 2px;">
+                        <!-- Participant cards will render dynamically here -->
+                    </div>
+                    <div id="voice-stage-empty-msg" class="no-posts" style="padding: 10px; font-size: 0.78rem; text-align: center; border: 1px dashed #334155; border-radius: 6px;">
+                        🎙️ Voice stage is quiet. Connect to join the discussion.
+                    </div>
                 </div>
             </div>
 
-            <!-- Moderator Stage Controls (Visible to Owner, Site Admin, Moderator) -->
-            <div id="voice-stage-mod-bar" class="voice-mod-bar hidden" style="display: flex; gap: 8px; align-items: center; background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 6px 10px; margin-bottom: 12px; flex-wrap: wrap;">
-                <span style="font-size: 0.72rem; color: #38bdf8; font-weight: 700; text-transform: uppercase;">🛡️ Mod Controls:</span>
-                <button type="button" id="toggle-voice-stage-privacy-btn" class="secondary" style="font-size: 0.72rem; padding: 4px 8px; width: auto; margin: 0;">Make Invite Only</button>
-                <button type="button" id="open-voice-invite-modal-btn" class="secondary" style="font-size: 0.72rem; padding: 4px 8px; width: auto; margin: 0;">✉️ Invite Speaker</button>
-                <button type="button" id="voice-stage-mute-all-btn" class="secondary" style="font-size: 0.72rem; padding: 4px 8px; width: auto; margin: 0; color: #f87171; border-color: #ef4444;">🔇 Mute Stage</button>
+            <!-- Live Text Chat Messages Stream -->
+            <div id="live-chat-history" class="chat-history" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; padding: 10px; background: #020617; border-radius: 8px; border: 1px solid #1e293b; min-height: 160px;">
+                <div class="no-posts" style="font-size: 0.8rem;">Welcome to the ephemeral live chat. Messages are not saved.</div>
             </div>
 
-            <!-- Active Stage Grid -->
-            <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;">
-                <div style="font-size: 0.78rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; display: flex; justify-content: space-between;">
-                    <span>Speakers (<span id="voice-speakers-count">0</span>)</span>
-                    <span id="voice-stage-connection-status" style="color: #10b981;">Ready</span>
-                </div>
-                
-                <div id="voice-stage-grid" class="voice-stage-grid">
-                    <!-- Participant cards will render dynamically here -->
-                </div>
-
-                <div id="voice-stage-empty-msg" class="no-posts" style="padding: 24px; text-align: center; border: 1px dashed #334155; border-radius: 10px;">
-                    🎙️ Voice stage is quiet. Connect below to join the discussion.
-                </div>
-            </div>
-
-            <!-- Stage Bottom Controls Bar -->
-            <div class="voice-stage-bottom-bar" style="border-top: 1px solid #1e293b; padding-top: 12px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button type="button" id="voice-stage-connect-btn" style="background: #10b981; color: #0f172a; font-weight: 700; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                        🎙️ Join Stage
-                    </button>
-                    <button type="button" id="voice-stage-mute-btn" class="secondary hidden" style="font-size: 0.85rem; padding: 8px 12px; width: auto; margin: 0; border-radius: 8px;">
-                        🎤 Mute Mic
-                    </button>
-                    <button type="button" id="voice-stage-deafen-btn" class="secondary" style="font-size: 0.85rem; padding: 8px 12px; width: auto; margin: 0; border-radius: 8px;" title="Mute incoming audio">
-                        🎧 Deafen
-                    </button>
-                </div>
-
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <button type="button" id="voice-stage-settings-btn" class="secondary" style="font-size: 0.85rem; padding: 8px 10px; width: auto; margin: 0; border-radius: 8px;" title="Audio Settings">
-                        ⚙️
-                    </button>
-                    <button type="button" id="voice-stage-disconnect-btn" class="danger hidden" style="padding: 8px 16px; width: auto; margin: 0; border-radius: 8px; font-weight: 700;">
-                        🔴 Leave Stage
-                    </button>
-                </div>
+            <!-- Live Text Chat Form -->
+            <form id="live-chat-form" style="display: flex; gap: 8px; flex-shrink: 0;">
+                <input type="text" id="live-chat-input" placeholder="Send a live message..." autocomplete="off" style="margin-bottom: 0; flex: 1;">
+                <button type="submit" style="width: auto; padding: 0 18px; background: #10b981; color: #0f172a; font-weight: 700;">Send</button>
+            </form>
+            <div id="live-chat-locked-msg" class="hidden" style="text-align: center; padding: 10px; background: #1e293b; border: 1px dashed #ef4444; border-radius: 8px; color: #f87171; font-weight: bold; flex-shrink: 0;">
+                🔒 Chat is currently locked by the community schedule.
             </div>
         </div>
     </div>
@@ -2401,5 +2393,40 @@ img, video, canvas, pre, code {
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module" src="script.js?v=14"></script>
+
+    <!-- GUEST / NEW VISITOR DISCLAIMER MODAL -->
+    <div id="guest-disclaimer-modal" class="modal-overlay hidden" style="z-index: 10050;">
+        <div class="modal-box modal-box-small" style="max-width: 480px; border: 1px solid #38bdf8; background: #0f172a; box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 24px rgba(56, 189, 248, 0.25); padding: 22px;">
+            <div class="modal-header" style="border-bottom: 1px solid #1e293b; padding-bottom: 10px; margin-bottom: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.3rem;">🛡️</span>
+                    <h3 style="color: #38bdf8; font-size: 1.15rem; margin: 0;">Welcome to Turing's Gate</h3>
+                </div>
+                <button type="button" id="close-guest-disclaimer-btn" class="close-btn">&times;</button>
+            </div>
+            
+            <div style="font-size: 0.9rem; color: #cbd5e1; line-height: 1.5; margin-bottom: 16px;">
+                <p style="margin-bottom: 12px;">
+                    Turing's Gate is a <strong>verified human-only network</strong> protected against bot automation, AI spam, and synthetic activity.
+                </p>
+                <div style="background: rgba(2, 132, 199, 0.12); border-left: 3px solid #38bdf8; padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 0.85rem; color: #e0f2fe;">
+                    👁️ <strong>Guest Browsing:</strong> You are welcome to freely explore, read community threads, and view discussions as a guest.
+                </div>
+                <div style="background: rgba(234, 179, 8, 0.12); border-left: 3px solid #eab308; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; color: #fef08a;">
+                    🎟️ <strong>Invite Ticket Required:</strong> To publish posts, reply, vote, send direct messages, or speak on voice stages, an <strong>Invite Code</strong> from an existing verified human is required.
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-direction: column;">
+                <button type="button" id="acknowledge-guest-disclaimer-btn" style="background: #38bdf8; color: #0f172a; font-weight: 700; border: none; padding: 10px; border-radius: 8px; cursor: pointer;">
+                    Understood — Browse as Guest
+                </button>
+                <button type="button" id="guest-disclaimer-login-btn" class="secondary" style="font-size: 0.85rem; padding: 8px; margin-top: 0;">
+                    Have an Invite Code? Log In / Sign Up
+                </button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>
