@@ -11588,8 +11588,13 @@ if (window.ResizeObserver && document.body) {
 
 
 // Background koi simulation: graceful, top-down Japanese koi swimming through deep midnight water.
-// Motion is built from a smooth travelling body wave, gradual steering, and a flexible multi-ray tail.
-// The body and fins are frame-rate independent so the stroke remains consistent across devices.
+// Refined motion model:
+// - travelling-wave body kinematics with fixed segment lengths
+// - low-frequency irregular gait changes instead of repetitive sine motion
+// - smooth, delayed steering and small propulsion bursts
+// - independently flexing caudal membrane/rays
+// - multi-lane wake that expands, curls and dissipates as it travels away
+// - frame-rate-independent timing
 
 function initBioluminescentSea() {
     const canvas = document.getElementById('bioluminescent-canvas');
@@ -11605,6 +11610,13 @@ function initBioluminescentSea() {
     let dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    const smoothstep = (edge0, edge1, x) => {
+        const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+    };
 
     const angleDifference = (target, current) => {
         let diff = target - current;
@@ -11624,13 +11636,10 @@ function initBioluminescentSea() {
 
         canvas.width = Math.round(width * dpr);
         canvas.height = Math.round(height * dpr);
-
-        // Keep the drawing coordinate system in CSS pixels.
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
     resizeCanvas();
-
     window.addEventListener('resize', resizeCanvas, { passive: true });
 
     class TrueKoi {
@@ -11642,231 +11651,391 @@ function initBioluminescentSea() {
             this.x = Math.random() * w;
             this.y = Math.random() * h;
 
-            // Slow, steady cruising speed. Expressed in pixels/second.
-            this.speed =
-                (30 + Math.random() * 8) *
-                (0.98 - (scale - 1) * 0.06);
+            // Each fish has its own quiet "personality".
+            this.cruiseSpeed =
+                (28 + Math.random() * 7) *
+                (1.03 - (scale - 1) * 0.07);
+
+            this.speed = this.cruiseSpeed;
+            this.speedTarget = this.cruiseSpeed;
 
             this.angle = Math.random() * TAU;
-            this.targetAngle = this.angle;
-
-            // Course changes happen slowly and are smoothed by turnVelocity.
-            this.turnTimer = 2.5 + Math.random() * 4.0;
             this.turnVelocity = 0;
+            this.turnTarget = 0;
 
-            // Body-wave parameters. Each fish gets a slightly different rhythm.
+            // Irregular wandering is made from slowly changing targets,
+            // rather than frame-to-frame random steering.
+            this.wanderTarget = 0;
+            this.wander = 0;
+            this.behaviorTimer = 1.8 + Math.random() * 3.6;
+
+            // Occasional small propulsion accents.
+            this.burst = 0;
+            this.burstTarget = 0;
+            this.burstTimer = 3.0 + Math.random() * 7.0;
+
+            // Gait.
             this.swimPhase = Math.random() * TAU;
-            this.swimRate = 2.15 + Math.random() * 0.30;
+            this.swimRate = 1.90 + Math.random() * 0.26;
+            this.swimRateTarget = this.swimRate;
 
-            // Phase delay from head to tail.
-            this.phaseLag = 0.39 + Math.random() * 0.035;
+            this.phaseLag = 0.30 + Math.random() * 0.035;
 
-            // Main body curvature and very small secondary harmonic.
-            this.bodyBend = 0.28 + Math.random() * 0.055;
-            this.secondaryBend = 0.025 + Math.random() * 0.02;
-            this.wavePhaseOffset = Math.random() * TAU;
+            this.bodyBend = 0.24 + Math.random() * 0.045;
+            this.bodyBendTarget = this.bodyBend;
 
-            this.numVertebrae = 12;
-            this.segDist = 4.8 * scale;
+            this.harmonic = 0.022 + Math.random() * 0.020;
+            this.asymmetry =
+                (Math.random() - 0.5) *
+                0.045;
 
-            // The caudal fin attaches at the caudal base, just before
-            // the final terminal spine anchor.
+            this.waveOffset = Math.random() * TAU;
+            this.waveOffset2 = Math.random() * TAU;
+
+            // A slow, non-repeating gait drift.
+            this.gaitDrift = Math.random() * TAU;
+            this.gaitDriftRate =
+                0.16 + Math.random() * 0.07;
+
+            // More spine stations produce a smoother anatomical curve.
+            this.numVertebrae = 16;
+            this.segDist = 3.75 * scale;
             this.tailBaseIndex = this.numVertebrae - 2;
 
-            // Proportional anatomical half-widths along the body,
-            // from the snout to the end of the caudal peduncle.
             this.bodyWidths = [
-                3.8 * scale,   // 0: snout
-                6.5 * scale,   // 1: head / eyes
-                10.2 * scale,  // 2: pectoral girdle
-                11.5 * scale,  // 3: widest point
-                11.0 * scale,  // 4: upper abdomen
-                9.8 * scale,   // 5: abdomen
-                8.2 * scale,   // 6: pelvic area
-                6.6 * scale,   // 7: lower body
-                5.0 * scale,   // 8: pre-tail
-                3.6 * scale,   // 9: tail peduncle
-                2.4 * scale,   // 10: caudal base
-                0.9 * scale    // 11: short terminal anchor
+                3.6 * scale,
+                5.3 * scale,
+                8.4 * scale,
+                10.4 * scale,
+                11.2 * scale,
+                11.4 * scale,
+                10.9 * scale,
+                9.8 * scale,
+                8.5 * scale,
+                7.1 * scale,
+                5.9 * scale,
+                4.8 * scale,
+                3.8 * scale,
+                3.0 * scale,
+                2.25 * scale,
+                0.85 * scale
             ];
 
             this.spine = [];
             this.buildSpine();
 
-            // Wake samples are time based rather than frame based.
-            this.wakeLeft = [];
-            this.wakeCenter = [];
-            this.wakeRight = [];
+            // Flowing wake lanes. Five lanes read as a soft water trail,
+            // rather than three rigid glowing ropes.
+            this.wakeLanes = [-1.0, -0.5, 0, 0.5, 1.0];
+            this.wakeParticles = [];
             this.wakeClock = 0;
-            this.maxWakeAge = 2.2;
+            this.maxWakeAge = 2.7;
         }
 
         buildSpine() {
             this.spine.length = this.numVertebrae;
 
-            // Segment 0 is anchored to the fish head.
-            // Every following segment is reconstructed from a local tangent,
-            // so lengths stay stable and the curve cannot accumulate kinks.
             this.spine[0] = {
                 x: this.x,
                 y: this.y
             };
 
+            // Slow gait modulation changes the body stroke over many cycles.
+            const gaitNoise =
+                Math.sin(this.gaitDrift) * 0.018 +
+                Math.sin(this.gaitDrift * 0.43 + this.waveOffset) * 0.012;
+
+            const bendAmount =
+                clamp(
+                    this.bodyBend +
+                    gaitNoise,
+                    0.16,
+                    0.33
+                );
+
             for (let i = 1; i < this.numVertebrae; i++) {
-                const progress = i / (this.numVertebrae - 1);
-                const waveGain = Math.pow(progress, 1.72);
+                const p = i / (this.numVertebrae - 1);
 
-                // Main travelling lateral wave.
-                // Head stays almost still while the tail becomes flexible.
+                // Head remains comparatively rigid; the caudal half carries
+                // most of the bending.
+                const gain =
+                    Math.pow(
+                        smoothstep(0.02, 0.95, p),
+                        1.45
+                    );
+
+                // Travelling wave.
+                const phase =
+                    this.swimPhase -
+                    i * this.phaseLag;
+
                 let bend =
-                    this.bodyBend *
-                    waveGain *
-                    Math.sin(
-                        this.swimPhase -
-                        i * this.phaseLag
-                    );
+                    bendAmount *
+                    gain *
+                    Math.sin(phase);
 
-                // Tiny secondary harmonic prevents an overly perfect
-                // computer-generated sine-wave appearance.
+                // Weak second harmonic breaks the mathematically perfect wave.
                 bend +=
-                    this.secondaryBend *
-                    waveGain *
+                    this.harmonic *
+                    Math.pow(p, 1.9) *
                     Math.sin(
-                        this.swimPhase * 1.93 -
-                        i * (this.phaseLag * 1.82) +
-                        this.wavePhaseOffset
+                        phase * 1.91 -
+                        i * 0.23 +
+                        this.waveOffset
                     );
 
-                // The rear of the fish follows the head's steering with
-                // a natural delay instead of rotating all at once.
+                // Very low-frequency asymmetry makes each side of a stroke
+                // slightly different without looking jittery.
+                bend +=
+                    this.asymmetry *
+                    Math.pow(p, 1.65) *
+                    Math.sin(
+                        this.swimPhase * 0.46 +
+                        i * 0.19 +
+                        this.waveOffset2
+                    );
+
+                // The tail follows a turn after the head does.
                 const bodyTravelTime =
                     (i * this.segDist) /
                     Math.max(this.speed, 1);
 
-                const steeringLag = clamp(
-                    this.turnVelocity *
+                const steeringLag =
+                    clamp(
+                        this.turnVelocity *
                         bodyTravelTime *
-                        0.78,
-                    -0.46,
-                    0.46
-                );
+                        0.92,
+                        -0.50,
+                        0.50
+                    );
+
+                // During a brief propulsion burst the caudal half bends
+                // a little more, while the head remains calm.
+                const burstBend =
+                    this.burst *
+                    0.045 *
+                    Math.pow(p, 2.1) *
+                    Math.sin(
+                        phase - 0.75
+                    );
 
                 const localAngle =
                     this.angle +
-                    bend -
+                    bend +
+                    burstBend -
                     steeringLag;
 
                 this.spine[i] = {
                     x:
                         this.spine[i - 1].x -
                         Math.cos(localAngle) *
-                            this.segDist,
+                        this.segDist,
 
                     y:
                         this.spine[i - 1].y -
                         Math.sin(localAngle) *
-                            this.segDist
+                        this.segDist
                 };
             }
+        }
+
+        chooseBehavior() {
+            // Wander target stays small enough that fish remain graceful.
+            this.wanderTarget =
+                clamp(
+                    this.wanderTarget +
+                    (Math.random() - 0.5) * 0.28,
+                    -0.34,
+                    0.34
+                );
+
+            this.speedTarget =
+                this.cruiseSpeed *
+                (0.93 + Math.random() * 0.12);
+
+            this.swimRateTarget =
+                1.84 + Math.random() * 0.34;
+
+            this.bodyBendTarget =
+                0.215 + Math.random() * 0.075;
+
+            this.behaviorTimer =
+                1.6 + Math.random() * 4.8;
+        }
+
+        chooseBurst() {
+            // Bursts are infrequent and short. Most frames remain relaxed.
+            if (Math.random() < 0.28) {
+                this.burstTarget =
+                    0.50 + Math.random() * 0.50;
+
+                this.burstTimer =
+                    0.35 + Math.random() * 0.60;
+            } else {
+                this.burstTarget = 0;
+                this.burstTimer =
+                    3.5 + Math.random() * 8.0;
+            }
+        }
+
+        updateBehavior(dt) {
+            this.behaviorTimer -= dt;
+
+            if (this.behaviorTimer <= 0) {
+                this.chooseBehavior();
+            }
+
+            this.burstTimer -= dt;
+
+            if (this.burstTimer <= 0) {
+                this.chooseBurst();
+            }
+
+            this.wander =
+                smoothToward(
+                    this.wander,
+                    this.wanderTarget,
+                    0.55,
+                    dt
+                );
+
+            this.speed =
+                smoothToward(
+                    this.speed,
+                    this.speedTarget *
+                    (1 + 0.085 * this.burst),
+                    0.70,
+                    dt
+                );
+
+            this.swimRate =
+                smoothToward(
+                    this.swimRate,
+                    this.swimRateTarget +
+                    0.16 * this.burst,
+                    0.50,
+                    dt
+                );
+
+            this.bodyBend =
+                smoothToward(
+                    this.bodyBend,
+                    this.bodyBendTarget +
+                    0.045 * this.burst,
+                    0.45,
+                    dt
+                );
+
+            this.burst =
+                smoothToward(
+                    this.burst,
+                    this.burstTarget,
+                    3.2,
+                    dt
+                );
+
+            this.gaitDrift +=
+                this.gaitDriftRate * dt;
+
+            // Turn command is composed of a slow wander plus a tiny,
+            // filtered sinusoidal drift. This avoids mechanical arcs.
+            const drift =
+                0.035 *
+                Math.sin(
+                    this.gaitDrift +
+                    this.waveOffset
+                ) +
+                0.018 *
+                Math.sin(
+                    this.gaitDrift * 0.47 +
+                    this.waveOffset2
+                );
+
+            const desiredTurn =
+                clamp(
+                    this.wander + drift,
+                    -0.39,
+                    0.39
+                );
+
+            this.turnTarget =
+                smoothToward(
+                    this.turnTarget,
+                    desiredTurn,
+                    1.0,
+                    dt
+                );
+
+            this.turnVelocity =
+                smoothToward(
+                    this.turnVelocity,
+                    this.turnTarget,
+                    1.7,
+                    dt
+                );
+
+            this.turnVelocity =
+                clamp(
+                    this.turnVelocity,
+                    -0.42,
+                    0.42
+                );
         }
 
         update(w, h, dt) {
             this.w = w;
             this.h = h;
 
-            this.swimPhase += this.swimRate * dt;
+            this.updateBehavior(dt);
 
-            // Gentle, infrequent course changes.
-            this.turnTimer -= dt;
+            this.swimPhase +=
+                this.swimRate * dt;
 
-            if (this.turnTimer <= 0) {
-                const turnAmount =
-                    (Math.random() - 0.5) * 0.9;
-
-                this.targetAngle =
-                    this.angle + turnAmount;
-
-                // Avoid obvious repetitive steering.
-                this.turnTimer =
-                    3.0 +
-                    Math.random() * 5.0;
-            }
-
-            const desiredTurnVelocity = clamp(
-                angleDifference(
-                    this.targetAngle,
-                    this.angle
-                ) * 0.72,
-                -0.50,
-                0.50
-            );
-
-            // Smooth angular acceleration and deceleration.
-            this.turnVelocity =
-                smoothToward(
-                    this.turnVelocity,
-                    desiredTurnVelocity,
-                    2.6,
-                    dt
-                );
+            // Move the head. Propulsion is strongest around the middle of
+            // the stroke and intentionally mild overall.
+            const propulsion =
+                1 +
+                0.018 *
+                Math.sin(
+                    this.swimPhase - 1.15
+                ) +
+                0.022 * this.burst;
 
             this.angle +=
                 this.turnVelocity * dt;
 
-            // Subtle propulsion pulse.
-            // It is intentionally tiny so the fish doesn't bob or jerk.
-            const propulsionPulse =
-                1 +
-                0.025 *
-                    Math.sin(
-                        this.swimPhase - 0.9
-                    ) *
-                    Math.sin(
-                        this.swimPhase - 0.9
-                    );
-
             this.x +=
                 Math.cos(this.angle) *
                 this.speed *
-                propulsionPulse *
+                propulsion *
                 dt;
 
             this.y +=
                 Math.sin(this.angle) *
                 this.speed *
-                propulsionPulse *
+                propulsion *
                 dt;
 
-            // Screen wrapping.
-            const pad = 150;
+            // Screen wrapping without dragging a wake across the entire page.
+            const pad = 170;
 
             let wrapped = false;
             let shiftX = 0;
             let shiftY = 0;
 
             if (this.x < -pad) {
-                shiftX =
-                    w +
-                    pad * 2;
-
+                shiftX = w + pad * 2;
                 wrapped = true;
             } else if (this.x > w + pad) {
-                shiftX =
-                    -(w + pad * 2);
-
+                shiftX = -(w + pad * 2);
                 wrapped = true;
             }
 
             if (this.y < -pad) {
-                shiftY =
-                    h +
-                    pad * 2;
-
+                shiftY = h + pad * 2;
                 wrapped = true;
             } else if (this.y > h + pad) {
-                shiftY =
-                    -(h + pad * 2);
-
+                shiftY = -(h + pad * 2);
                 wrapped = true;
             }
 
@@ -11874,105 +12043,15 @@ function initBioluminescentSea() {
                 this.x += shiftX;
                 this.y += shiftY;
 
-                this.wakeLeft.length = 0;
-                this.wakeCenter.length = 0;
-                this.wakeRight.length = 0;
+                this.wakeParticles.length = 0;
             }
 
-            // Rebuild the full body from the head using the travelling wave.
             this.buildSpine();
-
-            // Sample wake at a stable time interval so different refresh
-            // rates do not change the visual density of the wake.
-            this.wakeClock += dt;
-
-            while (this.wakeClock >= 0.045) {
-                this.wakeClock -= 0.045;
-
-                const tail =
-                    this.spine[
-                        this.spine.length - 1
-                    ];
-
-                const preTail =
-                    this.spine[
-                        this.spine.length - 2
-                    ];
-
-                const tailAngle =
-                    Math.atan2(
-                        tail.y - preTail.y,
-                        tail.x - preTail.x
-                    );
-
-                const perpX =
-                    -Math.sin(tailAngle);
-
-                const perpY =
-                    Math.cos(tailAngle);
-
-                this.wakeCenter.unshift({
-                    x: tail.x,
-                    y: tail.y,
-                    age: 0
-                });
-
-                this.wakeLeft.unshift({
-                    x:
-                        tail.x +
-                        perpX *
-                            3.5 *
-                            this.scale,
-
-                    y:
-                        tail.y +
-                        perpY *
-                            3.5 *
-                            this.scale,
-
-                    age: 0
-                });
-
-                this.wakeRight.unshift({
-                    x:
-                        tail.x -
-                        perpX *
-                            3.5 *
-                            this.scale,
-
-                    y:
-                        tail.y -
-                        perpY *
-                            3.5 *
-                            this.scale,
-
-                    age: 0
-                });
-            }
-
-            const ageWake = (stream) => {
-                for (const point of stream) {
-                    point.age += dt;
-                }
-
-                while (
-                    stream.length &&
-                    stream[
-                        stream.length - 1
-                    ].age > this.maxWakeAge
-                ) {
-                    stream.pop();
-                }
-            };
-
-            ageWake(this.wakeLeft);
-            ageWake(this.wakeCenter);
-            ageWake(this.wakeRight);
+            this.updateWake(dt);
         }
 
         getBodyAngle(index) {
-            const last =
-                this.numVertebrae - 1;
+            const last = this.numVertebrae - 1;
 
             const prev =
                 this.spine[
@@ -11990,13 +12069,385 @@ function initBioluminescentSea() {
             );
         }
 
+        spawnWakeParticle(lane) {
+            const tailIndex =
+                this.spine.length - 1;
+
+            const tail =
+                this.spine[tailIndex];
+
+            const previous =
+                this.spine[tailIndex - 1];
+
+            // The tail-to-body tangent is the water's forward reference.
+            // Wake advection below travels in the opposite direction, away
+            // from the fish rather than back toward its body.
+            const heading =
+                Math.atan2(
+                    previous.y - tail.y,
+                    previous.x - tail.x
+                );
+
+            const normalX =
+                -Math.sin(heading);
+
+            const normalY =
+                Math.cos(heading);
+
+            // A lane starts close to the tail, then the current evolves
+            // naturally in the water.
+            const initialSpread =
+                lane *
+                (3.2 +
+                Math.abs(lane) *
+                2.5) *
+                this.scale;
+
+            this.wakeParticles.push({
+                x:
+                    tail.x +
+                    normalX *
+                    initialSpread,
+
+                y:
+                    tail.y +
+                    normalY *
+                    initialSpread,
+
+                heading:
+                    heading +
+                    lane *
+                    0.025,
+
+                lane,
+                age: 0,
+
+                // Each strand gets its own quiet phase so the wake never
+                // looks like five identical copies of one line.
+                phase:
+                    Math.random() * TAU,
+
+                energy:
+                    0.82 +
+                    Math.random() * 0.18
+            });
+        }
+
+        updateWake(dt) {
+            this.wakeClock += dt;
+
+            const wakeInterval = 0.048;
+
+            while (this.wakeClock >= wakeInterval) {
+                this.wakeClock -= wakeInterval;
+
+                for (const lane of this.wakeLanes) {
+                    this.spawnWakeParticle(
+                        lane
+                    );
+                }
+            }
+
+            for (const particle of this.wakeParticles) {
+                particle.age += dt;
+
+                const t =
+                    clamp(
+                        particle.age /
+                        this.maxWakeAge,
+                        0,
+                        1
+                    );
+
+                const spread =
+                    Math.pow(t, 1.28);
+
+                // Wake drifts backward relative to the fish.
+                // It slows and disperses with age.
+                const reverseSpeed =
+                    this.speed *
+                    (0.19 +
+                    0.10 * (1 - t));
+
+                // Slowly curving flow field.
+                const curl =
+                    (
+                        0.15 +
+                        0.52 * spread
+                    ) *
+                    Math.sin(
+                        particle.phase +
+                        particle.age * 1.55 +
+                        particle.lane * 1.7
+                    );
+
+                const normalX =
+                    -Math.sin(
+                        particle.heading
+                    );
+
+                const normalY =
+                    Math.cos(
+                        particle.heading
+                    );
+
+                particle.heading +=
+                    curl *
+                    0.48 *
+                    dt;
+
+                const forwardX =
+                    Math.cos(
+                        particle.heading
+                    );
+
+                const forwardY =
+                    Math.sin(
+                        particle.heading
+                    );
+
+                // Persistent lane separation plus growing lateral diffusion.
+                const lateralFlow =
+                    (
+                        particle.lane *
+                        2.6 *
+                        this.scale +
+                        Math.sin(
+                            particle.phase +
+                            particle.age * 1.9
+                        ) *
+                        (1.0 +
+                        7.0 * spread) *
+                        this.scale
+                    );
+
+                particle.x +=
+                    -forwardX *
+                    reverseSpeed *
+                    dt +
+                    normalX *
+                    lateralFlow *
+                    0.42 *
+                    dt;
+
+                particle.y +=
+                    -forwardY *
+                    reverseSpeed *
+                    dt +
+                    normalY *
+                    lateralFlow *
+                    0.42 *
+                    dt;
+
+                particle.energy =
+                    (
+                        1 - t
+                    ) *
+                    (
+                        0.82 +
+                        0.18 *
+                        Math.cos(
+                            particle.age *
+                            1.8 +
+                            particle.phase
+                        )
+                    );
+            }
+
+            this.wakeParticles =
+                this.wakeParticles.filter(
+                    particle =>
+                        particle.age <
+                        this.maxWakeAge
+                );
+        }
+
+        drawWake(ctx) {
+            if (this.wakeParticles.length < 8) {
+                return;
+            }
+
+            // One stream per lane. Particles are already maintained
+            // in insertion order, so no per-frame sorting is necessary.
+            for (const lane of this.wakeLanes) {
+                const stream =
+                    this.wakeParticles
+                        .filter(
+                            p =>
+                                p.lane === lane
+                        );
+
+                if (stream.length < 2) {
+                    continue;
+                }
+
+                // Older wake is farther away and more diffuse.
+                ctx.beginPath();
+
+                let started = false;
+
+                for (let i = 0; i < stream.length; i++) {
+                    const p = stream[i];
+
+                    const fade =
+                        clamp(
+                            1 -
+                            p.age /
+                            this.maxWakeAge,
+                            0,
+                            1
+                        );
+
+                    const x = p.x;
+                    const y = p.y;
+
+                    if (!started) {
+                        ctx.moveTo(x, y);
+                        started = true;
+                    } else {
+                        const previous =
+                            stream[i - 1];
+
+                        const midX =
+                            (previous.x + x) *
+                            0.5;
+
+                        const midY =
+                            (previous.y + y) *
+                            0.5;
+
+                        ctx.quadraticCurveTo(
+                            previous.x,
+                            previous.y,
+                            midX,
+                            midY
+                        );
+                    }
+
+                    // Stop wildly displaced numerical outliers.
+                    if (
+                        i > 0 &&
+                        Math.hypot(
+                            x - stream[i - 1].x,
+                            y - stream[i - 1].y
+                        ) > 38
+                    ) {
+                        break;
+                    }
+
+                    if (fade < 0.02) {
+                        break;
+                    }
+                }
+
+                const newest =
+                    stream[stream.length - 1];
+
+                const laneStrength =
+                    lane === 0
+                        ? 1
+                        : 0.55;
+
+                const fade =
+                    newest
+                        ? clamp(
+                            1 -
+                            newest.age /
+                            this.maxWakeAge,
+                            0,
+                            1
+                        )
+                        : 0;
+
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+
+                // Broad diffuse wash.
+                ctx.strokeStyle =
+                    'rgba(0, 240, 255, ' +
+                    (
+                        0.065 *
+                        laneStrength *
+                        fade
+                    ) +
+                    ')';
+
+                ctx.lineWidth =
+                    (
+                        5.0 +
+                        10.0 *
+                        (1 - fade)
+                    ) *
+                    this.scale *
+                    (lane === 0
+                        ? 0.95
+                        : 0.72);
+
+                ctx.stroke();
+
+                // Thin glowing core that disappears faster than the wash.
+                ctx.beginPath();
+
+                started = false;
+
+                for (let i = 0; i < stream.length; i++) {
+                    const p = stream[i];
+
+                    if (!started) {
+                        ctx.moveTo(
+                            p.x,
+                            p.y
+                        );
+                        started = true;
+                    } else {
+                        const previous =
+                            stream[i - 1];
+
+                        const midX =
+                            (previous.x + p.x) *
+                            0.5;
+
+                        const midY =
+                            (previous.y + p.y) *
+                            0.5;
+
+                        ctx.quadraticCurveTo(
+                            previous.x,
+                            previous.y,
+                            midX,
+                            midY
+                        );
+                    }
+                }
+
+                ctx.strokeStyle =
+                    'rgba(56, 189, 248, ' +
+                    (
+                        0.20 *
+                        laneStrength *
+                        fade *
+                        fade
+                    ) +
+                    ')';
+
+                ctx.lineWidth =
+                    0.82 *
+                    this.scale *
+                    (lane === 0
+                        ? 1
+                        : 0.75);
+
+                ctx.stroke();
+            }
+        }
+
         getTailGeometry() {
             const root =
                 this.spine[
                     this.tailBaseIndex
                 ];
 
-            const prev =
+            const previous =
                 this.spine[
                     this.tailBaseIndex - 1
                 ];
@@ -12008,8 +12459,8 @@ function initBioluminescentSea() {
 
             const tailAngle =
                 Math.atan2(
-                    next.y - prev.y,
-                    next.x - prev.x
+                    next.y - previous.y,
+                    next.x - previous.x
                 );
 
             const forwardX =
@@ -12024,73 +12475,89 @@ function initBioluminescentSea() {
             const sideY =
                 forwardX;
 
-            const tailLen =
-                30 *
+            const tailLength =
+                31 *
                 this.scale;
 
             const tailSpread =
-                14.5 *
+                15.5 *
                 this.scale;
 
-            // Nine membrane anchors let the tail flex progressively
-            // instead of rotating as one solid shape.
             const points = [];
 
-            for (let i = 0; i < 9; i++) {
+            for (let i = 0; i < 15; i++) {
                 const u =
                     -1 +
-                    (i / 8) * 2;
+                    (i / 14) * 2;
 
-                // Shallow center notch creates two soft tail lobes.
+                const absU =
+                    Math.abs(u);
+
+                // Central notch plus gently tapered upper/lower edges.
                 const radial =
-                    tailLen *
+                    tailLength *
                     (
-                        0.86 +
-                        0.14 *
-                            Math.pow(
-                                Math.abs(u),
-                                1.35
-                            )
+                        0.79 +
+                        0.21 *
+                        Math.pow(
+                            absU,
+                            1.35
+                        )
                     );
 
                 const lateral =
                     u *
                     tailSpread *
                     (
-                        0.96 -
-                        0.07 *
-                            (1 - u * u)
+                        0.92 +
+                        0.08 *
+                        Math.pow(
+                            absU,
+                            0.7
+                        )
                     );
 
-                // Flex gets stronger toward the free edge and lags behind
-                // the body wave, which is the key to the natural "follow".
                 const edgeWeight =
-                    0.30 +
-                    0.70 *
-                        Math.pow(
-                            Math.abs(u),
-                            0.85
-                        );
+                    0.26 +
+                    0.74 *
+                    Math.pow(
+                        absU,
+                        0.9
+                    );
 
+                // Fin membrane lags the body and folds slightly more
+                // at the free edges.
                 let flex =
-                    0.15 *
+                    (
+                        0.105 +
+                        0.06 * this.burst
+                    ) *
                     edgeWeight *
                     Math.sin(
                         this.swimPhase -
-                        2.55 -
-                        0.24 *
-                            Math.abs(u) +
-                        u * 0.12
+                        2.25 -
+                        absU * 0.28
                     );
 
-                // Very small secondary flutter.
                 flex +=
-                    0.028 *
+                    0.026 *
                     edgeWeight *
                     Math.sin(
-                        this.swimPhase * 2.05 +
-                        u * 1.65 +
-                        0.8
+                        this.swimPhase *
+                        2.03 +
+                        u * 2.3 +
+                        this.waveOffset
+                    );
+
+                // Different parts of the two lobes are very slightly
+                // asynchronous.
+                flex +=
+                    this.asymmetry *
+                    0.55 *
+                    Math.sin(
+                        this.swimPhase * 0.76 +
+                        u * 1.4 +
+                        this.waveOffset2
                     );
 
                 const cosFlex =
@@ -12118,7 +12585,8 @@ function initBioluminescentSea() {
                         localX * sinFlex +
                         localY * cosFlex,
 
-                    u
+                    u,
+                    edgeWeight
                 });
             }
 
@@ -12130,162 +12598,9 @@ function initBioluminescentSea() {
                 sideX,
                 sideY,
                 points,
-                tailLen,
+                tailLength,
                 tailSpread
             };
-        }
-
-        drawWake(
-            ctx,
-            stream,
-            alphaFactor,
-            widthFactor
-        ) {
-            if (stream.length < 3) return;
-
-            ctx.beginPath();
-
-            ctx.moveTo(
-                stream[0].x,
-                stream[0].y
-            );
-
-            for (
-                let i = 1;
-                i < stream.length - 1;
-                i++
-            ) {
-                const point = stream[i];
-                const next = stream[i + 1];
-
-                if (
-                    Math.hypot(
-                        point.x - next.x,
-                        point.y - next.y
-                    ) > 55
-                ) {
-                    break;
-                }
-
-                const midX =
-                    (point.x + next.x) *
-                    0.5;
-
-                const midY =
-                    (point.y + next.y) *
-                    0.5;
-
-                ctx.quadraticCurveTo(
-                    point.x,
-                    point.y,
-                    midX,
-                    midY
-                );
-            }
-
-            // Fade according to the age of the oldest visible part.
-            const oldestAge =
-                stream[
-                    stream.length - 1
-                ].age;
-
-            const ageFade =
-                0.35 +
-                0.65 *
-                    clamp(
-                        1 -
-                            oldestAge /
-                                this.maxWakeAge,
-                        0,
-                        1
-                    );
-
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            // Soft outer wake wash.
-            ctx.strokeStyle =
-                'rgba(0, 240, 255, ' +
-                0.18 *
-                    alphaFactor *
-                    ageFade +
-                ')';
-
-            ctx.lineWidth =
-                3.0 *
-                this.scale *
-                widthFactor;
-
-            ctx.stroke();
-
-            // Brighter core.
-            ctx.beginPath();
-
-            ctx.moveTo(
-                stream[0].x,
-                stream[0].y
-            );
-
-            for (
-                let i = 1;
-                i < stream.length - 1;
-                i++
-            ) {
-                const point = stream[i];
-                const next = stream[i + 1];
-
-                if (
-                    Math.hypot(
-                        point.x - next.x,
-                        point.y - next.y
-                    ) > 55
-                ) {
-                    break;
-                }
-
-                const midX =
-                    (point.x + next.x) *
-                    0.5;
-
-                const midY =
-                    (point.y + next.y) *
-                    0.5;
-
-                ctx.quadraticCurveTo(
-                    point.x,
-                    point.y,
-                    midX,
-                    midY
-                );
-            }
-
-            const newestAge =
-                stream[0].age;
-
-            const coreFade =
-                0.25 +
-                0.75 *
-                    clamp(
-                        1 -
-                            newestAge /
-                                this.maxWakeAge,
-                        0,
-                        1
-                    );
-
-            ctx.strokeStyle =
-                'rgba(56, 189, 248, ' +
-                0.50 *
-                    alphaFactor *
-                    coreFade +
-                ')';
-
-            ctx.lineWidth =
-                1.1 *
-                this.scale *
-                widthFactor;
-
-            ctx.stroke();
         }
 
         drawTail(ctx) {
@@ -12298,9 +12613,10 @@ function initBioluminescentSea() {
             const points =
                 geometry.points;
 
-            if (points.length < 3) return;
+            if (points.length < 3) {
+                return;
+            }
 
-            // Flexible membrane boundary.
             ctx.beginPath();
 
             ctx.moveTo(
@@ -12308,24 +12624,15 @@ function initBioluminescentSea() {
                 root.y
             );
 
-            for (
-                let i = 0;
-                i < points.length - 1;
-                i++
-            ) {
-                const current =
-                    points[i];
-
-                const next =
-                    points[i + 1];
+            for (let i = 0; i < points.length - 1; i++) {
+                const current = points[i];
+                const next = points[i + 1];
 
                 const midX =
-                    (current.x + next.x) *
-                    0.5;
+                    (current.x + next.x) * 0.5;
 
                 const midY =
-                    (current.y + next.y) *
-                    0.5;
+                    (current.y + next.y) * 0.5;
 
                 ctx.quadraticCurveTo(
                     current.x,
@@ -12335,25 +12642,24 @@ function initBioluminescentSea() {
                 );
             }
 
+            const finalPoint =
+                points[points.length - 1];
+
             ctx.lineTo(
-                points[
-                    points.length - 1
-                ].x,
-                points[
-                    points.length - 1
-                ].y
+                finalPoint.x,
+                finalPoint.y
             );
 
-            // Curved return edge gives the membrane a soft veil-like shape.
+            // Curved lower edge returns to the root.
             const center =
-                points[4];
+                points[7];
 
             ctx.quadraticCurveTo(
-                center.x * 0.55 +
-                    root.x * 0.45,
+                center.x * 0.48 +
+                root.x * 0.52,
 
-                center.y * 0.55 +
-                    root.y * 0.45,
+                center.y * 0.48 +
+                root.y * 0.52,
 
                 root.x,
                 root.y
@@ -12362,69 +12668,62 @@ function initBioluminescentSea() {
             ctx.closePath();
 
             ctx.fillStyle =
-                'rgba(0, 240, 255, 0.20)';
+                'rgba(0, 240, 255, 0.18)';
 
             ctx.fill();
 
             ctx.strokeStyle =
-                'rgba(56, 189, 248, 0.72)';
+                'rgba(56, 189, 248, 0.68)';
 
             ctx.lineWidth =
-                1.15 *
+                1.05 *
                 this.scale;
 
             ctx.stroke();
 
-            // Individual tail rays follow their local membrane geometry.
-            for (
-                let index = 0;
-                index < points.length;
-                index++
-            ) {
-                const point =
-                    points[index];
+            // Fin rays now bow with the membrane instead of radiating
+            // as rigid straight spokes.
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
 
-                const inward =
-                    0.12 +
-                    0.06 *
-                        Math.abs(
-                            point.u
-                        );
+                const t =
+                    0.72 +
+                    0.12 *
+                    p.edgeWeight;
 
                 const endX =
                     root.x +
-                    (point.x - root.x) *
-                        (1 - inward);
+                    (p.x - root.x) *
+                    t;
 
                 const endY =
                     root.y +
-                    (point.y - root.y) *
-                        (1 - inward);
+                    (p.y - root.y) *
+                    t;
 
-                // Tiny variation prevents every ray from reading as
-                // a mathematically identical spoke.
-                const rayWave =
-                    1.8 *
-                    this.scale *
+                const bow =
                     Math.sin(
                         this.swimPhase -
-                        2.8 +
-                        index * 0.08
-                    );
+                        2.6 +
+                        i * 0.18
+                    ) *
+                    (0.8 +
+                    1.3 * p.edgeWeight) *
+                    this.scale;
 
                 const controlX =
                     root.x +
                     (endX - root.x) *
-                        0.55 -
+                    0.55 -
                     geometry.sideX *
-                        rayWave;
+                    bow;
 
                 const controlY =
                     root.y +
                     (endY - root.y) *
-                        0.55 -
+                    0.55 -
                     geometry.sideY *
-                        rayWave;
+                    bow;
 
                 ctx.beginPath();
 
@@ -12441,18 +12740,18 @@ function initBioluminescentSea() {
                 );
 
                 ctx.strokeStyle =
-                    'rgba(0, 240, 255, 0.30)';
+                    'rgba(0, 240, 255, 0.24)';
 
                 ctx.lineWidth =
-                    0.72 *
+                    0.62 *
                     this.scale;
 
                 ctx.stroke();
             }
 
-            // Central vane helps the two lobes read as one flexible tail.
+            // Fine central vane.
             const centerPoint =
-                points[4];
+                points[7];
 
             ctx.beginPath();
 
@@ -12463,31 +12762,31 @@ function initBioluminescentSea() {
 
             ctx.quadraticCurveTo(
                 root.x +
-                    geometry.forwardX *
-                        geometry.tailLen *
-                        0.55,
+                geometry.forwardX *
+                geometry.tailLength *
+                0.60,
 
                 root.y +
-                    geometry.forwardY *
-                        geometry.tailLen *
-                        0.55,
+                geometry.forwardY *
+                geometry.tailLength *
+                0.60,
 
                 centerPoint.x,
                 centerPoint.y
             );
 
             ctx.strokeStyle =
-                'rgba(56, 189, 248, 0.38)';
+                'rgba(56, 189, 248, 0.31)';
 
             ctx.lineWidth =
-                0.75 *
+                0.65 *
                 this.scale;
 
             ctx.stroke();
         }
 
         drawPectoralFins(ctx) {
-            const anchorIndex = 2;
+            const anchorIndex = 3;
 
             const anchor =
                 this.spine[
@@ -12500,7 +12799,7 @@ function initBioluminescentSea() {
                 );
 
             const finLength =
-                20 *
+                20.5 *
                 this.scale;
 
             for (
@@ -12508,67 +12807,72 @@ function initBioluminescentSea() {
                 side <= 1;
                 side += 2
             ) {
-                // Slightly independent strokes prevent perfect bilateral
-                // synchronization, while keeping both fins coordinated.
+                // Fins stabilize the fish with small, slow counter-motion.
+                const phaseOffset =
+                    side < 0 ? 0.35 : 1.05;
+
                 const stroke =
-                    0.14 *
+                    0.105 *
                     Math.sin(
                         this.swimPhase *
-                            0.72 +
-                        side * 1.0
+                        0.63 +
+                        phaseOffset
+                    ) +
+                    0.035 *
+                    Math.sin(
+                        this.swimPhase *
+                        1.18 +
+                        side * 0.5
                     );
 
                 const finAngle =
                     bodyAngle +
                     side *
-                        (Math.PI * 0.50) +
-                    side * 0.16 +
+                    (Math.PI * 0.51) +
+                    side * 0.12 +
                     stroke;
 
                 const tipX =
                     anchor.x +
                     Math.cos(finAngle) *
-                        finLength;
+                    finLength;
 
                 const tipY =
                     anchor.y +
                     Math.sin(finAngle) *
-                        finLength;
+                    finLength;
 
                 const controlX =
                     anchor.x +
                     Math.cos(
                         finAngle -
-                            side * 0.38
+                        side * 0.32
                     ) *
-                        (13 * this.scale);
+                    (13 *
+                    this.scale);
 
                 const controlY =
                     anchor.y +
                     Math.sin(
                         finAngle -
-                            side * 0.38
+                        side * 0.32
                     ) *
-                        (13 * this.scale);
+                    (13 *
+                    this.scale);
 
                 const rearX =
                     anchor.x -
-                    Math.cos(
-                        bodyAngle
-                    ) *
-                        (6.5 *
-                            this.scale);
+                    Math.cos(bodyAngle) *
+                    (6.0 *
+                    this.scale);
 
                 const rearY =
                     anchor.y -
-                    Math.sin(
-                        bodyAngle
-                    ) *
-                        (6.5 *
-                            this.scale);
+                    Math.sin(bodyAngle) *
+                    (6.0 *
+                    this.scale);
 
                 ctx.beginPath();
-
                 ctx.moveTo(
                     anchor.x,
                     anchor.y
@@ -12589,61 +12893,23 @@ function initBioluminescentSea() {
                 );
 
                 ctx.fillStyle =
-                    'rgba(0, 240, 255, 0.22)';
+                    'rgba(0, 240, 255, 0.20)';
 
                 ctx.fill();
 
                 ctx.strokeStyle =
-                    'rgba(56, 189, 248, 0.68)';
+                    'rgba(56, 189, 248, 0.63)';
 
                 ctx.lineWidth =
-                    1.05 *
+                    1.0 *
                     this.scale;
 
                 ctx.stroke();
-
-                // Quiet interior fin rays.
-                for (
-                    let ray = 1;
-                    ray <= 2;
-                    ray++
-                ) {
-                    const t =
-                        ray / 3;
-
-                    ctx.beginPath();
-
-                    ctx.moveTo(
-                        anchor.x,
-                        anchor.y
-                    );
-
-                    ctx.lineTo(
-                        anchor.x +
-                            (tipX -
-                                anchor.x) *
-                                t,
-
-                        anchor.y +
-                            (tipY -
-                                anchor.y) *
-                                t
-                    );
-
-                    ctx.strokeStyle =
-                        'rgba(0, 240, 255, 0.28)';
-
-                    ctx.lineWidth =
-                        0.65 *
-                        this.scale;
-
-                    ctx.stroke();
-                }
             }
         }
 
         drawPelvicFins(ctx) {
-            const anchorIndex = 6;
+            const anchorIndex = 7;
 
             const anchor =
                 this.spine[
@@ -12656,7 +12922,7 @@ function initBioluminescentSea() {
                 );
 
             const finLength =
-                11 *
+                10.5 *
                 this.scale;
 
             for (
@@ -12667,23 +12933,23 @@ function initBioluminescentSea() {
                 const finAngle =
                     bodyAngle +
                     side *
-                        (Math.PI * 0.72) +
-                    0.08 *
-                        Math.sin(
-                            this.swimPhase *
-                                0.65 +
-                            side * 0.8
-                        );
+                    (Math.PI * 0.72) +
+                    0.06 *
+                    Math.sin(
+                        this.swimPhase *
+                        0.58 +
+                        side
+                    );
 
                 const tipX =
                     anchor.x +
                     Math.cos(finAngle) *
-                        finLength;
+                    finLength;
 
                 const tipY =
                     anchor.y +
                     Math.sin(finAngle) *
-                        finLength;
+                    finLength;
 
                 ctx.beginPath();
 
@@ -12694,20 +12960,20 @@ function initBioluminescentSea() {
 
                 ctx.quadraticCurveTo(
                     anchor.x +
-                        Math.cos(
-                            finAngle -
-                                side * 0.30
-                        ) *
-                            (7 *
-                                this.scale),
+                    Math.cos(
+                        finAngle -
+                        side * 0.24
+                    ) *
+                    (6.5 *
+                    this.scale),
 
                     anchor.y +
-                        Math.sin(
-                            finAngle -
-                                side * 0.30
-                        ) *
-                            (7 *
-                                this.scale),
+                    Math.sin(
+                        finAngle -
+                        side * 0.24
+                    ) *
+                    (6.5 *
+                    this.scale),
 
                     tipX,
                     tipY
@@ -12715,32 +12981,28 @@ function initBioluminescentSea() {
 
                 ctx.lineTo(
                     anchor.x -
-                        Math.cos(
-                            bodyAngle
-                        ) *
-                            (4.5 *
-                                this.scale),
+                    Math.cos(bodyAngle) *
+                    (4.1 *
+                    this.scale),
 
                     anchor.y -
-                        Math.sin(
-                            bodyAngle
-                        ) *
-                            (4.5 *
-                                this.scale)
+                    Math.sin(bodyAngle) *
+                    (4.1 *
+                    this.scale)
                 );
 
                 ctx.closePath();
 
                 ctx.fillStyle =
-                    'rgba(0, 240, 255, 0.15)';
+                    'rgba(0, 240, 255, 0.13)';
 
                 ctx.fill();
 
                 ctx.strokeStyle =
-                    'rgba(56, 189, 248, 0.48)';
+                    'rgba(56, 189, 248, 0.44)';
 
                 ctx.lineWidth =
-                    0.82 *
+                    0.80 *
                     this.scale;
 
                 ctx.stroke();
@@ -12754,11 +13016,7 @@ function initBioluminescentSea() {
             const last =
                 this.numVertebrae - 1;
 
-            for (
-                let i = 0;
-                i < this.numVertebrae;
-                i++
-            ) {
+            for (let i = 0; i < this.numVertebrae; i++) {
                 let tx;
                 let ty;
 
@@ -12773,15 +13031,11 @@ function initBioluminescentSea() {
                 } else if (i === last) {
                     tx =
                         this.spine[last].x -
-                        this.spine[
-                            last - 1
-                        ].x;
+                        this.spine[last - 1].x;
 
                     ty =
                         this.spine[last].y -
-                        this.spine[
-                            last - 1
-                        ].y;
+                        this.spine[last - 1].y;
                 } else {
                     tx =
                         this.spine[i + 1].x -
@@ -12793,10 +13047,7 @@ function initBioluminescentSea() {
                 }
 
                 const length =
-                    Math.hypot(
-                        tx,
-                        ty
-                    ) || 1;
+                    Math.hypot(tx, ty) || 1;
 
                 const perpX =
                     -ty / length;
@@ -12804,31 +13055,27 @@ function initBioluminescentSea() {
                 const perpY =
                     tx / length;
 
-                const halfWidth =
+                const width =
                     this.bodyWidths[i];
 
                 leftSide.push({
                     x:
                         this.spine[i].x +
-                        perpX *
-                            halfWidth,
+                        perpX * width,
 
                     y:
                         this.spine[i].y +
-                        perpY *
-                            halfWidth
+                        perpY * width
                 });
 
                 rightSide.push({
                     x:
                         this.spine[i].x -
-                        perpX *
-                            halfWidth,
+                        perpX * width,
 
                     y:
                         this.spine[i].y -
-                        perpY *
-                            halfWidth
+                        perpY * width
                 });
             }
 
@@ -12845,75 +13092,44 @@ function initBioluminescentSea() {
                 snout.y
             );
 
-            // Left flank.
-            for (
-                let i = 0;
-                i < leftSide.length - 1;
-                i++
-            ) {
-                const current =
-                    leftSide[i];
-
-                const next =
-                    leftSide[i + 1];
+            for (let i = 0; i < leftSide.length - 1; i++) {
+                const a = leftSide[i];
+                const b = leftSide[i + 1];
 
                 const midX =
-                    (current.x +
-                        next.x) *
-                    0.5;
+                    (a.x + b.x) * 0.5;
 
                 const midY =
-                    (current.y +
-                        next.y) *
-                    0.5;
+                    (a.y + b.y) * 0.5;
 
                 ctx.quadraticCurveTo(
-                    current.x,
-                    current.y,
+                    a.x,
+                    a.y,
                     midX,
                     midY
                 );
             }
 
             ctx.quadraticCurveTo(
-                leftSide[
-                    leftSide.length - 1
-                ].x,
-
-                leftSide[
-                    leftSide.length - 1
-                ].y,
-
+                leftSide[last].x,
+                leftSide[last].y,
                 tailAnchor.x,
                 tailAnchor.y
             );
 
-            // Right flank.
-            for (
-                let i =
-                    rightSide.length - 1;
-                i > 0;
-                i--
-            ) {
-                const current =
-                    rightSide[i];
-
-                const previous =
-                    rightSide[i - 1];
+            for (let i = rightSide.length - 1; i > 0; i--) {
+                const a = rightSide[i];
+                const b = rightSide[i - 1];
 
                 const midX =
-                    (current.x +
-                        previous.x) *
-                    0.5;
+                    (a.x + b.x) * 0.5;
 
                 const midY =
-                    (current.y +
-                        previous.y) *
-                    0.5;
+                    (a.y + b.y) * 0.5;
 
                 ctx.quadraticCurveTo(
-                    current.x,
-                    current.y,
+                    a.x,
+                    a.y,
                     midX,
                     midY
                 );
@@ -12928,7 +13144,6 @@ function initBioluminescentSea() {
 
             ctx.closePath();
 
-            // Midnight indigo-cyan body gradient.
             const gradient =
                 ctx.createLinearGradient(
                     this.spine[0].x,
@@ -12937,25 +13152,10 @@ function initBioluminescentSea() {
                     this.spine[last].y
                 );
 
-            gradient.addColorStop(
-                0,
-                '#061a2e'
-            );
-
-            gradient.addColorStop(
-                0.30,
-                '#0c2e4e'
-            );
-
-            gradient.addColorStop(
-                0.70,
-                '#072038'
-            );
-
-            gradient.addColorStop(
-                1,
-                '#030f1c'
-            );
+            gradient.addColorStop(0, '#061a2e');
+            gradient.addColorStop(0.3, '#0c2e4e');
+            gradient.addColorStop(0.7, '#072038');
+            gradient.addColorStop(1, '#030f1c');
 
             ctx.fillStyle =
                 gradient;
@@ -12963,17 +13163,16 @@ function initBioluminescentSea() {
             ctx.fill();
 
             ctx.strokeStyle =
-                'rgba(0, 240, 255, 0.74)';
+                'rgba(0, 240, 255, 0.72)';
 
             ctx.lineWidth =
-                1.35 *
+                1.30 *
                 this.scale;
 
             ctx.stroke();
         }
 
         drawMarkings(ctx) {
-            // Softer dorsal centerline.
             ctx.beginPath();
 
             ctx.moveTo(
@@ -12981,11 +13180,7 @@ function initBioluminescentSea() {
                 this.spine[1].y
             );
 
-            for (
-                let i = 2;
-                i <= 8;
-                i++
-            ) {
+            for (let i = 2; i <= 10; i++) {
                 ctx.lineTo(
                     this.spine[i].x,
                     this.spine[i].y
@@ -12993,67 +13188,47 @@ function initBioluminescentSea() {
             }
 
             ctx.strokeStyle =
-                'rgba(0, 240, 255, 0.44)';
+                'rgba(0, 240, 255, 0.40)';
 
             ctx.lineWidth =
-                1.45 *
+                1.25 *
                 this.scale;
 
             ctx.stroke();
 
-            const drawPatch = (
-                index,
-                radius,
-                alpha
-            ) => {
-                const point =
-                    this.spine[index];
+            const drawPatch =
+                (index, radius, alpha) => {
+                    const point =
+                        this.spine[index];
 
-                ctx.beginPath();
+                    ctx.beginPath();
 
-                ctx.arc(
-                    point.x,
-                    point.y,
-                    radius *
-                        this.scale,
-                    0,
-                    TAU
-                );
+                    ctx.arc(
+                        point.x,
+                        point.y,
+                        radius * this.scale,
+                        0,
+                        TAU
+                    );
 
-                ctx.fillStyle =
-                    'rgba(56, 189, 248, ' +
-                    alpha +
-                    ')';
+                    ctx.fillStyle =
+                        'rgba(56, 189, 248, ' +
+                        alpha +
+                        ')';
 
-                ctx.fill();
-            };
+                    ctx.fill();
+                };
 
-            drawPatch(
-                2,
-                5.4,
-                0.29
-            );
-
-            drawPatch(
-                4,
-                6.6,
-                0.32
-            );
-
-            drawPatch(
-                7,
-                4.4,
-                0.25
-            );
+            drawPatch(3, 5.0, 0.27);
+            drawPatch(5, 6.3, 0.30);
+            drawPatch(8, 4.2, 0.23);
         }
 
         drawEyes(ctx) {
             const eyeIndex = 1;
 
             const eyePoint =
-                this.spine[
-                    eyeIndex
-                ];
+                this.spine[eyeIndex];
 
             const dx =
                 this.spine[0].x -
@@ -13063,17 +13238,11 @@ function initBioluminescentSea() {
                 this.spine[0].y -
                 this.spine[2].y;
 
-            const length =
-                Math.hypot(
-                    dx,
-                    dy
-                ) || 1;
+            const len =
+                Math.hypot(dx, dy) || 1;
 
-            const forwardX =
-                dx / length;
-
-            const forwardY =
-                dy / length;
+            const forwardX = dx / len;
+            const forwardY = dy / len;
 
             const perpX =
                 -forwardY;
@@ -13081,10 +13250,9 @@ function initBioluminescentSea() {
             const perpY =
                 forwardX;
 
-            const eyeDistance =
-                this.bodyWidths[
-                    eyeIndex
-                ] * 0.84;
+            const distance =
+                this.bodyWidths[eyeIndex] *
+                0.84;
 
             for (
                 let side = -1;
@@ -13094,46 +13262,44 @@ function initBioluminescentSea() {
                 const eyeX =
                     eyePoint.x +
                     perpX *
-                        side *
-                        eyeDistance +
+                    side *
+                    distance +
                     forwardX *
-                        (1.4 *
-                            this.scale);
+                    (1.25 *
+                    this.scale);
 
                 const eyeY =
                     eyePoint.y +
                     perpY *
-                        side *
-                        eyeDistance +
+                    side *
+                    distance +
                     forwardY *
-                        (1.4 *
-                            this.scale);
+                    (1.25 *
+                    this.scale);
 
-                // Ambient halo.
                 ctx.beginPath();
 
                 ctx.arc(
                     eyeX,
                     eyeY,
                     4.7 *
-                        this.scale,
+                    this.scale,
                     0,
                     TAU
                 );
 
                 ctx.fillStyle =
-                    'rgba(255, 42, 95, 0.24)';
+                    'rgba(255, 42, 95, 0.23)';
 
                 ctx.fill();
 
-                // Ruby iris.
                 ctx.beginPath();
 
                 ctx.arc(
                     eyeX,
                     eyeY,
-                    2.45 *
-                        this.scale,
+                    2.4 *
+                    this.scale,
                     0,
                     TAU
                 );
@@ -13143,14 +13309,13 @@ function initBioluminescentSea() {
 
                 ctx.fill();
 
-                // Bright pupil.
                 ctx.beginPath();
 
                 ctx.arc(
                     eyeX,
                     eyeY,
-                    1.3 *
-                        this.scale,
+                    1.25 *
+                    this.scale,
                     0,
                     TAU
                 );
@@ -13160,20 +13325,19 @@ function initBioluminescentSea() {
 
                 ctx.fill();
 
-                // Tiny specular glint.
                 ctx.beginPath();
 
                 ctx.arc(
                     eyeX -
-                        0.42 *
-                            this.scale,
+                    0.4 *
+                    this.scale,
 
                     eyeY -
-                        0.42 *
-                            this.scale,
+                    0.4 *
+                    this.scale,
 
                     0.48 *
-                        this.scale,
+                    this.scale,
 
                     0,
                     TAU
@@ -13189,42 +13353,15 @@ function initBioluminescentSea() {
         draw(ctx) {
             ctx.save();
 
-            // 1. Wake behind the fish.
-            this.drawWake(
-                ctx,
-                this.wakeLeft,
-                0.72,
-                0.82
-            );
+            // Water disturbance sits behind the fish.
+            this.drawWake(ctx);
 
-            this.drawWake(
-                ctx,
-                this.wakeRight,
-                0.72,
-                0.82
-            );
-
-            this.drawWake(
-                ctx,
-                this.wakeCenter,
-                1.0,
-                1.08
-            );
-
-            // 2. Flexible caudal fin.
+            // Flexible fins and body.
             this.drawTail(ctx);
-
-            // 3. Secondary fins.
             this.drawPectoralFins(ctx);
             this.drawPelvicFins(ctx);
-
-            // 4. Body.
             this.drawBody(ctx);
-
-            // 5. Markings.
             this.drawMarkings(ctx);
-
-            // 6. Eyes.
             this.drawEyes(ctx);
 
             ctx.restore();
@@ -13232,62 +13369,25 @@ function initBioluminescentSea() {
     }
 
     const koiSchool = [
-        new TrueKoi(
-            width,
-            height,
-            1.3
-        ),
-
-        new TrueKoi(
-            width,
-            height,
-            1.15
-        ),
-
-        new TrueKoi(
-            width,
-            height,
-            1.0
-        ),
-
-        new TrueKoi(
-            width,
-            height,
-            0.9
-        ),
-
-        new TrueKoi(
-            width,
-            height,
-            0.8
-        ),
-
-        new TrueKoi(
-            width,
-            height,
-            1.05
-        )
+        new TrueKoi(width, height, 1.30),
+        new TrueKoi(width, height, 1.15),
+        new TrueKoi(width, height, 1.00),
+        new TrueKoi(width, height, 0.90),
+        new TrueKoi(width, height, 0.80),
+        new TrueKoi(width, height, 1.05)
     ];
 
-    let isRunning =
-        !document.hidden;
-
-    let lastTime =
-        performance.now();
+    let isRunning = !document.hidden;
+    let lastTime = performance.now();
 
     document.addEventListener(
         'visibilitychange',
         () => {
-            isRunning =
-                !document.hidden;
-
-            lastTime =
-                performance.now();
+            isRunning = !document.hidden;
+            lastTime = performance.now();
 
             if (isRunning) {
-                requestAnimationFrame(
-                    renderSea
-                );
+                requestAnimationFrame(renderSea);
             }
         }
     );
@@ -13295,11 +13395,11 @@ function initBioluminescentSea() {
     function renderSea(now) {
         if (!isRunning) return;
 
+        // Clamp giant gaps after sleeping / tab switching.
         const dt =
             Math.min(
                 Math.max(
-                    (now - lastTime) /
-                        1000,
+                    (now - lastTime) / 1000,
                     0
                 ),
                 0.033
@@ -13314,34 +13414,23 @@ function initBioluminescentSea() {
             height
         );
 
-        for (
-            let i = 0;
-            i < koiSchool.length;
-            i++
-        ) {
-            koiSchool[i].update(
+        for (const koi of koiSchool) {
+            koi.update(
                 width,
                 height,
                 dt
             );
 
-            koiSchool[i].draw(ctx);
+            koi.draw(ctx);
         }
 
-        requestAnimationFrame(
-            renderSea
-        );
+        requestAnimationFrame(renderSea);
     }
 
-    requestAnimationFrame(
-        renderSea
-    );
+    requestAnimationFrame(renderSea);
 }
 
-if (
-    document.readyState ===
-    'loading'
-) {
+if (document.readyState === 'loading') {
     document.addEventListener(
         'DOMContentLoaded',
         initBioluminescentSea
@@ -13349,7 +13438,6 @@ if (
 } else {
     initBioluminescentSea();
 }
-
 
 // Remove banner from current active thread (moderator action)
 async function removeCurrentThreadBanner() {
