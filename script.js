@@ -54,8 +54,17 @@ window.addEventListener('keydown', unlockAudioEngine, { passive: true });
 
 // --- ON-DEMAND PRIVACY MICROPHONE STREAM (ACTIVE ONLY DURING CALLS) ---
 async function getMicrophoneStream() {
+    const audioOpts = {
+        echoCancellation: Boolean(userAudioSettings.echoCancellation),
+        noiseSuppression: Boolean(userAudioSettings.noiseSuppression),
+        autoGainControl: Boolean(userAudioSettings.autoGainControl)
+    };
+    if (userAudioSettings.highFidelity) {
+        audioOpts.sampleRate = 48000;
+        audioOpts.channelCount = 2;
+    }
     return await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: audioOpts,
         video: false
     });
 }
@@ -688,10 +697,46 @@ if (tabNavSettings) {
 // --- SETTINGS SUB-TABS (PROFILE & PRIVACY) ---
 
 
+const tabBtnSettingsAudio = document.getElementById('tab-btn-settings-audio');
+const paneSettingsAudio = document.getElementById('pane-settings-audio');
+const micTestToggleBtn = document.getElementById('mic-test-toggle-btn');
+const micMeterFill = document.getElementById('mic-meter-fill');
+const audioOptEcho = document.getElementById('audio-opt-echo');
+const audioOptNoise = document.getElementById('audio-opt-noise');
+const audioOptGain = document.getElementById('audio-opt-gain');
+const audioOptHifi = document.getElementById('audio-opt-hifi');
+const audioOptDeafen = document.getElementById('audio-opt-deafen');
+
+let userAudioSettings = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    highFidelity: false,
+    deafen: false
+};
+
+function loadAudioSettings() {
+    try {
+        const saved = localStorage.getItem('tg_audio_settings');
+        if (saved) userAudioSettings = { ...userAudioSettings, ...JSON.parse(saved) };
+    } catch (e) {}
+    if (audioOptEcho) audioOptEcho.checked = userAudioSettings.echoCancellation;
+    if (audioOptNoise) audioOptNoise.checked = userAudioSettings.noiseSuppression;
+    if (audioOptGain) audioOptGain.checked = userAudioSettings.autoGainControl;
+    if (audioOptHifi) audioOptHifi.checked = userAudioSettings.highFidelity;
+    if (audioOptDeafen) audioOptDeafen.checked = userAudioSettings.deafen;
+}
+
+function saveAudioSettings() {
+    try {
+        localStorage.setItem('tg_audio_settings', JSON.stringify(userAudioSettings));
+    } catch (e) {}
+}
+
 function switchSettingsTab(tab) {
-    const tabs = ['profile', 'notifs', 'privacy'];
-    const panes = { profile: paneSettingsProfile, notifs: paneSettingsNotifs, privacy: paneSettingsPrivacy };
-    const buttons = { profile: tabBtnSettingsProfile, notifs: tabBtnSettingsNotifs, privacy: tabBtnSettingsPrivacy };
+    const tabs = ['profile', 'audio', 'notifs', 'privacy'];
+    const panes = { profile: paneSettingsProfile, audio: paneSettingsAudio, notifs: paneSettingsNotifs, privacy: paneSettingsPrivacy };
+    const buttons = { profile: tabBtnSettingsProfile, audio: tabBtnSettingsAudio, notifs: tabBtnSettingsNotifs, privacy: tabBtnSettingsPrivacy };
 
     tabs.forEach(t => {
         if (panes[t]) {
@@ -717,8 +762,80 @@ function switchSettingsTab(tab) {
 }
 
 safeAddListener(tabBtnSettingsProfile, 'click', () => switchSettingsTab('profile'));
+safeAddListener(tabBtnSettingsAudio, 'click', () => { switchSettingsTab('audio'); loadAudioSettings(); });
 safeAddListener(tabBtnSettingsNotifs, 'click', () => switchSettingsTab('notifs'));
 safeAddListener(tabBtnSettingsPrivacy, 'click', () => switchSettingsTab('privacy'));
+
+// Audio & Calling technical toggles listeners
+safeAddListener(audioOptEcho, 'change', () => { userAudioSettings.echoCancellation = audioOptEcho.checked; saveAudioSettings(); });
+safeAddListener(audioOptNoise, 'change', () => { userAudioSettings.noiseSuppression = audioOptNoise.checked; saveAudioSettings(); });
+safeAddListener(audioOptGain, 'change', () => { userAudioSettings.autoGainControl = audioOptGain.checked; saveAudioSettings(); });
+safeAddListener(audioOptHifi, 'change', () => { userAudioSettings.highFidelity = audioOptHifi.checked; saveAudioSettings(); });
+safeAddListener(audioOptDeafen, 'change', () => {
+    userAudioSettings.deafen = audioOptDeafen.checked;
+    saveAudioSettings();
+    if (remoteAudioEl) remoteAudioEl.muted = userAudioSettings.deafen;
+    showToast({
+        title: "Audio Setting",
+        message: userAudioSettings.deafen ? "Global deafen enabled (all incoming audio muted)." : "Global deafen disabled.",
+        type: userAudioSettings.deafen ? "info" : "success",
+        icon: userAudioSettings.deafen ? "🔇" : "🎧",
+        force: true
+    });
+});
+
+// Live Mic Meter Test
+let isTestingMic = false;
+let micTestStream = null;
+let micTestInterval = null;
+
+safeAddListener(micTestToggleBtn, 'click', async () => {
+    if (isTestingMic) {
+        // Stop Test
+        isTestingMic = false;
+        if (micTestInterval) clearInterval(micTestInterval);
+        if (micTestStream) {
+            try { micTestStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+            micTestStream = null;
+        }
+        if (micTestToggleBtn) {
+            micTestToggleBtn.textContent = "Start Test";
+            micTestToggleBtn.style.color = "#10b981";
+            micTestToggleBtn.style.borderColor = "#10b981";
+        }
+        if (micMeterFill) micMeterFill.style.width = "0%";
+    } else {
+        // Start Test
+        try {
+            micTestStream = await getMicrophoneStream();
+            isTestingMic = true;
+            if (micTestToggleBtn) {
+                micTestToggleBtn.textContent = "Stop Test";
+                micTestToggleBtn.style.color = "#ef4444";
+                micTestToggleBtn.style.borderColor = "#ef4444";
+            }
+            const ctx = getSharedAudioContext();
+            if (ctx) {
+                const src = ctx.createMediaStreamSource(micTestStream);
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                src.connect(analyser);
+                const dataArr = new Uint8Array(analyser.frequencyBinCount);
+                micTestInterval = setInterval(() => {
+                    if (!isTestingMic) return;
+                    analyser.getByteFrequencyData(dataArr);
+                    let sum = 0;
+                    for (let i = 0; i < dataArr.length; i++) sum += dataArr[i];
+                    const avg = sum / dataArr.length;
+                    const pct = Math.min(100, Math.round(avg * 2.8));
+                    if (micMeterFill) micMeterFill.style.width = pct + "%";
+                }, 60);
+            }
+        } catch (err) {
+            alert("Could not access microphone for test: " + err.message);
+        }
+    }
+});
 
 // Notification Toggle Listeners
 safeAddListener(notifMasterToggleChk, 'change', () => {
@@ -2926,6 +3043,16 @@ function updateThreadControlsUI() {
     }
 
 
+    // Voice Stage Count
+    const vCountBadge = document.getElementById('voice-stage-count');
+    if (vCountBadge) {
+        if (typeof getActiveVoiceStageCount === 'function') {
+            vCountBadge.textContent = getActiveVoiceStageCount(activeThread);
+        } else {
+            vCountBadge.textContent = '0';
+        }
+    }
+
     // Evaluate Live Chat Schedule / Lock
     const tData = allCloudThreads.find(t => t.name === activeThread);
     const liveChatBtn = document.getElementById('open-live-chat-btn');
@@ -3901,10 +4028,13 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
 
 
     if (startCallBtn) {
+        startCallBtn.classList.remove('hidden');
         if (partnerId) {
-            startCallBtn.classList.remove('hidden');
+            startCallBtn.title = "Start 1-on-1 Voice Call";
+            startCallBtn.innerHTML = "📞";
         } else {
-            startCallBtn.classList.add('hidden');
+            startCallBtn.title = "Start Group Voice Call";
+            startCallBtn.innerHTML = "📞👥";
         }
     }
 
@@ -7017,7 +7147,11 @@ function triggerIncomingCallUI(data) {
 
     incomingCallData = data;
     if (incomingCallerName) {
-        incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
+        if (data.isGroup && data.groupName) {
+            incomingCallerName.textContent = `${data.groupName} (@${data.callerUsername || 'User'})`;
+        } else {
+            incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
+        }
     }
     playRingtoneSound();
     if (navigator.vibrate) {
@@ -7279,10 +7413,11 @@ function setupCallChannelListeners(callChan, pc) {
 }
 
 async function startAudioCall() {
-    if (!currentUser || !activeConversationId || !activeConversationPartnerId) {
-        alert("Please select a 1-on-1 friend conversation to start an audio call.");
+    if (!currentUser || !activeConversationId) {
+        alert("Please select a conversation to start a call.");
         return;
     }
+    const isGroupCall = !activeConversationPartnerId;
     if (activeCall) {
         alert("You are already on an audio call.");
         return;
@@ -7352,6 +7487,8 @@ async function startAudioCall() {
 
         const plainOffer = { type: offer.type, sdp: offer.sdp };
         const callPayload = {
+            isGroup: isGroupCall,
+            groupName: isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null,
             callerId: currentUser.id,
             callerUsername: currentUsername,
             callerAvatar: currentAvatarUrl,
@@ -7359,70 +7496,103 @@ async function startAudioCall() {
             offer: plainOffer
         };
 
-        const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`, {
-            config: { broadcast: { self: false } }
-        });
+        if (isGroupCall) {
+            // Group Calling: Query all members of conversation
+            const { data: members } = await db
+                .from('conversation_members')
+                .select('user_id')
+                .eq('conversation_id', targetConvId)
+                .neq('user_id', currentUser.id);
 
-        const sendCallSignals = () => {
-            if (!activeCall || !activeCall.isCaller) return;
-            try {
-                partnerSig.send({
-                    type: 'broadcast',
-                    event: 'incoming_call',
-                    payload: callPayload
+            const sendGroupSignals = () => {
+                if (!activeCall || !activeCall.isCaller) return;
+                try {
+                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
+                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
+                } catch (e) {}
+
+                (members || []).forEach(m => {
+                    try {
+                        const mChan = db.channel(`user_call_sig_${m.user_id}`);
+                        mChan.subscribe((st) => {
+                            if (st === 'SUBSCRIBED') {
+                                mChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
+                            }
+                        });
+                    } catch (e) {}
                 });
-            } catch (e) {}
+            };
 
-            try {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'incoming_call',
-                    payload: callPayload
-                });
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_offer',
-                    payload: { offer: plainOffer, from: currentUser.id }
-                });
-            } catch (e) {}
-        };
-
-        partnerSig.subscribe((sigStatus) => {
-            if (sigStatus === 'SUBSCRIBED') {
-                sendCallSignals();
-                setTimeout(sendCallSignals, 350);
-                setTimeout(sendCallSignals, 1000);
-            }
-        });
-
-        await callChan.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                sendCallSignals();
-            }
-        });
-
-        // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
-        let dialCount = 0;
-        activeCall.dialingInterval = setInterval(() => {
-            if (!activeCall || !activeCall.isCaller || dialCount > 14) {
-                if (activeCall && activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
+            await callChan.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    sendGroupSignals();
+                    setTimeout(sendGroupSignals, 400);
                 }
-                if (dialCount > 14 && (!pc.connectionState || pc.connectionState !== 'connected')) {
-                    cleanupCall("No Answer");
+            });
+
+            // Notify group members in database
+            (members || []).forEach(m => {
+                sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
+            });
+
+            showActiveCallBar(`Group Call Active (Dialing members...)`, true);
+            playRingtoneSound();
+
+        } else {
+            // 1-on-1 Calling
+            const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`, {
+                config: { broadcast: { self: false } }
+            });
+
+            const sendCallSignals = () => {
+                if (!activeCall || !activeCall.isCaller) return;
+                try {
+                    partnerSig.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
+                } catch (e) {}
+
+                try {
+                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
+                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
+                } catch (e) {}
+            };
+
+            partnerSig.subscribe((sigStatus) => {
+                if (sigStatus === 'SUBSCRIBED') {
+                    sendCallSignals();
+                    setTimeout(sendCallSignals, 350);
+                    setTimeout(sendCallSignals, 1000);
                 }
-                return;
-            }
-            dialCount++;
-            sendCallSignals();
-        }, 2500);
+            });
 
-        // Layer 3: Database Signal Dispatch via user_notifications fallback
-        sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
+            await callChan.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    sendCallSignals();
+                }
+            });
 
-        showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
-        playRingtoneSound();
+            // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
+            let dialCount = 0;
+            activeCall.dialingInterval = setInterval(() => {
+                if (!activeCall || !activeCall.isCaller || dialCount > 14) {
+                    if (activeCall && activeCall.dialingInterval) {
+                        clearInterval(activeCall.dialingInterval);
+                        activeCall.dialingInterval = null;
+                    }
+                    if (dialCount > 14 && (!pc.connectionState || pc.connectionState !== 'connected')) {
+                        cleanupCall("No Answer");
+                    }
+                    return;
+                }
+                dialCount++;
+                sendCallSignals();
+            }, 2500);
+
+            // Layer 3: Database Signal Dispatch via user_notifications fallback
+            sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
+
+            showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
+            playRingtoneSound();
+        }
 
     } catch (err) {
         console.error("Audio call error:", err);
@@ -7545,13 +7715,21 @@ async function answerAudioCall() {
             });
         }
 
-        showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
+        if (data.isGroup) {
+            showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
+        } else {
+            showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
+        }
 
         // Open direct messages modal and select active conversation
         if (dmModal && dmModal.classList.contains('hidden')) {
             openMessagesModal();
         }
-        selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
+        if (data.isGroup) {
+            selectConversation(data.conversationId, data.groupName || 'Group Chat', null, null, true);
+        } else {
+            selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
+        }
 
     } catch (err) {
         console.error("Answer call error:", err);
@@ -7718,6 +7896,22 @@ function initUserCallSignaling() {
                 cleanupCall("Call Declined");
             }
         })
+        .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.threadName) return;
+            playTechChirp();
+            showToast({
+                title: "🎙️ Voice Stage Invite",
+                message: `@${data.inviterUsername || 'Moderator'} invited you to join the Voice Stage in "${data.threadName}"!`,
+                type: "info",
+                icon: "🎙️",
+                duration: 9000,
+                onClick: () => {
+                    navigateToThread(data.threadName);
+                    setTimeout(() => openVoiceForumModal(data.threadName), 350);
+                }
+            });
+        })
         .subscribe();
 }
 
@@ -7761,6 +7955,7 @@ function initRealtimeActivityNotifications() {
                 else if (notif.type === 'comment_reply') { icon = '💬'; toastType = 'info'; }
                 else if (notif.type === 'direct_message') { icon = '✉️'; toastType = 'info'; }
                 else if (notif.type === 'friend_request') { icon = '➕'; toastType = 'success'; }
+                else if (notif.type === 'voice_stage_invite') { icon = '🎙️'; toastType = 'info'; }
 
                 // 3. Trigger Techno Toast
                 if (!userNotifPrefs.allEnabled) return;
@@ -7778,6 +7973,9 @@ function initRealtimeActivityNotifications() {
                             navigateToPost(notif.entity_id);
                         } else if (notif.type === 'direct_message' && notif.entity_id) {
                             navigateToConversation(notif.entity_id);
+                        } else if (notif.type === 'voice_stage_invite' && notif.entity_id) {
+                            navigateToThread(notif.entity_id);
+                            setTimeout(() => openVoiceForumModal(notif.entity_id), 350);
                         }
                     }
                 });
@@ -7785,4 +7983,986 @@ function initRealtimeActivityNotifications() {
         )
         .subscribe();
 }
+
+
+// =============================================================================
+// DISCORD-STYLE LIVE CHAT VOICE FORUM (ZERO-COST WEBRTC AUDIO MESH / S2F)
+// =============================================================================
+
+async function navigateToThread(tName) {
+    if (!tName) return;
+    activeThread = tName;
+    try { localStorage.setItem('forum_active_thread', activeThread); } catch(e) {}
+    cachedPosts = [];
+    if (typeof postCacheMap !== 'undefined' && postCacheMap) postCacheMap.clear();
+    if (forumFeed) forumFeed.innerHTML = '<div class="no-posts">Loading posts...</div>';
+    if (typeof renderJoinedThreadsSidebar === 'function') renderJoinedThreadsSidebar();
+    if (typeof updateThreadControlsUI === 'function') updateThreadControlsUI();
+    if (typeof loadForumPosts === 'function') await loadForumPosts();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+const openVoiceStageBtn = document.getElementById('open-voice-stage-btn');
+const voiceStageCountBadge = document.getElementById('voice-stage-count');
+const voiceForumModal = document.getElementById('voice-forum-modal');
+const closeVoiceForumBtn = document.getElementById('close-voice-forum-btn');
+const voiceStageThreadTitle = document.getElementById('voice-stage-thread-title');
+const voiceStageStatusDesc = document.getElementById('voice-stage-status-desc');
+const voiceStagePrivacyBadge = document.getElementById('voice-stage-privacy-badge');
+const voiceStageModBar = document.getElementById('voice-stage-mod-bar');
+const toggleVoiceStagePrivacyBtn = document.getElementById('toggle-voice-stage-privacy-btn');
+const openVoiceInviteModalBtn = document.getElementById('open-voice-invite-modal-btn');
+const voiceStageMuteAllBtn = document.getElementById('voice-stage-mute-all-btn');
+const voiceSpeakersCount = document.getElementById('voice-speakers-count');
+const voiceStageConnectionStatus = document.getElementById('voice-stage-connection-status');
+const voiceStageGrid = document.getElementById('voice-stage-grid');
+const voiceStageEmptyMsg = document.getElementById('voice-stage-empty-msg');
+const voiceStageConnectBtn = document.getElementById('voice-stage-connect-btn');
+const voiceStageMuteBtn = document.getElementById('voice-stage-mute-btn');
+const voiceStageDeafenBtn = document.getElementById('voice-stage-deafen-btn');
+const voiceStageSettingsBtn = document.getElementById('voice-stage-settings-btn');
+const voiceStageDisconnectBtn = document.getElementById('voice-stage-disconnect-btn');
+
+const voiceInviteModal = document.getElementById('voice-invite-modal');
+const closeVoiceInviteBtn = document.getElementById('close-voice-invite-btn');
+const voiceInviteUsernameInput = document.getElementById('voice-invite-username-input');
+const sendVoiceInviteBtn = document.getElementById('send-voice-invite-btn');
+
+let activeVoiceStageThread = null;
+let voiceStageChannel = null;
+let voiceStagePrivacy = 'open'; // 'open' | 'invite_only'
+let voiceStageIsConnected = false;
+let voiceStageIsMuted = false;
+let voiceStageIsDeafened = false;
+let voiceStageLocalStream = null;
+let voiceStageAnalyser = null;
+let voiceStageSpeakingInterval = null;
+let lastSpeakingState = false;
+
+const voiceStagePeers = new Map(); // peerId -> { pc, audioEl, queuedCandidates }
+const voiceStageParticipants = new Map(); // userId -> participant Object
+const voiceStageInvitedUserIds = new Set();
+
+function sanitizeThreadChannel(name) {
+    return 'voice_stage_' + encodeURIComponent(name || 'General').replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function getActiveVoiceStageCount(tName) {
+    if (activeVoiceStageThread === tName && voiceStageParticipants.size > 0) {
+        let count = 0;
+        voiceStageParticipants.forEach(p => { if (p.is_connected) count++; });
+        return count;
+    }
+    return 0;
+}
+
+function updateVoiceStagePrivacyUI() {
+    if (voiceStagePrivacyBadge) {
+        if (voiceStagePrivacy === 'invite_only') {
+            voiceStagePrivacyBadge.textContent = "🔒 Invite Only";
+            voiceStagePrivacyBadge.className = "badge badge-yellow";
+        } else {
+            voiceStagePrivacyBadge.textContent = "🔓 Open Stage";
+            voiceStagePrivacyBadge.className = "badge badge-green";
+        }
+    }
+    if (toggleVoiceStagePrivacyBtn) {
+        toggleVoiceStagePrivacyBtn.textContent = voiceStagePrivacy === 'invite_only' ? "Make Open Stage" : "Make Invite Only";
+    }
+}
+
+function openVoiceForumModal(threadName) {
+    if (!currentUser) {
+        alert("Please log in to join the voice stage.");
+        return;
+    }
+
+    const targetThread = threadName || activeThread || 'General';
+
+    if (voiceStageIsConnected && activeVoiceStageThread !== targetThread) {
+        if (!confirm(`You are currently on the voice stage in "${activeVoiceStageThread}". Would you like to leave that stage and join "${targetThread}"?`)) {
+            return;
+        }
+        disconnectFromVoiceStage();
+    }
+
+    activeVoiceStageThread = targetThread;
+
+    if (voiceStageThreadTitle) {
+        voiceStageThreadTitle.textContent = activeVoiceStageThread;
+    }
+
+    const role = getThreadRole(activeVoiceStageThread);
+    const isModOrOwner = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+
+    if (voiceStageModBar) {
+        if (isModOrOwner) voiceStageModBar.classList.remove('hidden');
+        else voiceStageModBar.classList.add('hidden');
+    }
+
+    updateVoiceStagePrivacyUI();
+
+    if (voiceForumModal) {
+        voiceForumModal.classList.remove('hidden');
+    }
+
+    // Hide floating telemetry to ensure crisp clean view
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'none';
+
+    // Subscribe to room presence if not subscribed yet
+    initVoiceStageRoomChannel(activeVoiceStageThread);
+}
+
+function closeVoiceForumModal() {
+    if (voiceForumModal) {
+        voiceForumModal.classList.add('hidden');
+    }
+
+    const telemetryHud = document.getElementById('floating-telemetry');
+    if (telemetryHud) telemetryHud.style.display = 'flex';
+
+    // If not connected, clean up channel subscription to save bandwidth
+    if (!voiceStageIsConnected && voiceStageChannel) {
+        try { db.removeChannel(voiceStageChannel); } catch (e) {}
+        voiceStageChannel = null;
+        voiceStageParticipants.clear();
+    }
+}
+
+function initVoiceStageRoomChannel(threadName) {
+    const chanName = sanitizeThreadChannel(threadName);
+
+    if (voiceStageChannel) {
+        if (voiceStageChannel.topic === chanName) {
+            renderVoiceStageGrid();
+            return;
+        }
+        try { db.removeChannel(voiceStageChannel); } catch (e) {}
+        voiceStageChannel = null;
+    }
+
+    voiceStageParticipants.clear();
+    renderVoiceStageGrid();
+
+    voiceStageChannel = db.channel(chanName, {
+        config: { presence: { key: currentUser.id } }
+    });
+
+    voiceStageChannel
+        .on('presence', { event: 'sync' }, () => {
+            const state = voiceStageChannel.presenceState();
+            voiceStageParticipants.clear();
+            let count = 0;
+            for (const key in state) {
+                const presences = state[key];
+                if (presences && presences.length > 0) {
+                    const p = presences[presences.length - 1];
+                    voiceStageParticipants.set(p.user_id, p);
+                    if (p.is_connected) count++;
+                }
+            }
+            if (voiceSpeakersCount) voiceSpeakersCount.textContent = count;
+            if (voiceStageCountBadge && activeThread === activeVoiceStageThread) {
+                voiceStageCountBadge.textContent = count;
+            }
+            renderVoiceStageGrid();
+
+            if (voiceStageIsConnected && voiceStageLocalStream) {
+                syncMeshPeerConnections();
+            }
+        })
+        .on('presence', { event: 'join' }, ({ newPresences }) => {
+            (newPresences || []).forEach(p => {
+                voiceStageParticipants.set(p.user_id, p);
+            });
+            renderVoiceStageGrid();
+            if (voiceStageIsConnected && voiceStageLocalStream) {
+                syncMeshPeerConnections();
+            }
+        })
+        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+            (leftPresences || []).forEach(p => {
+                voiceStageParticipants.delete(p.user_id);
+                closeStagePeer(p.user_id);
+            });
+            renderVoiceStageGrid();
+        })
+        .on('broadcast', { event: 'stage_webrtc_offer' }, async ({ payload }) => {
+            if (!payload || payload.to !== currentUser.id || !voiceStageIsConnected) return;
+            handleStageRemoteOffer(payload.from, payload.offer);
+        })
+        .on('broadcast', { event: 'stage_webrtc_answer' }, async ({ payload }) => {
+            if (!payload || payload.to !== currentUser.id || !voiceStageIsConnected) return;
+            handleStageRemoteAnswer(payload.from, payload.answer);
+        })
+        .on('broadcast', { event: 'stage_webrtc_ice' }, async ({ payload }) => {
+            if (!payload || payload.to !== currentUser.id || !voiceStageIsConnected) return;
+            handleStageRemoteIce(payload.from, payload.candidate);
+        })
+        .on('broadcast', { event: 'speaker_volume' }, ({ payload }) => {
+            if (!payload || !payload.userId) return;
+            const p = voiceStageParticipants.get(payload.userId);
+            if (p) p.is_speaking = !!payload.speaking;
+            const card = document.getElementById(`voice-participant-${payload.userId}`);
+            if (card) {
+                if (payload.speaking) card.classList.add('is-speaking');
+                else card.classList.remove('is-speaking');
+            }
+        })
+        .on('broadcast', { event: 'stage_privacy_mode' }, ({ payload }) => {
+            if (!payload || !payload.mode) return;
+            voiceStagePrivacy = payload.mode;
+            updateVoiceStagePrivacyUI();
+            showToast({
+                title: "Stage Privacy Changed",
+                message: `Voice Stage is now ${payload.mode === 'invite_only' ? 'Invite Only' : 'Open to Everyone'} (by @${payload.moderatorUsername || 'Mod'}).`,
+                type: "info",
+                icon: payload.mode === 'invite_only' ? "🔒" : "🔓"
+            });
+        })
+        .on('broadcast', { event: 'mod_command' }, ({ payload }) => {
+            if (!payload) return;
+            if (payload.action === 'mute' && payload.targetUserId === currentUser.id) {
+                toggleVoiceStageMute(true);
+                showToast({
+                    title: "Muted by Moderator",
+                    message: `@${payload.moderatorUsername || 'A moderator'} muted your microphone.`,
+                    type: "warning",
+                    icon: "🔇",
+                    force: true
+                });
+            } else if (payload.action === 'kick' && payload.targetUserId === currentUser.id) {
+                disconnectFromVoiceStage();
+                closeVoiceForumModal();
+                showToast({
+                    title: "Removed from Stage",
+                    message: `@${payload.moderatorUsername || 'A moderator'} removed you from the voice stage.`,
+                    type: "error",
+                    icon: "👢",
+                    force: true
+                });
+            } else if (payload.action === 'mute_all') {
+                const role = getThreadRole(activeVoiceStageThread);
+                const isMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+                if (!isMod && voiceStageIsConnected) {
+                    toggleVoiceStageMute(true);
+                    showToast({
+                        title: "Stage Muted",
+                        message: `@${payload.moderatorUsername || 'A moderator'} muted all stage speakers.`,
+                        type: "warning",
+                        icon: "🔇"
+                    });
+                }
+            }
+        })
+        .on('broadcast', { event: 'stage_invite_added' }, ({ payload }) => {
+            if (payload && payload.targetUserId) {
+                voiceStageInvitedUserIds.add(payload.targetUserId);
+            }
+        })
+        .subscribe();
+}
+
+async function connectToVoiceStage() {
+    if (!currentUser) return;
+
+    const role = getThreadRole(activeVoiceStageThread);
+    const isModOrOwner = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+
+    if (voiceStagePrivacy === 'invite_only' && !isModOrOwner && !voiceStageInvitedUserIds.has(currentUser.id)) {
+        showToast({
+            title: "Invite Only Stage",
+            message: "This voice stage is currently invite-only. A thread moderator or owner must invite you to speak.",
+            type: "warning",
+            icon: "🔒"
+        });
+        return;
+    }
+
+    if (voiceStageConnectionStatus) {
+        voiceStageConnectionStatus.textContent = "Connecting...";
+        voiceStageConnectionStatus.style.color = "#38bdf8";
+    }
+
+    try {
+        const stream = await getMicrophoneStream();
+        voiceStageLocalStream = stream;
+        voiceStageIsConnected = true;
+        voiceStageIsMuted = false;
+
+        // Set up speaking audio analyser
+        const ctx = getSharedAudioContext();
+        if (ctx) {
+            try {
+                if (ctx.state === 'suspended') await ctx.resume();
+                const source = ctx.createMediaStreamSource(stream);
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+                voiceStageAnalyser = analyser;
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                if (voiceStageSpeakingInterval) clearInterval(voiceStageSpeakingInterval);
+
+                voiceStageSpeakingInterval = setInterval(() => {
+                    if (!voiceStageIsConnected || voiceStageIsMuted || !voiceStageAnalyser) return;
+                    voiceStageAnalyser.getByteFrequencyData(dataArray);
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const avg = sum / dataArray.length;
+                    const isSpeakingNow = avg > 14;
+
+                    if (isSpeakingNow !== lastSpeakingState) {
+                        lastSpeakingState = isSpeakingNow;
+                        const selfCard = document.getElementById(`voice-participant-${currentUser.id}`);
+                        if (selfCard) {
+                            if (isSpeakingNow) selfCard.classList.add('is-speaking');
+                            else selfCard.classList.remove('is-speaking');
+                        }
+                        if (voiceStageChannel) {
+                            voiceStageChannel.send({
+                                type: 'broadcast',
+                                event: 'speaker_volume',
+                                payload: { userId: currentUser.id, speaking: isSpeakingNow }
+                            });
+                        }
+                    }
+                }, 120);
+            } catch (err) {
+                console.warn("Could not start stage audio analyser:", err);
+            }
+        }
+
+        // Track self in presence
+        if (voiceStageChannel) {
+            await voiceStageChannel.track({
+                user_id: currentUser.id,
+                username: currentUsername,
+                avatar_url: currentAvatarUrl,
+                role: role,
+                is_muted: false,
+                is_deafened: voiceStageIsDeafened,
+                is_connected: true
+            });
+        }
+
+        // Update UI Controls
+        if (voiceStageConnectBtn) voiceStageConnectBtn.classList.add('hidden');
+        if (voiceStageMuteBtn) {
+            voiceStageMuteBtn.classList.remove('hidden');
+            voiceStageMuteBtn.innerHTML = "🎤 Mute Mic";
+            voiceStageMuteBtn.style.color = "";
+        }
+        if (voiceStageDisconnectBtn) voiceStageDisconnectBtn.classList.remove('hidden');
+
+        if (voiceStageConnectionStatus) {
+            voiceStageConnectionStatus.textContent = userAudioSettings.highFidelity ? "Connected (Hi-Fi 48kHz)" : "Connected (Mesh Active)";
+            voiceStageConnectionStatus.style.color = "#10b981";
+        }
+
+        playTechChirp();
+
+        showToast({
+            title: "Voice Stage Joined",
+            message: `Connected to Voice Stage in "${activeVoiceStageThread}".`,
+            type: "success",
+            icon: "🎙️"
+        });
+
+        // Trigger mesh sync
+        syncMeshPeerConnections();
+
+    } catch (err) {
+        console.error("Voice stage connection error:", err);
+        alert("Could not access microphone: " + (err.message || err.name));
+        disconnectFromVoiceStage();
+    }
+}
+
+function disconnectFromVoiceStage() {
+    if (voiceStageSpeakingInterval) {
+        clearInterval(voiceStageSpeakingInterval);
+        voiceStageSpeakingInterval = null;
+    }
+    voiceStageAnalyser = null;
+    lastSpeakingState = false;
+
+    // Hardware microphone release
+    if (voiceStageLocalStream) {
+        voiceStageLocalStream.getTracks().forEach(track => {
+            try { track.stop(); } catch (e) {}
+        });
+        voiceStageLocalStream = null;
+    }
+
+    // Close all WebRTC mesh peer connections
+    voiceStagePeers.forEach(({ pc, audioEl }) => {
+        try { pc.close(); } catch(e) {}
+        try { audioEl.remove(); } catch(e) {}
+    });
+    voiceStagePeers.clear();
+
+    voiceStageIsConnected = false;
+    voiceStageIsMuted = false;
+
+    // Untrack presence
+    if (voiceStageChannel) {
+        try { voiceStageChannel.untrack(); } catch(e) {}
+    }
+
+    if (voiceStageConnectBtn) voiceStageConnectBtn.classList.remove('hidden');
+    if (voiceStageMuteBtn) voiceStageMuteBtn.classList.add('hidden');
+    if (voiceStageDisconnectBtn) voiceStageDisconnectBtn.classList.add('hidden');
+
+    if (voiceStageConnectionStatus) {
+        voiceStageConnectionStatus.textContent = "Ready";
+        voiceStageConnectionStatus.style.color = "#10b981";
+    }
+
+    renderVoiceStageGrid();
+
+    showToast({
+        title: "Voice Stage",
+        message: "Disconnected from voice stage.",
+        type: "info",
+        icon: "🔴"
+    });
+}
+
+function toggleVoiceStageMute(forceMute) {
+    if (!voiceStageIsConnected || !voiceStageLocalStream) return;
+
+    if (typeof forceMute === 'boolean') {
+        voiceStageIsMuted = forceMute;
+    } else {
+        voiceStageIsMuted = !voiceStageIsMuted;
+    }
+
+    voiceStageLocalStream.getAudioTracks().forEach(t => {
+        t.enabled = !voiceStageIsMuted;
+    });
+
+    if (voiceStageMuteBtn) {
+        voiceStageMuteBtn.innerHTML = voiceStageIsMuted ? "🔇 Unmute Mic" : "🎤 Mute Mic";
+        voiceStageMuteBtn.style.color = voiceStageIsMuted ? "#f87171" : "";
+    }
+
+    const selfCard = document.getElementById(`voice-participant-${currentUser.id}`);
+    if (selfCard) {
+        const ind = selfCard.querySelector('.voice-speaking-indicator');
+        if (ind) ind.textContent = voiceStageIsMuted ? '🔇' : '🎤';
+        if (voiceStageIsMuted) selfCard.classList.remove('is-speaking');
+    }
+
+    if (voiceStageChannel) {
+        voiceStageChannel.track({
+            user_id: currentUser.id,
+            username: currentUsername,
+            avatar_url: currentAvatarUrl,
+            role: getThreadRole(activeVoiceStageThread),
+            is_muted: voiceStageIsMuted,
+            is_deafened: voiceStageIsDeafened,
+            is_connected: true
+        });
+    }
+
+    showToast({
+        title: "Voice Stage",
+        message: voiceStageIsMuted ? "Microphone muted." : "Microphone unmuted.",
+        type: voiceStageIsMuted ? "warning" : "success",
+        icon: voiceStageIsMuted ? "🔇" : "🎤"
+    });
+}
+
+function toggleVoiceStageDeafen() {
+    voiceStageIsDeafened = !voiceStageIsDeafened;
+
+    if (voiceStageDeafenBtn) {
+        voiceStageDeafenBtn.innerHTML = voiceStageIsDeafened ? "🔇 Deafened" : "🎧 Deafen";
+        voiceStageDeafenBtn.style.color = voiceStageIsDeafened ? "#f87171" : "";
+    }
+
+    voiceStagePeers.forEach(({ audioEl }) => {
+        if (audioEl) audioEl.muted = voiceStageIsDeafened || userAudioSettings.deafen;
+    });
+
+    if (voiceStageChannel && voiceStageIsConnected) {
+        voiceStageChannel.track({
+            user_id: currentUser.id,
+            username: currentUsername,
+            avatar_url: currentAvatarUrl,
+            role: getThreadRole(activeVoiceStageThread),
+            is_muted: voiceStageIsMuted,
+            is_deafened: voiceStageIsDeafened,
+            is_connected: true
+        });
+    }
+
+    showToast({
+        title: "Stage Audio",
+        message: voiceStageIsDeafened ? "Deafened (all incoming audio muted)." : "Undeafened.",
+        type: voiceStageIsDeafened ? "info" : "success",
+        icon: voiceStageIsDeafened ? "🔇" : "🎧"
+    });
+}
+
+function toggleVoiceStagePrivacy() {
+    const role = getThreadRole(activeVoiceStageThread);
+    const isMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+    if (!isMod) {
+        alert("Only thread moderators or owners can change stage privacy.");
+        return;
+    }
+
+    voiceStagePrivacy = (voiceStagePrivacy === 'open' ? 'invite_only' : 'open');
+    updateVoiceStagePrivacyUI();
+
+    if (voiceStageChannel) {
+        voiceStageChannel.send({
+            type: 'broadcast',
+            event: 'stage_privacy_mode',
+            payload: {
+                mode: voiceStagePrivacy,
+                moderatorUsername: currentUsername
+            }
+        });
+    }
+
+    showToast({
+        title: "Stage Privacy Changed",
+        message: `Stage is now ${voiceStagePrivacy === 'invite_only' ? 'Invite Only' : 'Open to Everyone'}.`,
+        type: "success",
+        icon: voiceStagePrivacy === 'invite_only' ? "🔒" : "🔓"
+    });
+}
+
+function muteParticipant(targetUserId, targetUsername) {
+    const role = getThreadRole(activeVoiceStageThread);
+    const isMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+    if (!isMod) {
+        alert("You must be a moderator to mute participants.");
+        return;
+    }
+    if (voiceStageChannel) {
+        voiceStageChannel.send({
+            type: 'broadcast',
+            event: 'mod_command',
+            payload: {
+                action: 'mute',
+                targetUserId,
+                moderatorUsername: currentUsername
+            }
+        });
+    }
+    showToast({
+        title: "Participant Muted",
+        message: `Mute signal sent to @${targetUsername || 'User'}.`,
+        type: "info",
+        icon: "🔇"
+    });
+}
+
+function kickParticipant(targetUserId, targetUsername) {
+    const role = getThreadRole(activeVoiceStageThread);
+    const isMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+    if (!isMod) {
+        alert("You must be a moderator to kick participants.");
+        return;
+    }
+    if (voiceStageChannel) {
+        voiceStageChannel.send({
+            type: 'broadcast',
+            event: 'mod_command',
+            payload: {
+                action: 'kick',
+                targetUserId,
+                moderatorUsername: currentUsername
+            }
+        });
+    }
+    showToast({
+        title: "Participant Kicked",
+        message: `Removed @${targetUsername || 'User'} from the voice stage.`,
+        type: "warning",
+        icon: "👢"
+    });
+}
+
+function muteAllStageParticipants() {
+    const role = getThreadRole(activeVoiceStageThread);
+    const isMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+    if (!isMod) {
+        alert("You must be a moderator to mute all participants.");
+        return;
+    }
+    if (voiceStageChannel) {
+        voiceStageChannel.send({
+            type: 'broadcast',
+            event: 'mod_command',
+            payload: {
+                action: 'mute_all',
+                moderatorUsername: currentUsername
+            }
+        });
+    }
+    showToast({
+        title: "Stage Muted",
+        message: "Muted all non-moderator participants on stage.",
+        type: "warning",
+        icon: "🔇"
+    });
+}
+
+async function sendVoiceStageInvite() {
+    if (!voiceInviteUsernameInput) return;
+    const rawVal = voiceInviteUsernameInput.value.trim();
+    if (!rawVal) {
+        alert("Please enter a username to invite.");
+        return;
+    }
+    const cleanUser = rawVal.replace('@', '').toLowerCase();
+
+    if (cleanUser === currentUsername.toLowerCase().replace('@', '')) {
+        alert("You cannot invite yourself to the voice stage.");
+        return;
+    }
+
+    if (sendVoiceInviteBtn) {
+        sendVoiceInviteBtn.disabled = true;
+        sendVoiceInviteBtn.textContent = "Dispatching...";
+    }
+
+    try {
+        const { data: userRow, error } = await db
+            .from('profiles')
+            .select('id, username')
+            .ilike('username', cleanUser)
+            .single();
+
+        if (error || !userRow) {
+            showToast({
+                title: "User Not Found",
+                message: `Could not locate verified user @${cleanUser}`,
+                type: "error",
+                icon: "⚠️"
+            });
+            return;
+        }
+
+        voiceStageInvitedUserIds.add(userRow.id);
+
+        if (voiceStageChannel) {
+            voiceStageChannel.send({
+                type: 'broadcast',
+                event: 'stage_invite_added',
+                payload: { targetUserId: userRow.id, threadName: activeVoiceStageThread }
+            });
+        }
+
+        const targetSig = db.channel(`user_call_sig_${userRow.id}`);
+        targetSig.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                targetSig.send({
+                    type: 'broadcast',
+                    event: 'voice_stage_invite',
+                    payload: {
+                        threadName: activeVoiceStageThread,
+                        inviterUsername: currentUsername
+                    }
+                });
+            }
+        });
+
+        await db.from('user_notifications').insert([{
+            user_id: userRow.id,
+            actor_username: currentUsername,
+            type: 'voice_stage_invite',
+            entity_id: activeVoiceStageThread,
+            message: `invited you to the live Voice Stage in "${activeVoiceStageThread}"`
+        }]).catch(() => {});
+
+        voiceInviteUsernameInput.value = '';
+        if (voiceInviteModal) voiceInviteModal.classList.add('hidden');
+
+        showToast({
+            title: "Invite Dispatched",
+            message: `Invitation successfully sent to @${userRow.username}!`,
+            type: "success",
+            icon: "✉️"
+        });
+
+    } catch (err) {
+        console.error("Voice invite dispatch error:", err);
+        alert("Failed to send invite: " + err.message);
+    } finally {
+        if (sendVoiceInviteBtn) {
+            sendVoiceInviteBtn.disabled = false;
+            sendVoiceInviteBtn.textContent = "Dispatch Voice Invite";
+        }
+    }
+}
+
+// WebRTC Peer Mesh Peering
+function syncMeshPeerConnections() {
+    if (!voiceStageIsConnected || !voiceStageLocalStream) return;
+
+    voiceStageParticipants.forEach(p => {
+        if (p.user_id !== currentUser.id && p.is_connected) {
+            if (!voiceStagePeers.has(p.user_id)) {
+                // Deterministic offer creation: higher user ID creates offer
+                if (currentUser.id > p.user_id) {
+                    createStagePeerConnection(p.user_id, true);
+                }
+            }
+        }
+    });
+}
+
+async function createStagePeerConnection(peerId, isInitiator) {
+    if (voiceStagePeers.has(peerId)) {
+        return voiceStagePeers.get(peerId).pc;
+    }
+
+    const rtcConfig = {
+        iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+    };
+
+    const pc = new RTCPeerConnection(rtcConfig);
+
+    if (voiceStageLocalStream) {
+        voiceStageLocalStream.getTracks().forEach(track => {
+            pc.addTrack(track, voiceStageLocalStream);
+        });
+    }
+
+    let audioEl = document.getElementById(`voice-peer-audio-${peerId}`);
+    if (!audioEl) {
+        audioEl = document.createElement('audio');
+        audioEl.id = `voice-peer-audio-${peerId}`;
+        audioEl.autoplay = true;
+        audioEl.style.display = 'none';
+        document.body.appendChild(audioEl);
+    }
+    audioEl.muted = voiceStageIsDeafened || userAudioSettings.deafen;
+
+    pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+            audioEl.srcObject = event.streams[0];
+            audioEl.play().catch(e => console.warn("Stage peer audio play error:", e));
+        }
+    };
+
+    pc.onicecandidate = (event) => {
+        if (event.candidate && voiceStageChannel) {
+            voiceStageChannel.send({
+                type: 'broadcast',
+                event: 'stage_webrtc_ice',
+                payload: { from: currentUser.id, to: peerId, candidate: event.candidate }
+            });
+        }
+    };
+
+    pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            closeStagePeer(peerId);
+        }
+    };
+
+    voiceStagePeers.set(peerId, { pc, audioEl, queuedCandidates: [] });
+
+    if (isInitiator) {
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            if (voiceStageChannel) {
+                voiceStageChannel.send({
+                    type: 'broadcast',
+                    event: 'stage_webrtc_offer',
+                    payload: { from: currentUser.id, to: peerId, offer: { type: offer.type, sdp: offer.sdp } }
+                });
+            }
+        } catch (err) {
+            console.error(`Failed to create offer for stage peer ${peerId}:`, err);
+        }
+    }
+
+    return pc;
+}
+
+async function handleStageRemoteOffer(fromUserId, offerData) {
+    if (!voiceStageIsConnected || !voiceStageLocalStream) return;
+
+    closeStagePeer(fromUserId);
+
+    const pc = await createStagePeerConnection(fromUserId, false);
+    const peerObj = voiceStagePeers.get(fromUserId);
+
+    try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+        if (peerObj && peerObj.queuedCandidates) {
+            while (peerObj.queuedCandidates.length > 0) {
+                const c = peerObj.queuedCandidates.shift();
+                await pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+        }
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        if (voiceStageChannel) {
+            voiceStageChannel.send({
+                type: 'broadcast',
+                event: 'stage_webrtc_answer',
+                payload: { from: currentUser.id, to: fromUserId, answer: { type: answer.type, sdp: answer.sdp } }
+            });
+        }
+    } catch (err) {
+        console.error(`Error handling stage offer from ${fromUserId}:`, err);
+    }
+}
+
+async function handleStageRemoteAnswer(fromUserId, answerData) {
+    const peerObj = voiceStagePeers.get(fromUserId);
+    if (!peerObj || !peerObj.pc) return;
+    try {
+        await peerObj.pc.setRemoteDescription(new RTCSessionDescription(answerData));
+        if (peerObj.queuedCandidates) {
+            while (peerObj.queuedCandidates.length > 0) {
+                const c = peerObj.queuedCandidates.shift();
+                await peerObj.pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+        }
+    } catch (err) {
+        console.error(`Error handling stage answer from ${fromUserId}:`, err);
+    }
+}
+
+async function handleStageRemoteIce(fromUserId, candidate) {
+    const peerObj = voiceStagePeers.get(fromUserId);
+    if (!peerObj || !peerObj.pc) return;
+    if (peerObj.pc.remoteDescription && peerObj.pc.remoteDescription.type) {
+        try {
+            await peerObj.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+            console.error(`Error adding ICE candidate from ${fromUserId}:`, err);
+        }
+    } else {
+        if (!peerObj.queuedCandidates) peerObj.queuedCandidates = [];
+        peerObj.queuedCandidates.push(candidate);
+    }
+}
+
+function closeStagePeer(peerId) {
+    if (voiceStagePeers.has(peerId)) {
+        const { pc, audioEl } = voiceStagePeers.get(peerId);
+        try { pc.close(); } catch(e) {}
+        try { audioEl.remove(); } catch(e) {}
+        voiceStagePeers.delete(peerId);
+    }
+}
+
+function renderVoiceStageGrid() {
+    if (!voiceStageGrid) return;
+
+    const participants = Array.from(voiceStageParticipants.values());
+    if (participants.length === 0) {
+        voiceStageGrid.innerHTML = '';
+        if (voiceStageEmptyMsg) voiceStageEmptyMsg.classList.remove('hidden');
+        return;
+    }
+
+    if (voiceStageEmptyMsg) voiceStageEmptyMsg.classList.add('hidden');
+
+    const role = getThreadRole(activeVoiceStageThread);
+    const isCurrentMod = (role === 'Owner' || role === 'Site Admin' || role === 'Moderator');
+
+    voiceStageGrid.innerHTML = participants.map(p => {
+        const isSelf = currentUser && p.user_id === currentUser.id;
+        const pRole = p.role || 'Member';
+        let roleBadgeClass = 'badge-blue';
+        if (pRole === 'Owner') roleBadgeClass = 'badge-yellow';
+        else if (pRole === 'Site Admin') roleBadgeClass = 'badge-purple';
+        else if (pRole === 'Moderator') roleBadgeClass = 'badge-green';
+
+        const isSpeaking = p.is_speaking;
+        const isMuted = p.is_muted;
+        const isDeafened = p.is_deafened;
+        const micIcon = isMuted ? '🔇' : (isSpeaking ? '🟢' : '🎤');
+
+        const showModActions = isCurrentMod && !isSelf;
+
+        return `
+            <div id="voice-participant-${escapeHTML(p.user_id)}" class="voice-participant-card ${isSpeaking ? 'is-speaking' : ''}" data-userid="${escapeHTML(p.user_id)}">
+                ${showModActions ? `
+                    <div style="position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; z-index: 10;">
+                        <button type="button" class="voice-card-mute-btn" data-userid="${escapeHTML(p.user_id)}" data-username="${escapeHTML(p.username || 'User')}" title="Mute Participant" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #f87171; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">🔇</button>
+                        <button type="button" class="voice-card-kick-btn" data-userid="${escapeHTML(p.user_id)}" data-username="${escapeHTML(p.username || 'User')}" title="Kick from Stage" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #ef4444; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">👢</button>
+                    </div>
+                ` : ''}
+                <div class="voice-participant-avatar-wrap">
+                    <img src="${p.avatar_url || DEFAULT_AVATAR}" class="voice-participant-avatar" alt="${escapeHTML(p.username || 'User')}">
+                    <div class="voice-speaking-indicator" title="${isMuted ? 'Muted' : (isDeafened ? 'Deafened' : 'Active')}">${micIcon}</div>
+                </div>
+                <div class="voice-participant-name" title="@${escapeHTML(p.username || 'User')}">@${escapeHTML(p.username || 'User')}${isSelf ? ' (You)' : ''}</div>
+                <div class="voice-participant-role badge ${roleBadgeClass}" style="font-size: 0.65rem; padding: 2px 6px;">${escapeHTML(pRole)}</div>
+            </div>
+        `;
+    }).join('');
+
+    voiceStageGrid.querySelectorAll('.voice-card-mute-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const targetId = btn.getAttribute('data-userid');
+            const targetName = btn.getAttribute('data-username');
+            muteParticipant(targetId, targetName);
+        });
+    });
+
+    voiceStageGrid.querySelectorAll('.voice-card-kick-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const targetId = btn.getAttribute('data-userid');
+            const targetName = btn.getAttribute('data-username');
+            kickParticipant(targetId, targetName);
+        });
+    });
+}
+
+// Stage Event Listeners
+safeAddListener(openVoiceStageBtn, 'click', () => openVoiceForumModal(activeThread));
+safeAddListener(closeVoiceForumBtn, 'click', closeVoiceForumModal);
+safeAddListener(voiceForumModal, 'click', (e) => {
+    if (e.target === voiceForumModal) closeVoiceForumModal();
+});
+
+safeAddListener(voiceStageConnectBtn, 'click', connectToVoiceStage);
+safeAddListener(voiceStageDisconnectBtn, 'click', disconnectFromVoiceStage);
+safeAddListener(voiceStageMuteBtn, 'click', () => toggleVoiceStageMute());
+safeAddListener(voiceStageDeafenBtn, 'click', toggleVoiceStageDeafen);
+safeAddListener(toggleVoiceStagePrivacyBtn, 'click', toggleVoiceStagePrivacy);
+safeAddListener(voiceStageMuteAllBtn, 'click', muteAllStageParticipants);
+
+safeAddListener(voiceStageSettingsBtn, 'click', () => {
+    openSettingsModal();
+    switchSettingsTab('audio');
+});
+
+safeAddListener(openVoiceInviteModalBtn, 'click', () => {
+    if (voiceInviteModal) {
+        if (voiceInviteUsernameInput) voiceInviteUsernameInput.value = '';
+        voiceInviteModal.classList.remove('hidden');
+        setTimeout(() => { if (voiceInviteUsernameInput) voiceInviteUsernameInput.focus(); }, 100);
+    }
+});
+safeAddListener(closeVoiceInviteBtn, 'click', () => {
+    if (voiceInviteModal) voiceInviteModal.classList.add('hidden');
+});
+safeAddListener(voiceInviteModal, 'click', (e) => {
+    if (e.target === voiceInviteModal) voiceInviteModal.classList.add('hidden');
+});
+safeAddListener(sendVoiceInviteBtn, 'click', sendVoiceStageInvite);
+
 
