@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Ccircle cx='256' cy='256' r='236' fill='%2338bdf8' opacity='0.4'/%3E%3Ccircle cx='256' cy='256' r='232' fill='%230284c7' stroke='%2338bdf8' stroke-width='4'/%3E%3Cpath d='M256 360 L256 156' stroke='%23ffffff' stroke-width='32' stroke-linecap='round'/%3E%3Cpath d='M174 238 L256 156 L338 238' stroke='%23ffffff' stroke-width='32' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <style>
         /* Core inline styles fallback */
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -1459,7 +1460,7 @@ img, video, canvas, pre, code {
             color: #e2e8f0 !important;
         }
 
-        /* Biomechanical Trust Incubator */
+        /* Trust Chamber: Red Pearl Invites */
         .biomech-incubator-panel {
             background: linear-gradient(180deg, #090e1a 0%, #040711 100%);
             border: 1px solid rgba(255, 42, 95, 0.35);
@@ -1816,6 +1817,74 @@ img, video, canvas, pre, code {
         .ledger-meta {
             color: #94a3b8;
             font-size: 0.7rem;
+        }
+
+
+        /* --- DYNAMIC PULSING & SHIFTING LIGHT-BLUE AMBIENT BACKGROUND ACCENTS --- */
+        @keyframes ambient-blue-shift {
+            0% {
+                background-position: 50% 0%, 80% 40%, 0% 0%, 0% 0%;
+            }
+            50% {
+                background-position: 45% 25%, 20% 70%, 0% 0%, 0% 0%;
+            }
+            100% {
+                background-position: 50% 0%, 80% 40%, 0% 0%, 0% 0%;
+            }
+        }
+
+        body {
+            background-color: #030712 !important;
+            background-image: 
+                radial-gradient(ellipse 900px 600px at 50% 10%, rgba(56, 189, 248, 0.16) 0%, rgba(2, 132, 199, 0.04) 50%, transparent 80%),
+                radial-gradient(circle 700px at 80% 50%, rgba(0, 240, 255, 0.09) 0%, rgba(14, 165, 233, 0.02) 50%, transparent 70%),
+                linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px) !important;
+            background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px !important;
+            animation: ambient-blue-shift 16s ease-in-out infinite alternate !important;
+            position: relative;
+        }
+
+        /* Ambient Light-Blue Glow Accents behind Interaction Panels */
+        .top-banner, .feed-card, .threads-sidebar, .card, .modal-box, .biomech-incubator-panel {
+            position: relative;
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.8), 0 0 25px -4px rgba(56, 189, 248, 0.16) !important;
+            transition: box-shadow 0.3s ease, border-color 0.3s ease !important;
+        }
+
+        .top-banner:hover, .feed-card:hover, .threads-sidebar:hover, .card:hover, .biomech-incubator-panel:hover {
+            box-shadow: 0 12px 35px -5px rgba(0, 0, 0, 0.85), 0 0 32px -2px rgba(0, 240, 255, 0.25) !important;
+        }
+
+        /* Subtle Breathing Blue Underglow Accent */
+        .feed-card::after, .threads-sidebar::after, .top-banner::after, .biomech-incubator-panel::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: inherit;
+            background: radial-gradient(circle at 50% 0%, rgba(56, 189, 248, 0.22), transparent 70%);
+            pointer-events: none;
+            z-index: -1;
+            opacity: 0.6;
+            animation: panel-blue-glow 8s ease-in-out infinite alternate;
+        }
+
+        @keyframes panel-blue-glow {
+            0% {
+                opacity: 0.35;
+                filter: blur(2px);
+                transform: scale(0.995);
+            }
+            50% {
+                opacity: 0.8;
+                filter: blur(4px);
+                transform: scale(1.005);
+            }
+            100% {
+                opacity: 0.35;
+                filter: blur(2px);
+                transform: scale(0.995);
+            }
         }
 
 </style>
@@ -2297,9 +2366,9 @@ img, video, canvas, pre, code {
                         <div class="biomech-title-wrap">
                             <div class="biomech-core-icon">◈</div>
                             <div>
-                                <h3 class="biomech-title">Biomechanical Trust Incubator</h3>
+                                <h3 class="biomech-title">Trust Chamber: Red Pearl Invites</h3>
                                 <p class="biomech-subtitle">
-                                    3 Genetic Red Pearls allocated per 30-day incubation cycle. Vouching creates an immutable chain of custody—sponsoring synthetic or automated accounts degrades your verification pedigree.
+                                    3 Red Pearls allocated per 30-day cycle. Each pearl generates an invite code. Vouching creates a direct chain of custody—sponsoring bots or bad actors lowers your human verification score.
                                 </p>
                             </div>
                         </div>
@@ -2310,7 +2379,7 @@ img, video, canvas, pre, code {
                         </div>
                     </div>
 
-                    <!-- 3 Biomechanical Incubation Pods -->
+                    <!-- 3 Incubation Pods -->
                     <div id="pearl-incubator-grid" class="pearl-incubator-grid">
                         <!-- Rendered in real-time by loadUserInvites() -->
                     </div>
