@@ -11587,11 +11587,9 @@ if (window.ResizeObserver && document.body) {
 
 
 
-// Background marker trails: fluid luminous strokes sketching across canvas
-// Background marker trails: fluid, luminous strokes that sketch gracefully across the canvas.
-// Designed to look like smooth drawing strokes from a digital marker, with no origin dots.
-// Background spectral koi simulation: ethereal cyber-skeletal koi with glowing red pearl eyes
-// swimming through the deep midnight void, leaving bioluminescent water wake ripples behind them.
+// Background koi simulation: graceful, top-down Japanese koi swimming through deep midnight water.
+// Features organic body contours, fan-shaped pectoral and veil-tail fins, glowing red pearl eyes,
+// and glowing blue water wake streamlines stretching out behind them.
 function initBioluminescentSea() {
     const canvas = document.getElementById('bioluminescent-canvas');
     if (!canvas) return;
@@ -11606,23 +11604,40 @@ function initBioluminescentSea() {
         height = canvas.height = window.innerHeight;
     }, { passive: true });
 
-    class SpectralKoi {
+    class TrueKoi {
         constructor(w, h, scale = 1.0) {
             this.w = w;
             this.h = h;
             this.scale = scale;
             this.x = Math.random() * w;
             this.y = Math.random() * h;
-            this.speed = (0.75 + Math.random() * 0.45) * (0.9 + (1 - scale * 0.2));
+            
+            // Slower, contemplative gliding swimming speed
+            this.speed = (0.52 + Math.random() * 0.32) * (0.9 + (1 - scale * 0.2));
             this.angle = Math.random() * Math.PI * 2;
             this.targetAngle = this.angle;
-            this.turnTimer = Math.floor(Math.random() * 80);
+            this.turnTimer = 40 + Math.floor(Math.random() * 80);
             
-            this.numVertebrae = 13;
-            this.segDist = 4.4 * scale;
-            this.length = this.numVertebrae * this.segDist;
+            this.numVertebrae = 12;
+            this.segDist = 4.8 * scale;
             this.swimCycle = Math.random() * Math.PI * 2;
-            this.swimFreq = 0.07 + Math.random() * 0.025;
+            this.swimFreq = 0.040 + Math.random() * 0.015; // Natural slow tail stroke
+            
+            // Proportional anatomical widths along the spine from snout to caudal base
+            this.bodyWidths = [
+                3.8 * scale,  // 0: Snout
+                6.5 * scale,  // 1: Head / Eyes
+                10.2 * scale, // 2: Pectoral girdle
+                11.5 * scale, // 3: Mid-body (widest)
+                11.0 * scale, // 4: Upper abdomen
+                9.8 * scale,  // 5: Abdomen
+                8.2 * scale,  // 6: Pelvic area
+                6.6 * scale,  // 7: Lower body
+                5.0 * scale,  // 8: Pre-tail
+                3.6 * scale,  // 9: Tail peduncle
+                2.4 * scale,  // 10: Caudal base
+                1.5 * scale   // 11: Tail tip anchor
+            ];
             
             this.spine = [];
             for (let i = 0; i < this.numVertebrae; i++) {
@@ -11631,8 +11646,12 @@ function initBioluminescentSea() {
                     y: this.y - Math.sin(this.angle) * i * this.segDist
                 });
             }
-            this.wake = [];
-            this.wakeTimer = 0;
+            
+            // Trailing wake lines: 3 fluid streamlines stretching out behind the tail into the water
+            this.wakeLeft = [];
+            this.wakeCenter = [];
+            this.wakeRight = [];
+            this.maxWakePoints = 48;
         }
 
         update(w, h) {
@@ -11642,19 +11661,19 @@ function initBioluminescentSea() {
             
             this.turnTimer--;
             if (this.turnTimer <= 0) {
-                this.targetAngle += (Math.random() - 0.5) * 1.5;
-                this.turnTimer = 50 + Math.floor(Math.random() * 90);
+                this.targetAngle += (Math.random() - 0.5) * 1.2;
+                this.turnTimer = 80 + Math.floor(Math.random() * 120);
             }
             let diff = this.targetAngle - this.angle;
             while (diff < -Math.PI) diff += Math.PI * 2;
             while (diff > Math.PI) diff -= Math.PI * 2;
-            this.angle += diff * 0.025;
+            this.angle += diff * 0.018;
 
             this.x += Math.cos(this.angle) * this.speed;
             this.y += Math.sin(this.angle) * this.speed;
 
-            // Shift all vertebrae smoothly when wrapping boundaries so no lines flash across screen
-            const pad = 90;
+            // Screen boundary wrap: shift all vertebrae together so lines never flash across screen
+            const pad = 120;
             let wrapped = false;
             let shiftX = 0, shiftY = 0;
 
@@ -11670,12 +11689,15 @@ function initBioluminescentSea() {
                     s.x += shiftX;
                     s.y += shiftY;
                 }
-                this.wake = [];
+                this.wakeLeft = [];
+                this.wakeCenter = [];
+                this.wakeRight = [];
             }
 
             this.spine[0].x = this.x;
             this.spine[0].y = this.y;
 
+            // Organic fish spine undulation (minimal at head, progressive whip along body to tail)
             for (let i = 1; i < this.numVertebrae; i++) {
                 const prev = this.spine[i - 1];
                 const curr = this.spine[i];
@@ -11683,184 +11705,278 @@ function initBioluminescentSea() {
                 let dy = prev.y - curr.y;
                 let dist = Math.hypot(dx, dy) || 1;
                 
-                const lateralWiggle = Math.sin(this.swimCycle - i * 0.42) * (i / this.numVertebrae) * (2.2 * this.scale);
+                const progress = i / this.numVertebrae;
+                const waveAmp = Math.pow(progress, 1.35) * (7.5 * this.scale);
+                const lateralOffset = Math.sin(this.swimCycle - i * 0.42) * waveAmp;
+                
                 const perpX = -dy / dist;
                 const perpY = dx / dist;
 
-                curr.x = prev.x - (dx / dist) * this.segDist + perpX * lateralWiggle;
-                curr.y = prev.y - (dy / dist) * this.segDist + perpY * lateralWiggle;
+                curr.x = prev.x - (dx / dist) * this.segDist + perpX * lateralOffset * 0.35;
+                curr.y = prev.y - (dy / dist) * this.segDist + perpY * lateralOffset * 0.35;
             }
 
-            // Emit glowing blue water wakes from the tail
-            this.wakeTimer++;
-            if (this.wakeTimer % 5 === 0) {
-                const tail = this.spine[this.spine.length - 1];
-                this.wake.push({
-                    x: tail.x,
-                    y: tail.y,
-                    r: 2 * this.scale,
-                    maxR: 22 * this.scale,
-                    alpha: 0.42,
-                    growth: 0.45 * this.scale
-                });
-            }
+            // Streamline wake line recording from tail
+            const tail = this.spine[this.spine.length - 1];
+            const preTail = this.spine[this.spine.length - 2];
+            const tAngle = Math.atan2(tail.y - preTail.y, tail.x - preTail.x);
+            const perpX = -Math.sin(tAngle);
+            const perpY = Math.cos(tAngle);
 
-            for (let i = this.wake.length - 1; i >= 0; i--) {
-                const p = this.wake[i];
-                p.r += p.growth;
-                p.alpha -= 0.01;
-                if (p.alpha <= 0 || p.r >= p.maxR) {
-                    this.wake.splice(i, 1);
-                }
-            }
+            this.wakeCenter.unshift({ x: tail.x, y: tail.y, age: 0 });
+            this.wakeLeft.unshift({ x: tail.x + perpX * 4 * this.scale, y: tail.y + perpY * 4 * this.scale, age: 0 });
+            this.wakeRight.unshift({ x: tail.x - perpX * 4 * this.scale, y: tail.y - perpY * 4 * this.scale, age: 0 });
+
+            if (this.wakeCenter.length > this.maxWakePoints) this.wakeCenter.pop();
+            if (this.wakeLeft.length > this.maxWakePoints) this.wakeLeft.pop();
+            if (this.wakeRight.length > this.maxWakePoints) this.wakeRight.pop();
+
+            for (let pt of this.wakeCenter) pt.age++;
+            for (let pt of this.wakeLeft) pt.age++;
+            for (let pt of this.wakeRight) pt.age++;
         }
 
         draw(ctx) {
             ctx.save();
 
-            // 1. Water Wake Ripples behind the koi
-            for (let i = 0; i < this.wake.length; i++) {
-                const w = this.wake[i];
+            // 1. Glowing Blue Water Wake Lines (Stretching out behind the tail)
+            const drawWakeStream = (stream, alphaFactor, widthFactor) => {
+                if (stream.length < 3) return;
                 ctx.beginPath();
-                ctx.arc(w.x, w.y, w.r, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(0, 240, 255, ' + (w.alpha * 0.7) + ')';
-                ctx.lineWidth = 1.2;
+                ctx.moveTo(stream[0].x, stream[0].y);
+                for (let i = 1; i < stream.length - 1; i++) {
+                    if (Math.hypot(stream[i].x - stream[i+1].x, stream[i].y - stream[i+1].y) > 50) break;
+                    const mx = (stream[i].x + stream[i + 1].x) / 2;
+                    const my = (stream[i].y + stream[i + 1].y) / 2;
+                    ctx.quadraticCurveTo(stream[i].x, stream[i].y, mx, my);
+                }
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                // Soft outer wake wash
+                ctx.strokeStyle = 'rgba(0, 240, 255, ' + (0.22 * alphaFactor) + ')';
+                ctx.lineWidth = 3.4 * this.scale * widthFactor;
                 ctx.stroke();
 
-                ctx.fillStyle = 'rgba(2, 132, 199, ' + (w.alpha * 0.22) + ')';
-                ctx.fill();
-            }
+                // Core glowing streamline
+                ctx.strokeStyle = 'rgba(56, 189, 248, ' + (0.58 * alphaFactor) + ')';
+                ctx.lineWidth = 1.3 * this.scale * widthFactor;
+                ctx.stroke();
+            };
 
-            // 2. Caudal Veil-Tail Fin (fluttering tail)
-            const tail = this.spine[this.spine.length - 1];
+            drawWakeStream(this.wakeLeft, 0.75, 0.85);
+            drawWakeStream(this.wakeRight, 0.75, 0.85);
+            drawWakeStream(this.wakeCenter, 1.0, 1.15);
+
+            // 2. Caudal Veil-Tail Fin (Fan-shaped Japanese veil tail with delicate rays)
+            const tailRoot = this.spine[this.spine.length - 1];
             const preTail = this.spine[this.spine.length - 2];
-            const tailAngle = Math.atan2(tail.y - preTail.y, tail.x - preTail.x);
-            const tailWiggle = Math.sin(this.swimCycle - 2.5) * 0.4;
-            
-            ctx.beginPath();
-            ctx.moveTo(tail.x, tail.y);
-            const finLen = 22 * this.scale;
-            const tipX1 = tail.x + Math.cos(tailAngle - 0.35 + tailWiggle) * finLen;
-            const tipY1 = tail.y + Math.sin(tailAngle - 0.35 + tailWiggle) * finLen;
-            const tipX2 = tail.x + Math.cos(tailAngle + 0.35 + tailWiggle) * finLen;
-            const tipY2 = tail.y + Math.sin(tailAngle + 0.35 + tailWiggle) * finLen;
-            const notchX = tail.x + Math.cos(tailAngle + tailWiggle) * (finLen * 0.6);
-            const notchY = tail.y + Math.sin(tailAngle + tailWiggle) * (finLen * 0.6);
+            const tailAngle = Math.atan2(tailRoot.y - preTail.y, tailRoot.x - preTail.x);
+            const tailFlutter = Math.sin(this.swimCycle - 2.8) * 0.45;
+            const tailLen = 26 * this.scale;
+            const tailSpread = 13 * this.scale;
 
-            ctx.lineTo(tipX1, tipY1);
-            ctx.quadraticCurveTo(notchX, notchY, tipX2, tipY2);
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.16)';
+            const tipTopX = tailRoot.x + Math.cos(tailAngle - 0.45 + tailFlutter) * tailLen;
+            const tipTopY = tailRoot.y + Math.sin(tailAngle - 0.45 + tailFlutter) * tailLen;
+            const tipBottomX = tailRoot.x + Math.cos(tailAngle + 0.45 + tailFlutter) * tailLen;
+            const tipBottomY = tailRoot.y + Math.sin(tailAngle + 0.45 + tailFlutter) * tailLen;
+            const tipMidX = tailRoot.x + Math.cos(tailAngle + tailFlutter) * (tailLen * 0.75);
+            const tipMidY = tailRoot.y + Math.sin(tailAngle + tailFlutter) * (tailLen * 0.75);
+
+            ctx.beginPath();
+            ctx.moveTo(tailRoot.x, tailRoot.y);
+            ctx.quadraticCurveTo(
+                tailRoot.x + Math.cos(tailAngle - 0.7) * tailSpread,
+                tailRoot.y + Math.sin(tailAngle - 0.7) * tailSpread,
+                tipTopX, tipTopY
+            );
+            ctx.quadraticCurveTo(tipMidX, tipMidY, tipBottomX, tipBottomY);
+            ctx.quadraticCurveTo(
+                tailRoot.x + Math.cos(tailAngle + 0.7) * tailSpread,
+                tailRoot.y + Math.sin(tailAngle + 0.7) * tailSpread,
+                tailRoot.x, tailRoot.y
+            );
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
             ctx.fill();
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.65)';
-            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
+            ctx.lineWidth = 1.3 * this.scale;
             ctx.stroke();
 
-            // 3. Pectoral Fins (flowing wings)
-            const pectoralVertebra = this.spine[2];
-            const pecAngle = Math.atan2(this.spine[1].y - this.spine[3].y, this.spine[1].x - this.spine[3].x);
-            const finSweep = Math.sin(this.swimCycle) * 0.22;
-            const pecLen = 17 * this.scale;
+            // Tail fin rays
+            for (let ray = -2; ray <= 2; ray++) {
+                const rx = tipMidX + (tipTopX - tipBottomX) * (ray / 5);
+                const ry = tipMidY + (tipTopY - tipBottomY) * (ray / 5);
+                ctx.beginPath();
+                ctx.moveTo(tailRoot.x, tailRoot.y);
+                ctx.lineTo(rx, ry);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+                ctx.lineWidth = 0.8;
+                ctx.stroke();
+            }
+
+            // 3. Pectoral Fins (Broad front fins attached at gills)
+            const pecVertebra = this.spine[2];
+            const pecBaseAngle = Math.atan2(this.spine[1].y - this.spine[3].y, this.spine[1].x - this.spine[3].x);
+            const pecLen = 21 * this.scale;
+            const pecSpread = 15 * this.scale;
+            const pecWave = Math.sin(this.swimCycle) * 0.25;
 
             for (let side = -1; side <= 1; side += 2) {
-                const angleSide = pecAngle + (side * (Math.PI * 0.6)) + (side * finSweep);
-                const fx = pectoralVertebra.x + Math.cos(angleSide) * pecLen;
-                const fy = pectoralVertebra.y + Math.sin(angleSide) * pecLen;
-                const ctrlX = pectoralVertebra.x + Math.cos(angleSide - side * 0.4) * (pecLen * 0.7);
-                const ctrlY = pectoralVertebra.y + Math.sin(angleSide - side * 0.4) * (pecLen * 0.7);
+                const finAngle = pecBaseAngle + (side * (Math.PI * 0.58)) + (side * pecWave);
+                const fx = pecVertebra.x + Math.cos(finAngle) * pecLen;
+                const fy = pecVertebra.y + Math.sin(finAngle) * pecLen;
+                const ctrlX = pecVertebra.x + Math.cos(finAngle - side * 0.35) * pecSpread;
+                const ctrlY = pecVertebra.y + Math.sin(finAngle - side * 0.35) * pecSpread;
+                const rearX = pecVertebra.x - Math.cos(pecBaseAngle) * (pecLen * 0.35);
+                const rearY = pecVertebra.y - Math.sin(pecBaseAngle) * (pecLen * 0.35);
 
                 ctx.beginPath();
-                ctx.moveTo(pectoralVertebra.x, pectoralVertebra.y);
+                ctx.moveTo(pecVertebra.x, pecVertebra.y);
                 ctx.quadraticCurveTo(ctrlX, ctrlY, fx, fy);
-                ctx.quadraticCurveTo(pectoralVertebra.x - Math.cos(pecAngle) * (pecLen * 0.4), pectoralVertebra.y - Math.sin(pecAngle) * (pecLen * 0.4), pectoralVertebra.x, pectoralVertebra.y);
+                ctx.quadraticCurveTo(rearX, rearY, pecVertebra.x, pecVertebra.y);
+                ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+                ctx.lineWidth = 1.2 * this.scale;
+                ctx.stroke();
+
+                // Fin ray detailing
+                ctx.beginPath();
+                ctx.moveTo(pecVertebra.x, pecVertebra.y);
+                ctx.lineTo(fx, fy);
+                ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+                ctx.lineWidth = 0.8;
+                ctx.stroke();
+            }
+
+            // 4. Pelvic / Ventral Fins (Flank fins)
+            const pelvicVertebra = this.spine[6];
+            const pelvBaseAngle = Math.atan2(this.spine[5].y - this.spine[7].y, this.spine[5].x - this.spine[7].x);
+            const pelvLen = 11 * this.scale;
+
+            for (let side = -1; side <= 1; side += 2) {
+                const fAngle = pelvBaseAngle + (side * 2.2);
+                const px = pelvicVertebra.x + Math.cos(fAngle) * pelvLen;
+                const py = pelvicVertebra.y + Math.sin(fAngle) * pelvLen;
+
+                ctx.beginPath();
+                ctx.moveTo(pelvicVertebra.x, pelvicVertebra.y);
+                ctx.lineTo(px, py);
+                ctx.lineTo(pelvicVertebra.x - Math.cos(pelvBaseAngle) * (pelvLen * 0.4), pelvicVertebra.y - Math.sin(pelvBaseAngle) * (pelvLen * 0.4));
                 ctx.fillStyle = 'rgba(0, 240, 255, 0.18)';
                 ctx.fill();
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-                ctx.lineWidth = 1.1;
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+                ctx.lineWidth = 1.0;
                 ctx.stroke();
             }
 
-            // 4. Skeletal Rib Cage
-            for (let i = 1; i < this.numVertebrae - 2; i++) {
-                const vCurr = this.spine[i];
-                const vNext = this.spine[i + 1];
-                const segAngle = Math.atan2(vCurr.y - vNext.y, vCurr.x - vNext.x);
-                const perpAngle = segAngle + Math.PI / 2;
-                const ribSpan = Math.sin((i / (this.numVertebrae - 2)) * Math.PI) * (9.5 * this.scale);
+            // 5. Solid Organic Koi Body Outline
+            const leftSide = [];
+            const rightSide = [];
 
-                ctx.beginPath();
-                ctx.moveTo(vCurr.x + Math.cos(perpAngle) * ribSpan, vCurr.y + Math.sin(perpAngle) * ribSpan);
-                ctx.lineTo(vCurr.x - Math.cos(perpAngle) * ribSpan, vCurr.y - Math.sin(perpAngle) * ribSpan);
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
-                ctx.lineWidth = 1.1;
-                ctx.stroke();
+            for (let i = 0; i < this.numVertebrae; i++) {
+                let nextPt = this.spine[Math.min(this.numVertebrae - 1, i + 1)];
+                let prevPt = this.spine[Math.max(0, i - 1)];
+                let segAngle = Math.atan2(prevPt.y - nextPt.y, prevPt.x - nextPt.x);
+                let perpX = -Math.sin(segAngle);
+                let perpY = Math.cos(segAngle);
+                let w = this.bodyWidths[i];
 
-                // Vertebral node
-                ctx.beginPath();
-                ctx.arc(vCurr.x, vCurr.y, 1.1 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(200, 245, 255, 0.75)';
-                ctx.fill();
+                leftSide.push({ x: this.spine[i].x + perpX * w, y: this.spine[i].y + perpY * w });
+                rightSide.push({ x: this.spine[i].x - perpX * w, y: this.spine[i].y - perpY * w });
             }
 
-            // 5. Spine Cord
             ctx.beginPath();
-            ctx.moveTo(this.spine[0].x, this.spine[0].y);
-            for (let i = 1; i < this.numVertebrae; i++) {
+            const snout = this.spine[0];
+            ctx.moveTo(snout.x, snout.y);
+
+            // Smooth curve along left flank
+            for (let i = 0; i < leftSide.length - 1; i++) {
+                const mx = (leftSide[i].x + leftSide[i + 1].x) / 2;
+                const my = (leftSide[i].y + leftSide[i + 1].y) / 2;
+                ctx.quadraticCurveTo(leftSide[i].x, leftSide[i].y, mx, my);
+            }
+            ctx.lineTo(this.spine[this.numVertebrae - 1].x, this.spine[this.numVertebrae - 1].y);
+
+            // Smooth curve along right flank
+            for (let i = rightSide.length - 1; i > 0; i--) {
+                const mx = (rightSide[i].x + rightSide[i - 1].x) / 2;
+                const my = (rightSide[i].y + rightSide[i - 1].y) / 2;
+                ctx.quadraticCurveTo(rightSide[i].x, rightSide[i].y, mx, my);
+            }
+            ctx.quadraticCurveTo(rightSide[0].x, rightSide[0].y, snout.x, snout.y);
+            ctx.closePath();
+
+            // Solid midnight indigo-cyan body fill
+            const grad = ctx.createLinearGradient(
+                this.spine[0].x, this.spine[0].y,
+                this.spine[this.numVertebrae - 1].x, this.spine[this.numVertebrae - 1].y
+            );
+            grad.addColorStop(0, '#061a2e');
+            grad.addColorStop(0.3, '#0c2e4e');
+            grad.addColorStop(0.7, '#072038');
+            grad.addColorStop(1, '#030f1c');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Luminous glowing outer contour
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.78)';
+            ctx.lineWidth = 1.5 * this.scale;
+            ctx.stroke();
+
+            // 6. Ornamental Cyber Koi Markings (Scales & Dorsal Pattern)
+            ctx.beginPath();
+            ctx.moveTo(this.spine[1].x, this.spine[1].y);
+            for (let i = 2; i < 9; i++) {
                 ctx.lineTo(this.spine[i].x, this.spine[i].y);
             }
-            ctx.strokeStyle = 'rgba(0, 240, 255, 0.7)';
-            ctx.lineWidth = 1.6 * this.scale;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'rgba(0, 240, 255, 0.55)';
+            ctx.lineWidth = 2.0 * this.scale;
             ctx.stroke();
 
-            // 6. Spectral Cranium (Head)
-            const head = this.spine[0];
-            const hAngle = this.angle;
-            const headLen = 11 * this.scale;
-            const headWidth = 7.5 * this.scale;
+            // Shimmering koi calico / cyber dorsal patches
+            const drawPatch = (vertIdx, radiusX, radiusY, col) => {
+                const pt = this.spine[vertIdx];
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, radiusX, 0, Math.PI * 2);
+                ctx.fillStyle = col;
+                ctx.fill();
+            };
 
-            const snoutX = head.x + Math.cos(hAngle) * headLen;
-            const snoutY = head.y + Math.sin(hAngle) * headLen;
-            const leftCheekX = head.x + Math.cos(hAngle + Math.PI * 0.55) * headWidth;
-            const leftCheekY = head.y + Math.sin(hAngle + Math.PI * 0.55) * headWidth;
-            const rightCheekX = head.x + Math.cos(hAngle - Math.PI * 0.55) * headWidth;
-            const rightCheekY = head.y + Math.sin(hAngle - Math.PI * 0.55) * headWidth;
-
-            ctx.beginPath();
-            ctx.moveTo(snoutX, snoutY);
-            ctx.quadraticCurveTo(leftCheekX, leftCheekY, head.x, head.y);
-            ctx.quadraticCurveTo(rightCheekX, rightCheekY, snoutX, snoutY);
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.16)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(0, 240, 255, 0.8)';
-            ctx.lineWidth = 1.4;
-            ctx.stroke();
+            drawPatch(2, 5.5 * this.scale, 5.5 * this.scale, 'rgba(56, 189, 248, 0.35)');
+            drawPatch(4, 7.0 * this.scale, 7.0 * this.scale, 'rgba(0, 240, 255, 0.38)');
+            drawPatch(7, 4.5 * this.scale, 4.5 * this.scale, 'rgba(56, 189, 248, 0.32)');
 
             // 7. Glowing Red Pearl Eyes (Red Pearl Invites)
+            const eyeVert = this.spine[1];
+            const eyeAngle = Math.atan2(this.spine[0].y - this.spine[2].y, this.spine[0].x - this.spine[2].x);
+            const eyePerpX = -Math.sin(eyeAngle);
+            const eyePerpY = Math.cos(eyeAngle);
+            const eyeDist = this.bodyWidths[1] * 0.85;
+
             for (let side = -1; side <= 1; side += 2) {
-                const eyeX = head.x + Math.cos(hAngle + side * 0.7) * (headWidth * 0.75) + Math.cos(hAngle) * (headLen * 0.25);
-                const eyeY = head.y + Math.sin(hAngle + side * 0.7) * (headWidth * 0.75) + Math.sin(hAngle) * (headLen * 0.25);
+                const eyeX = eyeVert.x + (eyePerpX * side * eyeDist) + Math.cos(eyeAngle) * (1.2 * this.scale);
+                const eyeY = eyeVert.y + (eyePerpY * side * eyeDist) + Math.sin(eyeAngle) * (1.2 * this.scale);
 
-                // Outer red pearl glow
+                // Ambient red pearl outer halo
                 ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 4.2 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 42, 95, 0.25)';
+                ctx.arc(eyeX, eyeY, 4.8 * this.scale, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 42, 95, 0.28)';
                 ctx.fill();
 
-                // Saturated red iris
+                // Saturated ruby iris
                 ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 2.2 * this.scale, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255, 20, 75, 0.8)';
+                ctx.arc(eyeX, eyeY, 2.5 * this.scale, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 20, 75, 0.85)';
                 ctx.fill();
 
-                // Vivid ruby pupil
+                // Core glowing ruby pupil
                 ctx.beginPath();
-                ctx.arc(eyeX, eyeY, 1.2 * this.scale, 0, Math.PI * 2);
+                ctx.arc(eyeX, eyeY, 1.4 * this.scale, 0, Math.PI * 2);
                 ctx.fillStyle = '#ff0055';
                 ctx.fill();
 
-                // Pinpoint specular glint
+                // Specular jewel glint
                 ctx.beginPath();
                 ctx.arc(eyeX - 0.4, eyeY - 0.4, 0.5 * this.scale, 0, Math.PI * 2);
                 ctx.fillStyle = '#ffffff';
@@ -11872,12 +11988,12 @@ function initBioluminescentSea() {
     }
 
     const koiSchool = [
-        new SpectralKoi(width, height, 1.25),
-        new SpectralKoi(width, height, 1.1),
-        new SpectralKoi(width, height, 0.95),
-        new SpectralKoi(width, height, 0.85),
-        new SpectralKoi(width, height, 0.75),
-        new SpectralKoi(width, height, 1.0)
+        new TrueKoi(width, height, 1.3),
+        new TrueKoi(width, height, 1.15),
+        new TrueKoi(width, height, 1.0),
+        new TrueKoi(width, height, 0.9),
+        new TrueKoi(width, height, 0.8),
+        new TrueKoi(width, height, 1.05)
     ];
 
     let isRunning = true;
@@ -11900,6 +12016,7 @@ function initBioluminescentSea() {
 
     renderSea();
 }
+
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initBioluminescentSea);
