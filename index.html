@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
-    <link rel="stylesheet" href="styles.css?v=11">
+    <link rel="stylesheet" href="styles.css?v=12">
     <style>
         /* Core inline styles fallback */
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -1654,16 +1654,33 @@ img, video, canvas, pre, code {
 
             <!-- Tab: Notifications Pane -->
             <div id="pane-settings-notifs" class="hidden">
-                <!-- Master Toggle -->
-                <div class="setting-toggle-row" style="border: 1px solid #38bdf8; background: #0f172a;">
+                <!-- Master Alert Toggle -->
+                <div class="setting-toggle-row" style="border: 1px solid #38bdf8; background: #0f172a; margin-bottom: 8px;">
                     <div class="setting-toggle-info">
-                        <div class="setting-toggle-title" style="color: #38bdf8;">🔔 All Notifications</div>
-                        <div class="setting-toggle-desc">Master switch to enable or disable all notification popups and sounds.</div>
+                        <div class="setting-toggle-title" style="color: #38bdf8;">🔔 Visual Popups & Alerts</div>
+                        <div class="setting-toggle-desc">Master switch to enable or disable all onscreen techno-toast cards and call banners.</div>
                     </div>
                     <input type="checkbox" id="notif-master-toggle-chk" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                 </div>
 
+                <!-- Master Audio Toggle (Mutes Sounds WITHOUT turning off popups) -->
+                <div class="setting-toggle-row" style="border: 1px solid #10b981; background: #0f172a; margin-bottom: 14px;">
+                    <div class="setting-toggle-info">
+                        <div class="setting-toggle-title" style="color: #10b981;">🔊 Notification & Call Sounds</div>
+                        <div class="setting-toggle-desc">Mute all incoming notification chimes, message chirps, and call ringtones while keeping all sleek popups active.</div>
+                    </div>
+                    <input type="checkbox" id="notif-toggle-sounds" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #10b981;">
+                </div>
+
                 <div id="granular-notif-options" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                    <!-- Microphone Permission Status -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">🎤 Microphone Permission</div>
+                            <div class="setting-toggle-desc" id="mic-status-desc">Remember microphone access so calls connect instantly without re-prompting.</div>
+                        </div>
+                        <button type="button" id="enable-mic-perm-btn" class="secondary" style="font-size: 0.75rem; padding: 6px 12px; width: auto; margin: 0; border-color: #10b981; color: #10b981; cursor: pointer;">Remember Mic ✓</button>
+                    </div>
                     <!-- Direct Messages -->
                     <div class="setting-toggle-row">
                         <div class="setting-toggle-info">
@@ -1700,14 +1717,7 @@ img, video, canvas, pre, code {
                         <input type="checkbox" id="notif-toggle-replies" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
 
-                    <!-- Sound Effects (Techno Chirps) -->
-                    <div class="setting-toggle-row">
-                        <div class="setting-toggle-info">
-                            <div class="setting-toggle-title">🔊 Sound Effects</div>
-                            <div class="setting-toggle-desc">Play synthesized high-tech chirps when interactive toasts appear.</div>
-                        </div>
-                        <input type="checkbox" id="notif-toggle-sounds" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
-                    </div>
+
                 </div>
             </div>
 
@@ -2025,7 +2035,7 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=11"></script>
+    <script type="module" src="script.js?v=12"></script>
 
 
     <!-- SHARE POST MODAL -->
