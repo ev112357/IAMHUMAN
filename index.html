@@ -914,6 +914,141 @@ img, video, canvas, pre, code {
             background: #ca8a04 !important;
             color: #ffffff !important;
         }
+
+        /* Cute Green Ambient Aura & Vibration Animation for Incoming Calls */
+        .call-ambient-backdrop {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 24998;
+            background: radial-gradient(circle at center, rgba(34, 197, 94, 0.28) 0%, rgba(16, 185, 129, 0.16) 45%, transparent 75%);
+            animation: ambient-call-vibrate 0.85s ease-in-out infinite alternate;
+        }
+        @keyframes ambient-call-vibrate {
+            0% { transform: scale(1) translate(0, 0); opacity: 0.65; }
+            20% { transform: scale(1.02) translate(-3px, 1px); opacity: 0.95; }
+            40% { transform: scale(1.01) translate(2px, -2px); opacity: 0.8; }
+            60% { transform: scale(1.03) translate(-2px, -1px); opacity: 1; }
+            80% { transform: scale(1.01) translate(3px, 2px); opacity: 0.85; }
+            100% { transform: scale(1.02) translate(1px, -2px); opacity: 0.7; }
+        }
+
+        /* Modern Cyber/Techno Toast Notifications */
+        .tech-toast-container {
+            position: fixed;
+            top: calc(14px + env(safe-area-inset-top, 0px));
+            right: 14px;
+            z-index: 30000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+            max-width: 360px;
+            width: calc(100% - 28px);
+        }
+        @media (max-width: 768px) {
+            .tech-toast-container {
+                left: 14px;
+                right: 14px;
+                max-width: 100%;
+            }
+        }
+        .tech-toast {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.94);
+            border: 1px solid #38bdf8;
+            border-left: 4px solid #38bdf8;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(56, 189, 248, 0.25);
+            backdrop-filter: blur(14px);
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #f8fafc;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            transform: translateX(110%);
+            animation: tech-toast-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: transform 0.25s ease, opacity 0.25s ease, box-shadow 0.2s ease;
+        }
+        .tech-toast:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7), 0 0 22px rgba(56, 189, 248, 0.4);
+            border-color: #7dd3fc;
+        }
+        .tech-toast.closing {
+            animation: tech-toast-slide-out 0.3s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+        }
+        @keyframes tech-toast-slide-in {
+            from { transform: translateX(110%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes tech-toast-slide-out {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(110%); opacity: 0; }
+        }
+        .tech-toast-icon {
+            font-size: 1.3rem;
+            line-height: 1;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .tech-toast-body {
+            flex: 1;
+            min-width: 0;
+        }
+        .tech-toast-title {
+            font-size: 0.82rem;
+            font-weight: 800;
+            color: #38bdf8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .tech-toast-msg {
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+        .tech-toast-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+            width: 100%;
+            animation: tech-toast-countdown linear forwards;
+        }
+        @keyframes tech-toast-countdown {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+        .tech-toast.toast-success {
+            border-left-color: #22c55e;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(34, 197, 94, 0.25);
+        }
+        .tech-toast.toast-success .tech-toast-title {
+            color: #22c55e;
+        }
+        .tech-toast.toast-success .tech-toast-progress {
+            background: linear-gradient(90deg, #22c55e, #38bdf8);
+        }
+        .tech-toast.toast-error {
+            border-left-color: #ef4444;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(239, 68, 68, 0.25);
+        }
+        .tech-toast.toast-error .tech-toast-title {
+            color: #ef4444;
+        }
+        .tech-toast.toast-error .tech-toast-progress {
+            background: linear-gradient(90deg, #ef4444, #f97316);
+        }
 </style>
 </head>
 <body>
@@ -1772,5 +1907,10 @@ img, video, canvas, pre, code {
         </div>
     </div>
     <audio id="remote-audio" autoplay playsinline style="display: none;"></audio>
+    <!-- AMBIENT CALL GREEN GLOW & VIBRATION BACKDROP -->
+    <div id="call-ambient-backdrop" class="call-ambient-backdrop hidden"></div>
+
+    <!-- TECHNO TOAST NOTIFICATION CONTAINER -->
+    <div id="tech-toast-container" class="tech-toast-container"></div>
 </body>
 </html>
