@@ -1902,15 +1902,7 @@ img, video, canvas, pre, code {
             pointer-events: none;
             transition: width 0.04s ease-out;
         }
-        .cyber-scroll-tracker::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 28px;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85));
-            box-shadow: 0 0 10px #ffffff;
+        /* White corner dot eliminated as requested */
         }
         @keyframes scroll-gradient-flow {
             0% { background-position: 0% 50%; }
