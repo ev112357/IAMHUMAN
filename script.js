@@ -208,6 +208,62 @@ const paneSettingsPrivacy = document.getElementById('pane-settings-privacy');
 const privacyToggleChk = document.getElementById('privacy-toggle-chk');
 const accountPrivacyDesc = document.getElementById('account-privacy-desc');
 
+// Settings Notification Tab Elements
+const tabBtnSettingsNotifs = document.getElementById('tab-btn-settings-notifs');
+const paneSettingsNotifs = document.getElementById('pane-settings-notifs');
+const notifMasterToggleChk = document.getElementById('notif-master-toggle-chk');
+const granularNotifOptions = document.getElementById('granular-notif-options');
+const notifToggleMessages = document.getElementById('notif-toggle-messages');
+const notifToggleCalls = document.getElementById('notif-toggle-calls');
+const notifToggleUpvotes = document.getElementById('notif-toggle-upvotes');
+const notifToggleReplies = document.getElementById('notif-toggle-replies');
+const notifToggleSounds = document.getElementById('notif-toggle-sounds');
+
+// Notification Preferences
+let userNotifPrefs = {
+    allEnabled: true,
+    messages: true,
+    calls: true,
+    upvotes: true,
+    replies: true,
+    sounds: true
+};
+
+function getNotifPrefsKey() {
+    return currentUser ? `user_notif_prefs_${currentUser.id}` : 'user_notif_prefs_guest';
+}
+
+function loadNotificationPreferences() {
+    try {
+        const saved = localStorage.getItem(getNotifPrefsKey());
+        if (saved) {
+            userNotifPrefs = { ...userNotifPrefs, ...JSON.parse(saved) };
+        }
+    } catch (e) {
+        console.warn("Notice loading notification preferences:", e);
+    }
+    syncNotificationSettingsUI();
+}
+
+function saveNotificationPreferences() {
+    try {
+        localStorage.setItem(getNotifPrefsKey(), JSON.stringify(userNotifPrefs));
+    } catch (e) {}
+}
+
+function syncNotificationSettingsUI() {
+    if (notifMasterToggleChk) notifMasterToggleChk.checked = userNotifPrefs.allEnabled;
+    if (granularNotifOptions) {
+        granularNotifOptions.style.opacity = userNotifPrefs.allEnabled ? '1' : '0.4';
+        granularNotifOptions.style.pointerEvents = userNotifPrefs.allEnabled ? 'auto' : 'none';
+    }
+    if (notifToggleMessages) notifToggleMessages.checked = userNotifPrefs.messages;
+    if (notifToggleCalls) notifToggleCalls.checked = userNotifPrefs.calls;
+    if (notifToggleUpvotes) notifToggleUpvotes.checked = userNotifPrefs.upvotes;
+    if (notifToggleReplies) notifToggleReplies.checked = userNotifPrefs.replies;
+    if (notifToggleSounds) notifToggleSounds.checked = userNotifPrefs.sounds;
+}
+
 
 const profilePreviewAvatar = document.getElementById('profile-preview-avatar');
 const profileAvatarFile = document.getElementById('profile-avatar-file');
@@ -465,39 +521,74 @@ if (tabNavSettings) {
 
 
 function switchSettingsTab(tab) {
-    if (tab === 'profile') {
-        if (paneSettingsProfile) paneSettingsProfile.classList.remove('hidden');
-        if (paneSettingsPrivacy) paneSettingsPrivacy.classList.add('hidden');
-        if (tabBtnSettingsProfile) {
-            tabBtnSettingsProfile.style.background = "#0284c7";
-            tabBtnSettingsProfile.style.borderColor = "#38bdf8";
-            tabBtnSettingsProfile.style.color = "#ffffff";
+    const tabs = ['profile', 'notifs', 'privacy'];
+    const panes = { profile: paneSettingsProfile, notifs: paneSettingsNotifs, privacy: paneSettingsPrivacy };
+    const buttons = { profile: tabBtnSettingsProfile, notifs: tabBtnSettingsNotifs, privacy: tabBtnSettingsPrivacy };
+
+    tabs.forEach(t => {
+        if (panes[t]) {
+            if (t === tab) panes[t].classList.remove('hidden');
+            else panes[t].classList.add('hidden');
         }
-        if (tabBtnSettingsPrivacy) {
-            tabBtnSettingsPrivacy.style.background = "#0f172a";
-            tabBtnSettingsPrivacy.style.borderColor = "#334155";
-            tabBtnSettingsPrivacy.style.color = "#94a3b8";
+        if (buttons[t]) {
+            if (t === tab) {
+                buttons[t].style.background = "#0284c7";
+                buttons[t].style.borderColor = "#38bdf8";
+                buttons[t].style.color = "#ffffff";
+            } else {
+                buttons[t].style.background = "#0f172a";
+                buttons[t].style.borderColor = "#334155";
+                buttons[t].style.color = "#94a3b8";
+            }
         }
-    } else {
-        if (paneSettingsProfile) paneSettingsProfile.classList.add('hidden');
-        if (paneSettingsPrivacy) paneSettingsPrivacy.classList.remove('hidden');
-        if (tabBtnSettingsPrivacy) {
-            tabBtnSettingsPrivacy.style.background = "#0284c7";
-            tabBtnSettingsPrivacy.style.borderColor = "#38bdf8";
-            tabBtnSettingsPrivacy.style.color = "#ffffff";
-        }
-        if (tabBtnSettingsProfile) {
-            tabBtnSettingsProfile.style.background = "#0f172a";
-            tabBtnSettingsProfile.style.borderColor = "#334155";
-            tabBtnSettingsProfile.style.color = "#94a3b8";
-        }
+    });
+
+    if (tab === 'notifs') {
+        syncNotificationSettingsUI();
     }
 }
 
-
 safeAddListener(tabBtnSettingsProfile, 'click', () => switchSettingsTab('profile'));
+safeAddListener(tabBtnSettingsNotifs, 'click', () => switchSettingsTab('notifs'));
 safeAddListener(tabBtnSettingsPrivacy, 'click', () => switchSettingsTab('privacy'));
 
+// Notification Toggle Listeners
+safeAddListener(notifMasterToggleChk, 'change', () => {
+    userNotifPrefs.allEnabled = notifMasterToggleChk.checked;
+    saveNotificationPreferences();
+    syncNotificationSettingsUI();
+    showToast({
+        title: "Notifications",
+        message: userNotifPrefs.allEnabled ? "All notifications enabled." : "Notifications muted entirely.",
+        type: userNotifPrefs.allEnabled ? "success" : "info",
+        icon: userNotifPrefs.allEnabled ? "🔔" : "🔕"
+    });
+});
+
+safeAddListener(notifToggleMessages, 'change', () => {
+    userNotifPrefs.messages = notifToggleMessages.checked;
+    saveNotificationPreferences();
+});
+
+safeAddListener(notifToggleCalls, 'change', () => {
+    userNotifPrefs.calls = notifToggleCalls.checked;
+    saveNotificationPreferences();
+});
+
+safeAddListener(notifToggleUpvotes, 'change', () => {
+    userNotifPrefs.upvotes = notifToggleUpvotes.checked;
+    saveNotificationPreferences();
+});
+
+safeAddListener(notifToggleReplies, 'change', () => {
+    userNotifPrefs.replies = notifToggleReplies.checked;
+    saveNotificationPreferences();
+});
+
+safeAddListener(notifToggleSounds, 'change', () => {
+    userNotifPrefs.sounds = notifToggleSounds.checked;
+    saveNotificationPreferences();
+});
 
 function syncPrivacyDesc() {
     if (!accountPrivacyDesc) return;
@@ -1562,6 +1653,7 @@ async function syncUserState(user) {
                     renderUserAvatar(currentAvatarUrl);
         initUserCallSignaling();
         initRealtimeActivityNotifications();
+        loadNotificationPreferences();
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
                 if (privacyToggleChk) {
@@ -6611,13 +6703,17 @@ function playTechChirp(type = 'info') {
 }
 
 function showToast({ title = 'Notification', message = '', type = 'info', icon = '📡', onClick = null, duration = 3800 }) {
+    if (!userNotifPrefs.allEnabled) return;
+
     const container = document.getElementById('tech-toast-container');
     if (!container) {
         console.log(`[${title}] ${message}`);
         return;
     }
 
-    playTechChirp(type);
+    if (userNotifPrefs.sounds) {
+        playTechChirp(type);
+    }
     if (navigator.vibrate) {
         try { navigator.vibrate(type === 'error' ? [80, 50, 80] : [60]); } catch (e) {}
     }
@@ -6962,44 +7058,44 @@ async function startAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        await callChan.subscribe(async (status) => {
+        // Pre-create offer before broadcasting so it is bundled directly in the invitation
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        const callPayload = {
+            callerId: currentUser.id,
+            callerUsername: currentUsername,
+            callerAvatar: currentAvatarUrl,
+            conversationId: targetConvId,
+            offer: offer
+        };
+
+        await callChan.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
-                // 1. Ring partner on their personal channel when subscribed
+                // 1. Send offer on call room
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_offer',
+                    payload: { offer: offer, from: currentUser.id }
+                });
+
+                // 2. Also broadcast incoming_call in call room
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'incoming_call',
+                    payload: callPayload
+                });
+
+                // 3. Ring partner's dedicated personal signaling channel
                 const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`);
                 partnerSig.subscribe((sigStatus) => {
                     if (sigStatus === 'SUBSCRIBED') {
                         partnerSig.send({
                             type: 'broadcast',
                             event: 'incoming_call',
-                            payload: {
-                                callerId: currentUser.id,
-                                callerUsername: currentUsername,
-                                callerAvatar: currentAvatarUrl,
-                                conversationId: targetConvId
-                            }
+                            payload: callPayload
                         });
                     }
-                });
-
-                // 2. Also broadcast incoming_call to the call room in case partner has the chat open
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'incoming_call',
-                    payload: {
-                        callerId: currentUser.id,
-                        callerUsername: currentUsername,
-                        callerAvatar: currentAvatarUrl,
-                        conversationId: targetConvId
-                    }
-                });
-
-                // 3. Create initial SDP Offer
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_offer',
-                    payload: { offer: offer, from: currentUser.id }
                 });
             }
         });
@@ -7079,15 +7175,40 @@ async function answerAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        await callChan.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'receiver_ready',
-                    payload: { from: currentUser.id }
+        // If offer was bundled in incoming call payload, apply it immediately
+        if (data && data.offer) {
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                while (queuedIceCandidates.length > 0) {
+                    const c = queuedIceCandidates.shift();
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                }
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                await callChan.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        callChan.send({
+                            type: 'broadcast',
+                            event: 'webrtc_answer',
+                            payload: { answer: answer, from: currentUser.id }
+                        });
+                    }
                 });
+            } catch (err) {
+                console.error("Error setting up bundled offer:", err);
             }
-        });
+        } else {
+            await callChan.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'receiver_ready',
+                        payload: { from: currentUser.id }
+                    });
+                }
+            });
+        }
 
         showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
 
@@ -7175,6 +7296,17 @@ function initUserCallSignaling() {
                 return;
             }
 
+            if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
+                // If user has disabled call notifications, auto decline/busy
+                const returnChan = db.channel(`call_room_${data.conversationId}`);
+                returnChan.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        returnChan.send({ type: 'broadcast', event: 'call_declined', payload: { from: currentUser?.id } });
+                    }
+                });
+                return;
+            }
+
             incomingCallData = data;
             if (incomingCallerName) {
                 incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
@@ -7243,6 +7375,11 @@ function initRealtimeActivityNotifications() {
                 else if (notif.type === 'friend_request') { icon = '➕'; toastType = 'success'; }
 
                 // 3. Trigger Techno Toast
+                if (!userNotifPrefs.allEnabled) return;
+                if (notif.type === 'upvote_post' && !userNotifPrefs.upvotes) return;
+                if (notif.type === 'comment_reply' && !userNotifPrefs.replies) return;
+                if (notif.type === 'direct_message' && !userNotifPrefs.messages) return;
+
                 showToast({
                     title: `@${notif.actor_username}`,
                     message: notif.message,
