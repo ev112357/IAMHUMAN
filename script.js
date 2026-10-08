@@ -27,55 +27,105 @@ if (!db) console.error("Critical: window.supabase is not initialized.");
 // SITE SUPER ADMIN USERNAME
 const SITE_ADMIN_USERNAME = "gemini";
 
-// --- AUDIO AUTOPLAY UNLOCKER & SYNTHESIZER ---
-let userInteractedWithPage = false;
-function ensureAudioUnlocked() {
-    if (userInteractedWithPage) return;
-    userInteractedWithPage = true;
-    try {
+// --- PERSISTENT SHARED AUDIO ENGINE & SYNTHESIZER ---
+let sharedAudioCtx = null;
+function getSharedAudioContext() {
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (AudioCtx) {
-            const tempCtx = new AudioCtx();
-            tempCtx.resume().then(() => {
-                setTimeout(() => tempCtx.close().catch(() => {}), 100);
-            }).catch(() => {});
+            sharedAudioCtx = new AudioCtx();
         }
-    } catch (e) {}
+    }
+    if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume().catch(() => {});
+    }
+    return sharedAudioCtx;
 }
-window.addEventListener('click', ensureAudioUnlocked, { once: true, passive: true });
-window.addEventListener('keydown', ensureAudioUnlocked, { once: true, passive: true });
-window.addEventListener('touchstart', ensureAudioUnlocked, { once: true, passive: true });
+
+function unlockAudioEngine() {
+    const ctx = getSharedAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+    }
+}
+window.addEventListener('click', unlockAudioEngine, { passive: true });
+window.addEventListener('touchstart', unlockAudioEngine, { passive: true });
+window.addEventListener('keydown', unlockAudioEngine, { passive: true });
+
+// --- PERSISTENT MICROPHONE STREAM (REMEMBERS PERMISSIONS WITHOUT PROMPTING) ---
+let persistentAudioStream = null;
+async function getMicrophoneStream() {
+    // If we already have an active stream whose tracks are live, reuse it with zero prompt
+    if (persistentAudioStream) {
+        const liveTracks = persistentAudioStream.getAudioTracks().filter(t => t.readyState === 'live');
+        if (liveTracks.length > 0) {
+            liveTracks.forEach(t => { t.enabled = true; });
+            return persistentAudioStream;
+        }
+    }
+
+    // Request clean audio permission once
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    persistentAudioStream = stream;
+    try {
+        localStorage.setItem('tg_mic_permission_granted', 'true');
+        const micDesc = document.getElementById('mic-status-desc');
+        const micBtn = document.getElementById('enable-mic-perm-btn');
+        if (micDesc) micDesc.textContent = "Microphone access is permanently remembered.";
+        if (micBtn) { micBtn.textContent = "Remembered ✓"; micBtn.style.borderColor = "#10b981"; micBtn.style.color = "#10b981"; }
+    } catch (e) {}
+    return stream;
+}
+
+window.addEventListener('beforeunload', () => {
+    if (persistentAudioStream) {
+        try { persistentAudioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    }
+});
 
 function playTechChirp(type = 'info') {
+    // Mute sound if user toggled sound off in settings (popups continue to show)
+    if (typeof userNotifPrefs !== 'undefined' && userNotifPrefs && !userNotifPrefs.sounds) {
+        return;
+    }
     try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
+
+        const play = () => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            const now = ctx.currentTime;
+
+            if (type === 'success') {
+                osc.frequency.setValueAtTime(587.33, now); // D5
+                osc.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
+            } else if (type === 'error') {
+                osc.frequency.setValueAtTime(329.63, now); // E4
+                osc.frequency.exponentialRampToValueAtTime(220, now + 0.15); // A3
+            } else {
+                osc.frequency.setValueAtTime(440, now); // A4
+                osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.1); // E5
+            }
+
+            // Audible volume (0.28)
+            gain.gain.setValueAtTime(0.28, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start();
+            osc.stop(now + 0.19);
+        };
+
         if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-        }
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        if (type === 'success') {
-            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
-        } else if (type === 'error') {
-            osc.frequency.setValueAtTime(329.63, ctx.currentTime); // E4
-            osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.15); // A3
+            ctx.resume().then(play).catch(play);
         } else {
-            osc.frequency.setValueAtTime(440, ctx.currentTime); // A4
-            osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+            play();
         }
-
-        gain.gain.setValueAtTime(0.06, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.16);
-    } catch (e) {}
+    } catch (e) {
+        console.warn("Chirp notice:", e);
+    }
 }
 
 function showToast({ title = 'Notification', message = '', type = 'info', icon = '📡', onClick = null, duration = 4000, force = false }) {
@@ -730,6 +780,37 @@ safeAddListener(notifToggleReplies, 'change', () => {
 safeAddListener(notifToggleSounds, 'change', () => {
     userNotifPrefs.sounds = notifToggleSounds.checked;
     saveNotificationPreferences();
+    showToast({
+        title: "Audio Preferences",
+        message: userNotifPrefs.sounds 
+            ? "Notification sounds and call ringtones enabled." 
+            : "All sounds muted. Sleek popups and alerts remain active.",
+        type: userNotifPrefs.sounds ? "success" : "info",
+        icon: userNotifPrefs.sounds ? "🔊" : "🔇",
+        force: true
+    });
+});
+
+// Microphone permission helper button in settings
+safeAddListener(document.getElementById('enable-mic-perm-btn'), 'click', async () => {
+    try {
+        await getMicrophoneStream();
+        showToast({
+            title: "Microphone Access",
+            message: "Microphone permission is remembered. Calls will connect without prompts.",
+            type: "success",
+            icon: "🎤",
+            force: true
+        });
+    } catch (err) {
+        showToast({
+            title: "Microphone Error",
+            message: "Could not access microphone: " + (err.message || err.name),
+            type: "error",
+            icon: "⚠️",
+            force: true
+        });
+    }
 });
 
 function syncPrivacyDesc() {
@@ -3901,6 +3982,14 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
         if (badge) badge.classList.add('hidden');
     }
 
+    unreadCountsByConv.delete(conversationId);
+    let currentUnreadTotal = 0;
+    unreadCountsByConv.forEach(c => currentUnreadTotal += c);
+    if (currentUnreadTotal === 0) {
+        if (notifBadge) { notifBadge.textContent = '0'; notifBadge.classList.add('hidden'); }
+        if (mobileMsgBadge) { mobileMsgBadge.textContent = '0'; mobileMsgBadge.classList.add('hidden'); }
+    }
+
 
     loadMessages(true);
 
@@ -4160,16 +4249,38 @@ async function loadMessages(forceScroll = false) {
     scrollToBottom(forceScroll);
 
 
-    db.from('chat_messages')
-        .update({ is_read: true })
-        .eq('conversation_id', activeConversationId)
-        .neq('sender_id', currentUser.id)
-        .eq('is_read', false)
-        .catch(() => {});
+    // Await database updates so checkNotifications doesn't see old unread states
+    try {
+        await db.from('chat_messages')
+            .update({ is_read: true })
+            .eq('conversation_id', activeConversationId)
+            .neq('sender_id', currentUser.id)
+            .eq('is_read', false);
 
+        await db.from('user_notifications')
+            .update({ is_read: true })
+            .eq('user_id', currentUser.id)
+            .eq('entity_id', String(activeConversationId));
+    } catch (e) {}
 
     unreadCountsByConv.delete(activeConversationId);
-    checkNotifications();
+
+    // Immediately calculate remaining unread count in memory and update icon badges
+    let remainingUnreadTotal = 0;
+    unreadCountsByConv.forEach((cnt, cId) => {
+        if (cId !== activeConversationId) remainingUnreadTotal += cnt;
+    });
+
+    if (remainingUnreadTotal === 0) {
+        if (notifBadge) { notifBadge.textContent = '0'; notifBadge.classList.add('hidden'); }
+        if (mobileMsgBadge) { mobileMsgBadge.textContent = '0'; mobileMsgBadge.classList.add('hidden'); }
+    } else {
+        const badgeStr = remainingUnreadTotal > 99 ? '99+' : String(remainingUnreadTotal);
+        if (notifBadge) { notifBadge.textContent = badgeStr; notifBadge.classList.remove('hidden'); }
+        if (mobileMsgBadge) { mobileMsgBadge.textContent = badgeStr; mobileMsgBadge.classList.remove('hidden'); }
+    }
+
+    await checkNotifications();
 }
 
 
@@ -4440,8 +4551,13 @@ async function checkNotifications() {
 
 
             if (unreadMsgs) {
-                unreadTotal = unreadMsgs.length;
+                unreadTotal = 0;
                 unreadMsgs.forEach(m => {
+                    // Do not count messages as unread if the chat modal is open and active on this conversation
+                    if (dmModal && !dmModal.classList.contains('hidden') && activeConversationId === m.conversation_id) {
+                        return;
+                    }
+                    unreadTotal++;
                     const cur = unreadCountsByConv.get(m.conversation_id) || 0;
                     unreadCountsByConv.set(m.conversation_id, cur + 1);
                 });
@@ -6960,43 +7076,49 @@ function triggerIncomingCallUI(data) {
 
 function playRingtoneSound() {
     stopRingtoneSound();
+    // Mute ringtone sound if user turned off sounds in settings (visual popouts & aura remain active)
+    if (typeof userNotifPrefs !== 'undefined' && userNotifPrefs && !userNotifPrefs.sounds) {
+        return;
+    }
     try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        ringtoneAudioCtx = new AudioCtx();
-        if (ringtoneAudioCtx.state === 'suspended') {
-            ringtoneAudioCtx.resume().catch(() => {});
-        }
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
 
         const playTone = () => {
-            if (!ringtoneAudioCtx || ringtoneAudioCtx.state === 'closed') return;
-            if (ringtoneAudioCtx.state === 'suspended') {
-                ringtoneAudioCtx.resume().catch(() => {});
-            }
-            const osc1 = ringtoneAudioCtx.createOscillator();
-            const osc2 = ringtoneAudioCtx.createOscillator();
-            const gain = ringtoneAudioCtx.createGain();
+            if (!ctx || ctx.state === 'closed') return;
+            const now = ctx.currentTime;
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
+            const gain = ctx.createGain();
 
             osc1.type = 'sine';
             osc2.type = 'sine';
-            osc1.frequency.setValueAtTime(440, ringtoneAudioCtx.currentTime);
-            osc2.frequency.setValueAtTime(480, ringtoneAudioCtx.currentTime);
+            osc1.frequency.setValueAtTime(440, now);
+            osc2.frequency.setValueAtTime(480, now);
 
-            gain.gain.setValueAtTime(0.08, ringtoneAudioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, ringtoneAudioCtx.currentTime + 1.2);
+            // High-visibility audible ring volume (0.30)
+            gain.gain.setValueAtTime(0.30, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
 
             osc1.connect(gain);
             osc2.connect(gain);
-            gain.connect(ringtoneAudioCtx.destination);
+            gain.connect(ctx.destination);
 
             osc1.start();
             osc2.start();
-            osc1.stop(ringtoneAudioCtx.currentTime + 1.2);
-            osc2.stop(ringtoneAudioCtx.currentTime + 1.2);
+            osc1.stop(now + 1.2);
+            osc2.stop(now + 1.2);
         };
 
-        playTone();
-        ringtoneInterval = setInterval(playTone, 3000);
+        if (ctx.state === 'suspended') {
+            ctx.resume().then(playTone).catch(playTone);
+        } else {
+            playTone();
+        }
+        ringtoneInterval = setInterval(() => {
+            if (ctx.state === 'suspended') ctx.resume().then(playTone).catch(playTone);
+            else playTone();
+        }, 3000);
     } catch (e) {
         console.warn("Ringtone audio notice:", e);
     }
@@ -7069,8 +7191,9 @@ function cleanupCall(statusNotice = null) {
             clearInterval(activeCall.callTimerInterval);
         }
         if (activeCall.localStream) {
-            activeCall.localStream.getTracks().forEach(t => {
-                try { t.stop(); } catch (e) {}
+            // Mute local tracks to release mic access without triggering browser permission re-prompts on next call
+            activeCall.localStream.getAudioTracks().forEach(t => {
+                try { t.enabled = false; } catch (e) {}
             });
         }
         if (activeCall.peerConnection) {
@@ -7206,10 +7329,7 @@ async function startAudioCall() {
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: false
-        });
+        const stream = await getMicrophoneStream();
 
         const rtcConfig = {
             iceServers: [
@@ -7369,10 +7489,7 @@ async function answerAudioCall() {
     }
 
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: false
-        });
+        const stream = await getMicrophoneStream();
 
         const rtcConfig = {
             iceServers: [
