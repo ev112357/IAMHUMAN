@@ -52,36 +52,13 @@ window.addEventListener('click', unlockAudioEngine, { passive: true });
 window.addEventListener('touchstart', unlockAudioEngine, { passive: true });
 window.addEventListener('keydown', unlockAudioEngine, { passive: true });
 
-// --- PERSISTENT MICROPHONE STREAM (REMEMBERS PERMISSIONS WITHOUT PROMPTING) ---
-let persistentAudioStream = null;
+// --- ON-DEMAND PRIVACY MICROPHONE STREAM (ACTIVE ONLY DURING CALLS) ---
 async function getMicrophoneStream() {
-    // If we already have an active stream whose tracks are live, reuse it with zero prompt
-    if (persistentAudioStream) {
-        const liveTracks = persistentAudioStream.getAudioTracks().filter(t => t.readyState === 'live');
-        if (liveTracks.length > 0) {
-            liveTracks.forEach(t => { t.enabled = true; });
-            return persistentAudioStream;
-        }
-    }
-
-    // Request clean audio permission once
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    persistentAudioStream = stream;
-    try {
-        localStorage.setItem('tg_mic_permission_granted', 'true');
-        const micDesc = document.getElementById('mic-status-desc');
-        const micBtn = document.getElementById('enable-mic-perm-btn');
-        if (micDesc) micDesc.textContent = "Microphone access is permanently remembered.";
-        if (micBtn) { micBtn.textContent = "Remembered ✓"; micBtn.style.borderColor = "#10b981"; micBtn.style.color = "#10b981"; }
-    } catch (e) {}
-    return stream;
+    return await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false
+    });
 }
-
-window.addEventListener('beforeunload', () => {
-    if (persistentAudioStream) {
-        try { persistentAudioStream.getTracks().forEach(t => t.stop()); } catch (e) {}
-    }
-});
 
 function playTechChirp(type = 'info') {
     // Mute sound if user toggled sound off in settings (popups continue to show)
@@ -791,27 +768,7 @@ safeAddListener(notifToggleSounds, 'change', () => {
     });
 });
 
-// Microphone permission helper button in settings
-safeAddListener(document.getElementById('enable-mic-perm-btn'), 'click', async () => {
-    try {
-        await getMicrophoneStream();
-        showToast({
-            title: "Microphone Access",
-            message: "Microphone permission is remembered. Calls will connect without prompts.",
-            type: "success",
-            icon: "🎤",
-            force: true
-        });
-    } catch (err) {
-        showToast({
-            title: "Microphone Error",
-            message: "Could not access microphone: " + (err.message || err.name),
-            type: "error",
-            icon: "⚠️",
-            force: true
-        });
-    }
-});
+
 
 function syncPrivacyDesc() {
     if (!accountPrivacyDesc) return;
@@ -7191,10 +7148,13 @@ function cleanupCall(statusNotice = null) {
             clearInterval(activeCall.callTimerInterval);
         }
         if (activeCall.localStream) {
-            // Mute local tracks to release mic access without triggering browser permission re-prompts on next call
-            activeCall.localStream.getAudioTracks().forEach(t => {
-                try { t.enabled = false; } catch (e) {}
-            });
+            // Completely stop all audio tracks so the hardware microphone shuts down and recording dot disappears
+            try {
+                activeCall.localStream.getTracks().forEach(t => {
+                    try { t.stop(); } catch (e) {}
+                });
+            } catch (e) {}
+            activeCall.localStream = null;
         }
         if (activeCall.peerConnection) {
             try { activeCall.peerConnection.close(); } catch (e) {}
