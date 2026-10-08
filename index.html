@@ -5,8 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
+    <link rel="stylesheet" href="styles.css?v=9">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        /* Core inline styles fallback */
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background-color: #0b0f19; color: #f1f5f9; min-height: 100vh; width: 100%; padding: calc(12px + env(safe-area-inset-top, 0px)) 12px calc(80px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; align-items: center; position: relative; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
         
         .ticker-wrap { max-width: 1100px; width: 100%; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b); border: 1px solid #38bdf8; border-radius: 10px; margin-bottom: 14px; display: flex; align-items: center; overflow: hidden; height: 38px; box-shadow: 0 0 12px rgba(56, 189, 248, 0.15); flex-shrink: 0; }
@@ -948,9 +950,17 @@ img, video, canvas, pre, code {
         }
         @media (max-width: 768px) {
             .tech-toast-container {
-                left: 14px;
-                right: 14px;
-                max-width: 100%;
+                left: 12px;
+                right: 12px;
+                max-width: calc(100% - 24px);
+            }
+            .tech-toast {
+                transform: translateY(-30px);
+                animation: tech-toast-slide-mobile 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes tech-toast-slide-mobile {
+                from { transform: translateY(-30px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
             }
         }
         .tech-toast {
@@ -1049,7 +1059,7 @@ img, video, canvas, pre, code {
         .tech-toast.toast-error .tech-toast-progress {
             background: linear-gradient(90deg, #ef4444, #f97316);
         }
-</style>
+    </style>
 </head>
 <body>
 
@@ -1522,7 +1532,7 @@ img, video, canvas, pre, code {
                         <div class="setting-toggle-title" style="color: #38bdf8;">🔔 All Notifications</div>
                         <div class="setting-toggle-desc">Master switch to enable or disable all notification popups and sounds.</div>
                     </div>
-                    <input type="checkbox" id="notif-master-toggle-chk" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    <input type="checkbox" id="notif-master-toggle-chk" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                 </div>
 
                 <div id="granular-notif-options" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
@@ -1532,7 +1542,7 @@ img, video, canvas, pre, code {
                             <div class="setting-toggle-title">✉️ Direct Messages</div>
                             <div class="setting-toggle-desc">Alerts when friends send you messages or group updates.</div>
                         </div>
-                        <input type="checkbox" id="notif-toggle-messages" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                        <input type="checkbox" id="notif-toggle-messages" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
 
                     <!-- Audio Calls -->
@@ -1541,7 +1551,7 @@ img, video, canvas, pre, code {
                             <div class="setting-toggle-title">📞 Audio Calls</div>
                             <div class="setting-toggle-desc">Incoming call ringing, green ambient glow, and incoming call alerts.</div>
                         </div>
-                        <input type="checkbox" id="notif-toggle-calls" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                        <input type="checkbox" id="notif-toggle-calls" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
 
                     <!-- Post & Comment Likes -->
@@ -1550,7 +1560,7 @@ img, video, canvas, pre, code {
                             <div class="setting-toggle-title">⚡ Post Upvotes</div>
                             <div class="setting-toggle-desc">Notify when another human upvotes your posts or contributions.</div>
                         </div>
-                        <input type="checkbox" id="notif-toggle-upvotes" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                        <input type="checkbox" id="notif-toggle-upvotes" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
 
                     <!-- Replies & Mentions -->
@@ -1559,7 +1569,7 @@ img, video, canvas, pre, code {
                             <div class="setting-toggle-title">💬 Thread & Comment Replies</div>
                             <div class="setting-toggle-desc">Notify when members reply to your posts or nested comments.</div>
                         </div>
-                        <input type="checkbox" id="notif-toggle-replies" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                        <input type="checkbox" id="notif-toggle-replies" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
 
                     <!-- Sound Effects (Techno Chirps) -->
@@ -1568,7 +1578,7 @@ img, video, canvas, pre, code {
                             <div class="setting-toggle-title">🔊 Sound Effects</div>
                             <div class="setting-toggle-desc">Play synthesized high-tech chirps when interactive toasts appear.</div>
                         </div>
-                        <input type="checkbox" id="notif-toggle-sounds" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                        <input type="checkbox" id="notif-toggle-sounds" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0; accent-color: #38bdf8;">
                     </div>
                 </div>
             </div>
@@ -1887,7 +1897,7 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=7"></script>
+    <script type="module" src="script.js?v=9"></script>
 
 
     <!-- SHARE POST MODAL -->
