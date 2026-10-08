@@ -1470,10 +1470,11 @@ img, video, canvas, pre, code {
             </div>
 
 
-            <!-- Settings Sub-Tabs -->
-            <div style="display: flex; gap: 8px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px;">
-                <button type="button" id="tab-btn-settings-profile" style="flex: 1; padding: 8px; font-size: 0.88rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px;">Profile</button>
-                <button type="button" id="tab-btn-settings-privacy" style="flex: 1; padding: 8px; font-size: 0.88rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px;">Privacy & Security</button>
+            <!-- Settings Sub-Tabs (3 Tabs: Profile, Notifications, Privacy) -->
+            <div style="display: flex; gap: 6px; border-bottom: 1px solid #334155; margin-bottom: 16px; padding-bottom: 8px; flex-wrap: wrap;">
+                <button type="button" id="tab-btn-settings-profile" style="flex: 1; min-width: 90px; padding: 8px 6px; font-size: 0.82rem; font-weight: 600; background: #0284c7; color: #fff; border: 1px solid #38bdf8; border-radius: 6px; cursor: pointer;">Profile</button>
+                <button type="button" id="tab-btn-settings-notifs" style="flex: 1; min-width: 90px; padding: 8px 6px; font-size: 0.82rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Notifications</button>
+                <button type="button" id="tab-btn-settings-privacy" style="flex: 1; min-width: 90px; padding: 8px 6px; font-size: 0.82rem; font-weight: 600; background: #0f172a; color: #94a3b8; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Privacy</button>
             </div>
             
             <!-- Tab 1: Profile Pane -->
@@ -1512,6 +1513,65 @@ img, video, canvas, pre, code {
                 </div>
             </div>
 
+
+            <!-- Tab: Notifications Pane -->
+            <div id="pane-settings-notifs" class="hidden">
+                <!-- Master Toggle -->
+                <div class="setting-toggle-row" style="border: 1px solid #38bdf8; background: #0f172a;">
+                    <div class="setting-toggle-info">
+                        <div class="setting-toggle-title" style="color: #38bdf8;">🔔 All Notifications</div>
+                        <div class="setting-toggle-desc">Master switch to enable or disable all notification popups and sounds.</div>
+                    </div>
+                    <input type="checkbox" id="notif-master-toggle-chk" checked style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                </div>
+
+                <div id="granular-notif-options" style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+                    <!-- Direct Messages -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">✉️ Direct Messages</div>
+                            <div class="setting-toggle-desc">Alerts when friends send you messages or group updates.</div>
+                        </div>
+                        <input type="checkbox" id="notif-toggle-messages" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+
+                    <!-- Audio Calls -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">📞 Audio Calls</div>
+                            <div class="setting-toggle-desc">Incoming call ringing, green ambient glow, and incoming call alerts.</div>
+                        </div>
+                        <input type="checkbox" id="notif-toggle-calls" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+
+                    <!-- Post & Comment Likes -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">⚡ Post Upvotes</div>
+                            <div class="setting-toggle-desc">Notify when another human upvotes your posts or contributions.</div>
+                        </div>
+                        <input type="checkbox" id="notif-toggle-upvotes" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+
+                    <!-- Replies & Mentions -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">💬 Thread & Comment Replies</div>
+                            <div class="setting-toggle-desc">Notify when members reply to your posts or nested comments.</div>
+                        </div>
+                        <input type="checkbox" id="notif-toggle-replies" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+
+                    <!-- Sound Effects (Techno Chirps) -->
+                    <div class="setting-toggle-row">
+                        <div class="setting-toggle-info">
+                            <div class="setting-toggle-title">🔊 Sound Effects</div>
+                            <div class="setting-toggle-desc">Play synthesized high-tech chirps when interactive toasts appear.</div>
+                        </div>
+                        <input type="checkbox" id="notif-toggle-sounds" checked style="width: 20px; height: 20px; cursor: pointer; margin: 0; flex-shrink: 0;">
+                    </div>
+                </div>
+            </div>
 
             <!-- Tab 2: Privacy Pane -->
             <div id="pane-settings-privacy" class="hidden">
@@ -1827,7 +1887,7 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=6"></script>
+    <script type="module" src="script.js?v=7"></script>
 
 
     <!-- SHARE POST MODAL -->
