@@ -313,6 +313,7 @@ const incomingCallerName = document.getElementById('incoming-caller-name');
 const acceptCallBtn = document.getElementById('accept-call-btn');
 const declineCallBtn = document.getElementById('decline-call-btn');
 const remoteAudioEl = document.getElementById('remote-audio');
+const callAmbientBackdrop = document.getElementById('call-ambient-backdrop');
 
 // --- 1-ON-1 AUDIO CALL STATE ---
 let activeCall = null; // { peerConnection, localStream, conversationId, partnerId, partnerUsername, isCaller, callChannel, callTimerInterval, callStartTime }
@@ -953,7 +954,7 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
             }
             
             resetTelemetryConsole();
-            alert("Verification successful! Your account is restored.");
+            showToast({ title: "Verification Passed", message: "Suspicion reset. Your account is restored.", type: "success", icon: "🛡️" });
         } catch (err) {
             console.warn("Notice updating profile on verify:", err);
             // Even if the DB write takes time or warns, unblock the user locally
@@ -1468,7 +1469,7 @@ safeAddListener(userCardAddFriendBtn, 'click', async () => {
 
     targetFriendshipRecord = newReq;
     await updateProfileFriendButtonUI();
-    alert("friend request sent");
+    showToast({ title: "Friend Request", message: "Request dispatched to @" + targetProfileUsername, type: "success", icon: "➕" });
 
 
     await sendNotification(
@@ -1560,6 +1561,7 @@ async function syncUserState(user) {
                     usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
                     renderUserAvatar(currentAvatarUrl);
         initUserCallSignaling();
+        initRealtimeActivityNotifications();
                 }
                 currentUserIsPrivate = Boolean(profile.is_private);
                 if (privacyToggleChk) {
@@ -1845,7 +1847,7 @@ safeAddListener(authForm, 'submit', async (e) => {
         }
 
 
-        alert("Account created successfully! Welcome to the network.");
+        showToast({ title: "Welcome Voyager", message: "Verified human account created successfully!", type: "success", icon: "🛡️" });
         authForm.reset();
         if (window.turnstile) turnstile.reset();
     } else {
@@ -1922,7 +1924,7 @@ safeAddListener(profileAvatarFile, 'change', async () => {
     if (currentUsername) usernameAvatarMap.set(currentUsername.toLowerCase(), currentAvatarUrl);
     renderUserAvatar(currentAvatarUrl);
     renderCurrentFeed();
-    alert("Avatar updated successfully!");
+    showToast({ title: "Avatar Updated", message: "Your new avatar has been synchronized.", type: "success", icon: "📷" });
 });
 
 
@@ -1975,7 +1977,7 @@ safeAddListener(updatePasswordBtn, 'click', async () => {
     if (updateErr) {
         alert(`Password change failed: ${updateErr.message}`);
     } else {
-        alert("Password updated successfully!");
+        showToast({ title: "Security Hub", message: "Your password was changed successfully.", type: "success", icon: "🔑" });
         currentPasswordInput.value = '';
         newPasswordInput.value = '';
         confirmPasswordInput.value = '';
@@ -3401,7 +3403,7 @@ safeAddListener(addFriendBtn, 'click', async () => {
 
     await sendNotification(targetProfile.id, 'friend_request', null, 'sent you a friend request.');
     addFriendInput.value = '';
-    alert("friend request sent");
+    showToast({ title: "Friend Request", message: "Request dispatched to @" + targetProfileUsername, type: "success", icon: "➕" });
     refreshMessagingHub();
 });
 
@@ -4325,8 +4327,24 @@ async function handleVote(postId, direction) {
         .update({ likes: newLikes, dislikes: newDislikes })
         .eq('id', postId);
 
-
-    if (error) console.error("Failed to save vote to database:", error);
+    if (error) {
+        console.error("Failed to save vote to database:", error);
+    } else if (newVote === 1 && post.author) {
+        const cleanAuthor = post.author.toLowerCase().replace('@', '');
+        if (currentUser && currentUsername && cleanAuthor !== currentUsername.toLowerCase().replace('@', '')) {
+            db.from('profiles').select('id').ilike('username', cleanAuthor).maybeSingle()
+                .then(({ data: authorProfile }) => {
+                    if (authorProfile && authorProfile.id) {
+                        sendNotification(
+                            authorProfile.id,
+                            'upvote_post',
+                            String(postId),
+                            'liked your post in #' + (post.thread || 'forum') + '.'
+                        );
+                    }
+                }).catch(() => {});
+        }
+    }
 }
 
 
@@ -4832,11 +4850,30 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
     loadCommentsForPost(postId);
 
 
-    if (postAuthorUsername && postAuthorUsername !== currentUsername.toLowerCase()) {
-        const { data: profile } = await db.from('profiles').select('id').ilike('username', postAuthorUsername).maybeSingle();
-        if (profile) {
-            sendNotification(profile.id, 'comment_reply', postId, 'replied to your post.');
-        }
+    // Notify post author
+    if (postAuthorUsername && postAuthorUsername.toLowerCase().replace('@', '') !== currentUsername.toLowerCase().replace('@', '')) {
+        db.from('profiles').select('id').ilike('username', postAuthorUsername.toLowerCase().replace('@', '')).maybeSingle()
+            .then(({ data: profile }) => {
+                if (profile?.id) {
+                    sendNotification(profile.id, 'comment_reply', postId, 'replied to your post.');
+                }
+            }).catch(() => {});
+    }
+
+    // If this is a nested sub-reply, also notify parent comment author
+    if (parentId) {
+        db.from('post_comments').select('author').eq('id', parentId).maybeSingle()
+            .then(({ data: parentComment }) => {
+                const parentAuthor = parentComment?.author?.toLowerCase().replace('@', '');
+                if (parentAuthor && parentAuthor !== currentUsername.toLowerCase().replace('@', '') && parentAuthor !== postAuthorUsername.toLowerCase().replace('@', '')) {
+                    db.from('profiles').select('id').ilike('username', parentAuthor).maybeSingle()
+                        .then(({ data: pProfile }) => {
+                            if (pProfile?.id) {
+                                sendNotification(pProfile.id, 'comment_reply', postId, 'replied to your comment.');
+                            }
+                        }).catch(() => {});
+                }
+            }).catch(() => {});
     }
 }
 function renderCurrentFeed() {
@@ -6539,6 +6576,83 @@ async function submitPollVote(postId, optIdx) {
     renderCurrentFeed();
 }
 
+
+// =========================================================================
+// --- TECHNO TOAST NOTIFICATION SYSTEM & SYNTHESIZER ---
+// =========================================================================
+
+function playTechChirp(type = 'info') {
+    try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        if (type === 'success') {
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+            osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.12); // A5
+        } else if (type === 'error') {
+            osc.frequency.setValueAtTime(329.63, ctx.currentTime); // E4
+            osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.15); // A3
+        } else {
+            osc.frequency.setValueAtTime(440, ctx.currentTime); // A4
+            osc.frequency.exponentialRampToValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+        }
+
+        gain.gain.setValueAtTime(0.04, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.16);
+    } catch (e) {}
+}
+
+function showToast({ title = 'Notification', message = '', type = 'info', icon = '📡', onClick = null, duration = 3800 }) {
+    const container = document.getElementById('tech-toast-container');
+    if (!container) {
+        console.log(`[${title}] ${message}`);
+        return;
+    }
+
+    playTechChirp(type);
+    if (navigator.vibrate) {
+        try { navigator.vibrate(type === 'error' ? [80, 50, 80] : [60]); } catch (e) {}
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `tech-toast ${type === 'success' ? 'toast-success' : (type === 'error' ? 'toast-error' : '')}`;
+
+    toast.innerHTML = `
+        <span class="tech-toast-icon">${icon}</span>
+        <div class="tech-toast-body">
+            <div class="tech-toast-title">${escapeHTML(title)}</div>
+            <div class="tech-toast-msg">${escapeHTML(message)}</div>
+        </div>
+        <div class="tech-toast-progress" style="animation-duration: ${duration}ms;"></div>
+    `;
+
+    const closeToast = () => {
+        if (toast.classList.contains('closing')) return;
+        toast.classList.add('closing');
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    if (onClick) {
+        toast.addEventListener('click', (e) => {
+            onClick(e);
+            closeToast();
+        });
+    } else {
+        toast.addEventListener('click', closeToast);
+    }
+
+    setTimeout(closeToast, duration);
+    container.appendChild(toast);
+}
+
 // =========================================================================
 // --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
 // =========================================================================
@@ -6634,6 +6748,9 @@ function setCallConnectedState() {
 
 function cleanupCall(statusNotice = null) {
     stopRingtoneSound();
+    if (callAmbientBackdrop) {
+        callAmbientBackdrop.classList.add('hidden');
+    }
     queuedIceCandidates = [];
 
     if (activeCall) {
@@ -6676,6 +6793,20 @@ function cleanupCall(statusNotice = null) {
 
 function setupCallChannelListeners(callChan, pc) {
     callChan
+        .on('broadcast', { event: 'incoming_call' }, (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.callerId || data.callerId === currentUser?.id) return;
+
+            if (!activeCall || activeCall.conversationId !== data.conversationId) {
+                incomingCallData = data;
+                if (incomingCallerName) {
+                    incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
+                }
+                playRingtoneSound();
+                if (callAmbientBackdrop) callAmbientBackdrop.classList.remove('hidden');
+                if (incomingCallModal) incomingCallModal.classList.remove('hidden');
+            }
+        })
         .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.offer || data.from === currentUser?.id) return;
@@ -6833,20 +6964,36 @@ async function startAudioCall() {
 
         await callChan.subscribe(async (status) => {
             if (status === 'SUBSCRIBED') {
-                // Ring partner's persistent signaling channel
+                // 1. Ring partner on their personal channel when subscribed
                 const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`);
-                await partnerSig.subscribe();
-                partnerSig.send({
+                partnerSig.subscribe((sigStatus) => {
+                    if (sigStatus === 'SUBSCRIBED') {
+                        partnerSig.send({
+                            type: 'broadcast',
+                            event: 'incoming_call',
+                            payload: {
+                                callerId: currentUser.id,
+                                callerUsername: currentUsername,
+                                callerAvatar: currentAvatarUrl,
+                                conversationId: targetConvId
+                            }
+                        });
+                    }
+                });
+
+                // 2. Also broadcast incoming_call to the call room in case partner has the chat open
+                callChan.send({
                     type: 'broadcast',
                     event: 'incoming_call',
                     payload: {
                         callerId: currentUser.id,
                         callerUsername: currentUsername,
+                        callerAvatar: currentAvatarUrl,
                         conversationId: targetConvId
                     }
                 });
 
-                // Create initial offer
+                // 3. Create initial SDP Offer
                 const offer = await pc.createOffer();
                 await pc.setLocalDescription(offer);
                 callChan.send({
@@ -6959,6 +7106,7 @@ async function answerAudioCall() {
 
 function declineAudioCall() {
     stopRingtoneSound();
+    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
     if (incomingCallModal) incomingCallModal.classList.add('hidden');
     if (incomingCallData && db) {
         const chan = db.channel(`call_room_${incomingCallData.conversationId}`);
@@ -7032,6 +7180,12 @@ function initUserCallSignaling() {
                 incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
             }
             playRingtoneSound();
+            if (navigator.vibrate) {
+                try { navigator.vibrate([400, 200, 400, 200, 600]); } catch (e) {}
+            }
+            if (callAmbientBackdrop) {
+                callAmbientBackdrop.classList.remove('hidden');
+            }
             if (incomingCallModal) {
                 incomingCallModal.classList.remove('hidden');
             }
@@ -7053,4 +7207,57 @@ safeAddListener(acceptCallBtn, 'click', answerAudioCall);
 safeAddListener(declineCallBtn, 'click', declineAudioCall);
 safeAddListener(callMuteBtn, 'click', toggleCallMute);
 safeAddListener(callHangupBtn, 'click', endCurrentAudioCall);
+
+
+let userNotifRealtimeChannel = null;
+
+function initRealtimeActivityNotifications() {
+    if (!db || !currentUser) return;
+    if (userNotifRealtimeChannel) {
+        try { db.removeChannel(userNotifRealtimeChannel); } catch (e) {}
+    }
+
+    userNotifRealtimeChannel = db.channel(`user_realtime_notifs_${currentUser.id}`)
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'user_notifications',
+                filter: `user_id=eq.${currentUser.id}`
+            },
+            (payload) => {
+                const notif = payload?.new;
+                if (!notif) return;
+
+                // 1. Update notification counters
+                checkNotifications();
+                loadUserNotifications();
+
+                // 2. Map notification icons & vibes
+                let icon = '🔔';
+                let toastType = 'info';
+                if (notif.type === 'upvote_post') { icon = '⚡'; toastType = 'success'; }
+                else if (notif.type === 'comment_reply') { icon = '💬'; toastType = 'info'; }
+                else if (notif.type === 'direct_message') { icon = '✉️'; toastType = 'info'; }
+                else if (notif.type === 'friend_request') { icon = '➕'; toastType = 'success'; }
+
+                // 3. Trigger Techno Toast
+                showToast({
+                    title: `@${notif.actor_username}`,
+                    message: notif.message,
+                    type: toastType,
+                    icon: icon,
+                    onClick: () => {
+                        if (['upvote_post', 'comment_reply', 'upvote_comment'].includes(notif.type) && notif.entity_id) {
+                            navigateToPost(notif.entity_id);
+                        } else if (notif.type === 'direct_message' && notif.entity_id) {
+                            navigateToConversation(notif.entity_id);
+                        }
+                    }
+                });
+            }
+        )
+        .subscribe();
+}
 
