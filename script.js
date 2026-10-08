@@ -3027,7 +3027,7 @@ function updateThreadControlsUI() {
             bannerBtn.id = 'set-banner-btn';
             bannerBtn.type = 'button';
             bannerBtn.className = 'secondary btn-thread-action desktop-only-btn';
-            bannerBtn.textContent = '🖼️ Set Banner';
+            bannerBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>Set Banner</span>';
             bannerBtn.onclick = () => document.getElementById('banner-upload-input').click();
             actionsBar.prepend(bannerBtn);
         }
@@ -3042,7 +3042,7 @@ function updateThreadControlsUI() {
             flairBtn.id = 'set-flair-btn';
             flairBtn.type = 'button';
             flairBtn.className = 'secondary btn-thread-action desktop-only-btn';
-            flairBtn.textContent = '🏷️ Set Flair';
+            flairBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span>Set Flair</span>';
             flairBtn.onclick = async () => {
                 const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
                 const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
@@ -6616,7 +6616,7 @@ async function initLiveUserCount() {
 
 
 
-// --- WEB OF TRUST: BIOMECHANICAL RED PEARL INCUBATOR & TRACEABILITY LEDGER ---
+// --- WEB OF TRUST: RED PEARL TRUST CHAMBER & TRACEABILITY LEDGER ---
 // 3 Red Pearl keys are allocated per 30-day incubation cycle.
 // Vouching creates an immutable lineage ledger so malicious automated bots can be traced
 // directly back to the verified inviter who vouched for them.
@@ -6672,7 +6672,7 @@ async function loadUserInvites() {
     const allUserInvites = invites || [];
     const REGEN_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
 
-    // Determine the state of the 3 biological incubator slots (0, 1, 2)
+    // Determine the state of the 3 incubator slots (0, 1, 2)
     const slotData = [null, null, null];
     const assignedBySlot = new Map();
     allUserInvites.forEach(inv => {
@@ -6728,7 +6728,7 @@ async function loadUserInvites() {
                         <div class="red-pearl" title="Red Pearl Ready — Click to extract key"></div>
                     </div>
                     <div class="pod-info">
-                        <div style="font-size: 0.72rem; color: #cbd5e1; font-weight: 600;">Genetic Access Pearl</div>
+                        <div style="font-size: 0.72rem; color: #cbd5e1; font-weight: 600;">Red Pearl Invite</div>
                         <button type="button" class="btn-pod-action" style="background: linear-gradient(135deg, #ff2a5f, #b3002b); color: #fff; border: 1px solid #ff2a5f; cursor: pointer;">
                             Extract Key
                         </button>
@@ -6779,7 +6779,7 @@ async function loadUserInvites() {
                         } catch (e) {}
 
                         showToast({
-                            title: `Genetic Key Minted: ${newCode}`,
+                            title: `Invite Key Minted: ${newCode}`,
                             message: `Copied to clipboard. Pod 0${slotIndex + 1} entered 30-day incubation cycle.`,
                             type: 'success',
                             icon: '◈',
