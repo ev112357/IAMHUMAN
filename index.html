@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Turing's Gate Dashboard</title>
-    <link rel="stylesheet" href="styles.css?v=9">
+    <link rel="stylesheet" href="styles.css?v=10">
     <style>
         /* Core inline styles fallback */
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -923,8 +923,130 @@ img, video, canvas, pre, code {
             inset: 0;
             pointer-events: none;
             z-index: 24998;
-            background: radial-gradient(circle at center, rgba(34, 197, 94, 0.28) 0%, rgba(16, 185, 129, 0.16) 45%, transparent 75%);
+            background: radial-gradient(circle at center, rgba(34, 197, 94, 0.25) 0%, rgba(16, 185, 129, 0.14) 45%, transparent 75%);
             animation: ambient-call-vibrate 0.85s ease-in-out infinite alternate;
+        }
+
+        /* NON-BLOCKING INCOMING CALL POPOUT */
+        .incoming-call-popout {
+            position: fixed;
+            top: calc(70px + env(safe-area-inset-top, 0px));
+            right: 20px;
+            z-index: 25000;
+            background: rgba(15, 23, 42, 0.96);
+            border: 2px solid #22c55e;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), 0 0 24px rgba(34, 197, 94, 0.35);
+            backdrop-filter: blur(16px);
+            border-radius: 12px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: popout-slide-desktop 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            pointer-events: auto;
+        }
+
+        @keyframes popout-slide-desktop {
+            from { transform: translateY(-16px) scale(0.95); opacity: 0; }
+            to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+
+        @media (max-width: 768px) {
+            .incoming-call-popout {
+                top: auto;
+                bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+                left: 12px;
+                right: 12px;
+                border-radius: 14px;
+                padding: 12px 14px;
+                justify-content: space-between;
+                animation: popout-slide-mobile 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            }
+            @keyframes popout-slide-mobile {
+                from { transform: translateY(24px) scale(0.95); opacity: 0; }
+                to { transform: translateY(0) scale(1); opacity: 1; }
+            }
+        }
+
+        /* High-energy vibrating phone animation */
+        @keyframes phone-buzz {
+            0%, 100% { transform: rotate(0deg) scale(1); }
+            10%, 30%, 50%, 70%, 90% { transform: rotate(-14deg) scale(1.15); }
+            20%, 40%, 60%, 80% { transform: rotate(14deg) scale(1.15); }
+        }
+
+        .phone-buzz-icon {
+            font-size: 1.6rem;
+            line-height: 1;
+            display: inline-block;
+            animation: phone-buzz 0.55s infinite ease-in-out;
+            filter: drop-shadow(0 0 8px #22c55e);
+            flex-shrink: 0;
+        }
+
+        .call-popout-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .call-popout-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #22c55e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .call-popout-caller {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #f8fafc;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .call-popout-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .call-popout-btn {
+            border: none;
+            border-radius: 8px;
+            padding: 7px 12px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .call-popout-btn.accept-btn {
+            background: #16a34a;
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+        }
+
+        .call-popout-btn.accept-btn:hover {
+            background: #22c55e;
+            transform: scale(1.04);
+        }
+
+        .call-popout-btn.decline-btn {
+            background: #dc2626;
+            color: #ffffff;
+        }
+
+        .call-popout-btn.decline-btn:hover {
+            background: #ef4444;
+            transform: scale(1.04);
         }
         @keyframes ambient-call-vibrate {
             0% { transform: scale(1) translate(0, 0); opacity: 0.65; }
@@ -1897,7 +2019,7 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=9"></script>
+    <script type="module" src="script.js?v=10"></script>
 
 
     <!-- SHARE POST MODAL -->
@@ -1964,16 +2086,16 @@ img, video, canvas, pre, code {
             </div>
         </div>
     </div>
-    <!-- INCOMING AUDIO CALL MODAL -->
-    <div id="incoming-call-modal" class="modal-overlay hidden" style="z-index: 25000;">
-        <div class="modal-box modal-box-small" style="max-width: 360px; text-align: center; border: 2px solid #22c55e; background: #0f172a; padding: 24px;">
-            <div style="font-size: 2.6rem; margin-bottom: 8px; animation: pulse 1.5s infinite;">📞</div>
-            <h3 style="color: #f8fafc; margin-bottom: 4px; font-size: 1.15rem;">Incoming Audio Call</h3>
-            <p id="incoming-caller-name" style="font-size: 0.95rem; color: #38bdf8; font-weight: 600; margin-bottom: 16px;">@username</p>
-            <div style="display: flex; gap: 12px; justify-content: center;">
-                <button type="button" id="accept-call-btn" style="flex: 1; background: #16a34a; color: #fff; font-weight: 700; padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer;">✓ Accept</button>
-                <button type="button" id="decline-call-btn" style="flex: 1; background: #dc2626; color: #fff; font-weight: 700; padding: 10px 14px; border-radius: 8px; border: none; cursor: pointer;">✕ Decline</button>
-            </div>
+    <!-- INCOMING AUDIO CALL POPOUT BANNER (NON-BLOCKING) -->
+    <div id="incoming-call-popout" class="incoming-call-popout hidden">
+        <span class="phone-buzz-icon">📞</span>
+        <div class="call-popout-info">
+            <span class="call-popout-title">Incoming Voice Call</span>
+            <span id="incoming-caller-name" class="call-popout-caller">@username</span>
+        </div>
+        <div class="call-popout-actions">
+            <button type="button" id="accept-call-btn" class="call-popout-btn accept-btn">✓ Accept</button>
+            <button type="button" id="decline-call-btn" class="call-popout-btn decline-btn">✕ Decline</button>
         </div>
     </div>
     <audio id="remote-audio" autoplay playsinline style="display: none;"></audio>
