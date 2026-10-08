@@ -1,3 +1,22 @@
+// --- DYNAMIC FAVICON ENFORCER ---
+const DYNAMIC_FAVICON_B64 = "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";
+function enforceDynamicFavicon() {
+    try {
+        let link = document.querySelector("link[rel*='icon']");
+        if (!link) {
+            link = document.createElement('link');
+            document.head.appendChild(link);
+        }
+        link.type = 'image/png';
+        link.rel = 'shortcut icon';
+        link.href = 'data:image/png;base64,' + DYNAMIC_FAVICON_B64;
+    } catch (e) {}
+}
+enforceDynamicFavicon();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', enforceDynamicFavicon);
+}
+
 // --- DATABASE CONFIGURATION LINK ---
 const SUPABASE_URL = "https://zuafgczkmaaxvdmvymrx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1YWZnY3prbWFheHZkbXZ5bXJ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyODAyMzEsImV4cCI6MjEwNTg1NjIzMX0.WF5wP6-1SjGw8sRUTI6Ngm0E23PNpeESZgqJwmG0qU8";
@@ -2592,7 +2611,13 @@ function renderJoinedThreadsSidebar() {
 
 
         const isMandatory = MANDATORY_THREADS.includes(tName) || tName === "Trending";
-        const icon = tName === "Welcome & Security" ? "🛡️" : (tName === "Update Thread" ? "📢" : (tName === "Trending" ? "⚡" : "💬"));
+        const icon = tName === "Welcome & Security" 
+            ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>' 
+            : (tName === "Update Thread" 
+                ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00f0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>' 
+                : (tName === "Trending" 
+                    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' 
+                    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'));
 
 
         item.innerHTML = `
@@ -3018,11 +3043,19 @@ function updateThreadControlsUI() {
     // Community Flair Button (Database Synced)
     let flairBtn = document.getElementById('set-flair-btn');
     const actionsBar = document.querySelector('.thread-actions-bar');
-    // Community Banner Logic
+    // Community Banner Permissions (Strictly Owner, Moderator, or Site Admin)
+    const isBannerAuthorized = Boolean(currentUser && (role === 'Owner' || role === 'Moderator' || role === 'Site Admin'));
+    const tData = allCloudThreads.find(t => t.name === activeThread);
+    const hasActiveBanner = Boolean(tData && tData.banner_url);
+
     let bannerBtn = document.getElementById('set-banner-btn');
-    if (!currentUser) {
+    let removeBannerBtn = document.getElementById('remove-banner-btn');
+
+    if (!isBannerAuthorized) {
         if (bannerBtn) bannerBtn.remove();
-    } else if (actionsBar && (role === 'Owner' || role === 'Moderator' || role === 'Site Admin')) {
+        if (removeBannerBtn) removeBannerBtn.remove();
+    } else if (actionsBar) {
+        // Set Banner Button
         if (!bannerBtn) {
             bannerBtn = document.createElement('button');
             bannerBtn.id = 'set-banner-btn';
@@ -3032,8 +3065,20 @@ function updateThreadControlsUI() {
             bannerBtn.onclick = () => document.getElementById('banner-upload-input').click();
             actionsBar.prepend(bannerBtn);
         }
-    } else if (bannerBtn) {
-        bannerBtn.remove();
+        // Remove Banner Button (Only visible when a banner is currently set)
+        if (hasActiveBanner) {
+            if (!removeBannerBtn) {
+                removeBannerBtn = document.createElement('button');
+                removeBannerBtn.id = 'remove-banner-btn';
+                removeBannerBtn.type = 'button';
+                removeBannerBtn.className = 'danger btn-thread-action desktop-only-btn';
+                removeBannerBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg><span>Remove Banner</span>';
+                removeBannerBtn.onclick = removeCurrentThreadBanner;
+                actionsBar.prepend(removeBannerBtn);
+            }
+        } else if (removeBannerBtn) {
+            removeBannerBtn.remove();
+        }
     }
     if (!currentUser) {
         if (flairBtn) flairBtn.remove();
@@ -3109,7 +3154,6 @@ function updateThreadControlsUI() {
     }
 
     // Evaluate Live Chat Schedule / Lock
-    const tData = allCloudThreads.find(t => t.name === activeThread);
     const liveChatBtn = document.getElementById('open-live-chat-btn');
     if (liveChatBtn && tData) {
         window.currentLiveChatIsOpen = evaluateLiveChatStatus(tData);
@@ -3142,9 +3186,14 @@ function updateThreadControlsUI() {
 
     const isModOrOwner = (role === 'Owner' || role === 'Moderator' || role === 'Site Admin');
 
+    const optRemoveBanner = document.getElementById('opt-remove-banner-btn');
     if (optSetBanner) {
         if (currentUser && isModOrOwner) optSetBanner.classList.remove('hidden');
         else optSetBanner.classList.add('hidden');
+    }
+    if (optRemoveBanner) {
+        if (currentUser && isModOrOwner && hasActiveBanner) optRemoveBanner.classList.remove('hidden');
+        else optRemoveBanner.classList.add('hidden');
     }
 
     if (optManagePerms) {
@@ -9590,8 +9639,7 @@ window.addEventListener('scroll', updateScrollProgress, { passive: true });
 window.addEventListener('resize', updateScrollProgress, { passive: true });
 window.addEventListener('load', updateScrollProgress, { passive: true });
 document.addEventListener('DOMContentLoaded', updateScrollProgress, { passive: true });
-// Poll every 1200ms to stay synced as posts and feeds load dynamically
-setInterval(updateScrollProgress, 1200);
+// Scroll progress synced via scroll, resize, and feed render triggers
 
 
 // =============================================================================
@@ -9669,35 +9717,41 @@ function initBioluminescentSea() {
                 s.history.pop();
             }
 
-            // Draw glowing luminous trailing path
+            // 60FPS High-Performance 2-Pass Luminous Render (Zero shadowBlur GPU stalls)
             if (s.history.length > 2) {
                 ctx.save();
-                ctx.shadowBlur = 14;
-                ctx.shadowColor = s.palette.glow;
 
-                for (let j = 0; j < s.history.length - 1; j++) {
-                    const p1 = s.history[j];
-                    const p2 = s.history[j + 1];
-                    const progress = 1 - (j / s.history.length);
-                    const lineWidth = s.size * progress;
-
-                    ctx.beginPath();
-                    ctx.moveTo(p1.x, p1.y);
-                    ctx.lineTo(p2.x, p2.y);
-                    ctx.strokeStyle = s.palette.head;
-                    ctx.globalAlpha = progress * 0.42;
-                    ctx.lineWidth = lineWidth;
-                    ctx.lineCap = 'round';
-                    ctx.stroke();
+                // Pass 1: Wide Soft Ambient Trail
+                ctx.beginPath();
+                ctx.moveTo(s.history[0].x, s.history[0].y);
+                for (let j = 1; j < s.history.length; j++) {
+                    ctx.lineTo(s.history[j].x, s.history[j].y);
                 }
+                ctx.strokeStyle = s.palette.glow;
+                ctx.globalAlpha = 0.35;
+                ctx.lineWidth = s.size * 2.2;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
 
-                // Radiant bioluminescent head core
+                // Pass 2: High-Intensity Core Vector
+                ctx.beginPath();
+                ctx.moveTo(s.history[0].x, s.history[0].y);
+                for (let j = 1; j < s.history.length; j++) {
+                    ctx.lineTo(s.history[j].x, s.history[j].y);
+                }
+                ctx.strokeStyle = s.palette.head;
+                ctx.globalAlpha = 0.65;
+                ctx.lineWidth = s.size * 0.8;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+
+                // Radiant Core Head (Single draw)
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, s.size * 1.2, 0, Math.PI * 2);
                 ctx.fillStyle = '#ffffff';
-                ctx.globalAlpha = 0.85;
-                ctx.shadowBlur = 18;
-                ctx.shadowColor = s.palette.head;
+                ctx.globalAlpha = 0.95;
                 ctx.fill();
 
                 ctx.restore();
@@ -9715,4 +9769,26 @@ if (document.readyState === 'loading') {
 } else {
     initBioluminescentSea();
 }
+
+
+// --- REMOVE CURRENT THREAD BANNER ---
+async function removeCurrentThreadBanner() {
+    if (!confirm(`Are you sure you want to remove the banner for "${activeThread}"?`)) return;
+    const tData = allCloudThreads.find(t => t.name === activeThread);
+    if (tData && tData.id && db) {
+        const { error } = await db.from('forum_threads').update({ banner_url: null }).eq('id', tData.id);
+        if (error) {
+            await db.from('threads').update({ banner_url: null }).eq('id', tData.id).catch(() => {});
+        }
+        tData.banner_url = null;
+    }
+    renderThreadBanner();
+    updateThreadControlsUI();
+    showToast({ title: "Banner Removed", message: `Banner removed from "${activeThread}".`, type: "info", icon: "🖼️" });
+}
+
+safeAddListener(document.getElementById('opt-remove-banner-btn'), 'click', () => {
+    closeThreadOptionsModal();
+    removeCurrentThreadBanner();
+});
 
