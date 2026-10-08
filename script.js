@@ -516,6 +516,7 @@ let activeCall = null; // { peerConnection, localStream, conversationId, partner
 let isMicMuted = false;
 let incomingCallData = null; // { callerId, callerUsername, conversationId }
 let userCallSignalingChannel = null;
+const recentlyDeclinedCalls = new Map();
 let ringtoneAudioCtx = null;
 let ringtoneInterval = null;
 let queuedIceCandidates = [];
@@ -4473,19 +4474,23 @@ async function checkNotifications() {
                 .eq('type', 'incoming_call')
                 .eq('is_read', false)
                 .order('id', { ascending: false })
-                .limit(1);
+                .limit(5);
 
             if (callNotifs && callNotifs.length > 0) {
-                const notif = callNotifs[0];
-                const notifAge = Date.now() - new Date(notif.created_at || Date.now()).getTime();
-                if (notifAge < 35000 && !activeCall) {
-                    triggerIncomingCallUI({
-                        callerId: notif.actor_id || null,
-                        callerUsername: notif.actor_username,
-                        conversationId: notif.entity_id,
-                        offer: null
-                    });
-                }
+                callNotifs.forEach(notif => {
+                    const notifAge = Date.now() - new Date(notif.created_at || Date.now()).getTime();
+                    if (notifAge > 35000) {
+                        // Purge old incoming_call records so they never trigger ghost notifications
+                        db.from('user_notifications').delete().eq('id', notif.id).catch(() => {});
+                    } else if (!activeCall) {
+                        triggerIncomingCallUI({
+                            callerId: notif.actor_id || null,
+                            callerUsername: notif.actor_username,
+                            conversationId: notif.entity_id,
+                            offer: null
+                        });
+                    }
+                });
             }
         }
 
@@ -4529,28 +4534,70 @@ function updateSidebarBadges() {
 
 safeAddListener(clearAllNotifsBtn, 'click', async () => {
     if (!currentUser || !db) return;
-    const { data: memberships } = await db
-        .from('conversation_members')
-        .select('conversation_id')
-        .eq('user_id', currentUser.id);
+    
+    try {
+        const { data: memberships } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .eq('user_id', currentUser.id);
 
+        if (memberships && memberships.length > 0) {
+            const convIds = memberships.map(m => m.conversation_id);
+            await db
+                .from('chat_messages')
+                .update({ is_read: true })
+                .in('conversation_id', convIds)
+                .eq('is_read', false);
+        }
 
-    if (memberships && memberships.length > 0) {
-        const convIds = memberships.map(m => m.conversation_id);
+        // Clear any ghost/pending friend requests
         await db
-            .from('chat_messages')
+            .from('friendships')
+            .delete()
+            .eq('friend_id', currentUser.id)
+            .eq('status', 'pending');
+
+        // Clear all database notification items and call alerts
+        await db
+            .from('user_notifications')
             .update({ is_read: true })
-            .in('conversation_id', convIds)
-            .neq('sender_id', currentUser.id)
-            .eq('is_read', false);
+            .eq('user_id', currentUser.id);
+
+    } catch (e) {
+        console.warn("Notice clearing ghost notifications:", e);
     }
 
-
     unreadCountsByConv.clear();
-    if (notifBadge) notifBadge.classList.add('hidden');
-    if (mobileMsgBadge) mobileMsgBadge.classList.add('hidden');
+    lastUnreadMessageTotal = 0;
+    if (notifBadge) { notifBadge.textContent = '0'; notifBadge.classList.add('hidden'); }
+    if (mobileMsgBadge) { mobileMsgBadge.textContent = '0'; mobileMsgBadge.classList.add('hidden'); }
     updateSidebarBadges();
+    
+    showToast({
+        title: "Badges Cleared",
+        message: "All unread messages and ghost notifications have been cleared.",
+        type: "success",
+        icon: "✓",
+        force: true
+    });
+    refreshMessagingHub();
 });
+
+// Also allow clicking directly on the notif badge to clear any ghost indicator
+if (notifBadge) {
+    notifBadge.style.cursor = 'pointer';
+    notifBadge.title = 'Click to clear badge';
+    notifBadge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (clearAllNotifsBtn) clearAllNotifsBtn.click();
+    });
+}
+if (mobileMsgBadge) {
+    mobileMsgBadge.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (clearAllNotifsBtn) clearAllNotifsBtn.click();
+    });
+}
 
 
 // --- VOTING & FEED ENGINE ---
@@ -6886,6 +6933,15 @@ function triggerIncomingCallUI(data) {
         return;
     }
 
+    // Ignore if this call was explicitly declined within the last 45 seconds
+    const lastDeclined = Math.max(
+        recentlyDeclinedCalls.get(data.conversationId) || 0,
+        recentlyDeclinedCalls.get(data.callerId) || 0
+    );
+    if (Date.now() - lastDeclined < 45000) {
+        return;
+    }
+
     incomingCallData = data;
     if (incomingCallerName) {
         incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
@@ -7437,25 +7493,53 @@ function declineAudioCall() {
     stopRingtoneSound();
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
     if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
+
+    if (incomingCallData) {
+        const convId = incomingCallData.conversationId;
+        const callerId = incomingCallData.callerId;
+
+        if (convId) recentlyDeclinedCalls.set(convId, Date.now());
+        if (callerId) recentlyDeclinedCalls.set(callerId, Date.now());
+
+        if (db) {
+            try {
+                const roomChan = db.channel(`call_room_${convId}`);
+                roomChan.subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        roomChan.send({
+                            type: 'broadcast',
+                            event: 'call_declined',
+                            payload: { from: currentUser?.id, conversationId: convId }
+                        });
+                    }
+                });
+            } catch (e) {}
+
+            if (callerId) {
+                try {
+                    const callerSig = db.channel(`user_call_sig_${callerId}`);
+                    callerSig.subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            callerSig.send({
+                                type: 'broadcast',
+                                event: 'call_declined',
+                                payload: { from: currentUser?.id, conversationId: convId }
+                            });
+                        }
+                    });
+                } catch (e) {}
+            }
+        }
+    }
+
     if (db && currentUser) {
         db.from('user_notifications')
-            .update({ is_read: true })
+            .delete()
             .eq('user_id', currentUser.id)
             .eq('type', 'incoming_call')
             .catch(() => {});
     }
-    if (incomingCallData && db) {
-        const chan = db.channel(`call_room_${incomingCallData.conversationId}`);
-        chan.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                chan.send({
-                    type: 'broadcast',
-                    event: 'call_declined',
-                    payload: { from: currentUser?.id }
-                });
-            }
-        });
-    }
+
     incomingCallData = null;
 }
 
@@ -7549,6 +7633,12 @@ function initUserCallSignaling() {
                 incomingCallData = null;
                 if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
                 if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
+            }
+        })
+        .on('broadcast', { event: 'call_declined' }, (payload) => {
+            if (activeCall && activeCall.isCaller) {
+                stopRingtoneSound();
+                cleanupCall("Call Declined");
             }
         })
         .subscribe();
