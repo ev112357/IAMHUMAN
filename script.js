@@ -5110,11 +5110,29 @@ function createPostCardElement(post) {
 
     let actionButtonsHtml = `
         <div class="post-admin-actions">
-            <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">💬 <span id="comment-count-${post.id}">...</span></button>
-            <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">📤 Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></button>
-            ${userCanEdit ? `<button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">✏️ Edit</button>` : ''}
-            ${userCanPin ? `<button type="button" class="btn-post-action btn-pin-post" data-post-id="${post.id}">${post.is_pinned ? '📌 Unpin' : '📌 Pin'}</button>` : ''}
-            ${userCanDelete ? `<button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">🗑 Delete</button>` : ''}
+            <button type="button" class="btn-post-action toggle-comments-btn" data-post-id="${post.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Comments (<span id="comment-count-${post.id}">...</span>)</span>
+            </button>
+            <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                <span>Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></span>
+            </button>
+            ${userCanEdit ? `
+            <button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <span>Edit</span>
+            </button>` : ''}
+            ${userCanPin ? `
+            <button type="button" class="btn-post-action btn-pin-post" data-post-id="${post.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-2l-2-3V5a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v7l-2 3v2z"/></svg>
+                <span>${post.is_pinned ? 'Unpin' : 'Pin'}</span>
+            </button>` : ''}
+            ${userCanDelete ? `
+            <button type="button" class="btn-post-action danger-text btn-delete-post" data-post-id="${post.id}">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                <span>Delete</span>
+            </button>` : ''}
         </div>
     `;
 
@@ -5178,9 +5196,13 @@ function createPostCardElement(post) {
 
     item.innerHTML = `
         <div class="vote-box">
-            <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">▲</button>
+            <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
             <span class="vote-score">${score}</span>
-            <button class="vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-post-id="${post.id}" data-dir="-1" title="Dislike">▼</button>
+            <button class="vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-post-id="${post.id}" data-dir="-1" title="Dislike">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
         </div>
         <div class="post-body">
             <div class="post-meta">
@@ -9550,17 +9572,26 @@ safeAddListener(document.getElementById('opt-delete-thread-btn'), 'click', () =>
 
 
 
-// --- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER ---
+// --- CYBERPUNK VIEWPORT SCROLL PROGRESS TRACKER & LASER RUNNER ---
 function updateScrollProgress() {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const docHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+    const totalHeight = (document.documentElement.scrollHeight || document.body.scrollHeight || 0);
+    const winHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+    const docHeight = totalHeight - winHeight;
     const percent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
     const bar = document.getElementById('cyber-scroll-tracker');
-    if (bar) bar.style.width = Math.min(100, Math.max(0, percent)) + '%';
+    if (bar) {
+        // Minimum width 4px so the glowing anchor particle is always visible
+        const clamped = Math.min(100, Math.max(0, percent));
+        bar.style.width = `max(6px, ${clamped}%)`;
+    }
 }
 window.addEventListener('scroll', updateScrollProgress, { passive: true });
 window.addEventListener('resize', updateScrollProgress, { passive: true });
+window.addEventListener('load', updateScrollProgress, { passive: true });
 document.addEventListener('DOMContentLoaded', updateScrollProgress, { passive: true });
+// Poll every 1200ms to stay synced as posts and feeds load dynamically
+setInterval(updateScrollProgress, 1200);
 
 
 // =============================================================================
