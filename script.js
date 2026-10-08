@@ -503,7 +503,8 @@ const callStatusText = document.getElementById('call-status-text');
 const callDurationText = document.getElementById('call-duration-text');
 const callMuteBtn = document.getElementById('call-mute-btn');
 const callHangupBtn = document.getElementById('call-hangup-btn');
-const incomingCallModal = document.getElementById('incoming-call-modal');
+const incomingCallPopout = document.getElementById('incoming-call-popout') || document.getElementById('incoming-call-modal');
+const incomingCallModal = incomingCallPopout;
 const incomingCallerName = document.getElementById('incoming-caller-name');
 const acceptCallBtn = document.getElementById('accept-call-btn');
 const declineCallBtn = document.getElementById('decline-call-btn');
@@ -5126,6 +5127,14 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
         countSpan.textContent = newCount === 1 ? '1 Comment' : `${newCount} Comments`;
     }
 
+    showToast({
+        title: "Reply Transmitted",
+        message: "Your comment was published to the thread.",
+        type: "success",
+        icon: "💬",
+        duration: 3500,
+        force: true
+    });
 
     loadCommentsForPost(postId);
 
@@ -6042,6 +6051,14 @@ safeAddListener(forumForm, 'submit', async (event) => {
             await loadForumPosts();
         }
 
+        showToast({
+            title: "Transmission Broadcast",
+            message: `Your post is live in #${targetThread}.`,
+            type: "success",
+            icon: "🚀",
+            duration: 4500,
+            force: true
+        });
 
         closeFabModal();
     } catch (err) {
@@ -6880,8 +6897,8 @@ function triggerIncomingCallUI(data) {
     if (callAmbientBackdrop) {
         callAmbientBackdrop.classList.remove('hidden');
     }
-    if (incomingCallModal) {
-        incomingCallModal.classList.remove('hidden');
+    if (incomingCallPopout) {
+        incomingCallPopout.classList.remove('hidden');
     }
 }
 
@@ -7281,7 +7298,7 @@ async function startAudioCall() {
 async function answerAudioCall() {
     if (!incomingCallData || !currentUser) return;
     stopRingtoneSound();
-    if (incomingCallModal) incomingCallModal.classList.add('hidden');
+    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
 
     const data = incomingCallData;
@@ -7352,10 +7369,15 @@ async function answerAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        // If offer was bundled in incoming call payload, apply it immediately
-        if (data && data.offer) {
+        // Robust offer processing
+        const offerData = data && data.offer;
+        const hasValidOffer = offerData && (offerData.sdp || typeof offerData === 'object');
+
+        if (hasValidOffer) {
             try {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const sdpInit = offerData.sdp ? { type: offerData.type || 'offer', sdp: offerData.sdp } : offerData;
+                await pc.setRemoteDescription(new RTCSessionDescription(sdpInit));
+                
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     await pc.addIceCandidate(new RTCIceCandidate(c));
@@ -7368,7 +7390,10 @@ async function answerAudioCall() {
                         callChan.send({
                             type: 'broadcast',
                             event: 'webrtc_answer',
-                            payload: { answer: answer, from: currentUser.id }
+                            payload: {
+                                answer: { type: answer.type, sdp: answer.sdp },
+                                from: currentUser.id
+                            }
                         });
                     }
                 });
@@ -7389,7 +7414,7 @@ async function answerAudioCall() {
 
         showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
 
-        // If messages modal is closed, open it to the conversation
+        // Open direct messages modal and select active conversation
         if (dmModal && dmModal.classList.contains('hidden')) {
             openMessagesModal();
         }
@@ -7397,7 +7422,13 @@ async function answerAudioCall() {
 
     } catch (err) {
         console.error("Answer call error:", err);
-        alert("Could not access microphone: " + (err.message || err.name));
+        showToast({
+            title: "Microphone Access Required",
+            message: "Please allow microphone access to answer the voice call.",
+            type: "error",
+            icon: "🎤",
+            force: true
+        });
         cleanupCall();
     }
 }
@@ -7405,7 +7436,7 @@ async function answerAudioCall() {
 function declineAudioCall() {
     stopRingtoneSound();
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-    if (incomingCallModal) incomingCallModal.classList.add('hidden');
+    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
     if (db && currentUser) {
         db.from('user_notifications')
             .update({ is_read: true })
@@ -7517,7 +7548,7 @@ function initUserCallSignaling() {
                 stopRingtoneSound();
                 incomingCallData = null;
                 if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-                if (incomingCallModal) incomingCallModal.classList.add('hidden');
+                if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
             }
         })
         .subscribe();
