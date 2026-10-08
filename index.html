@@ -17,7 +17,9 @@
         .ticker-wrap { max-width: 1100px; width: 100%; background: linear-gradient(90deg, #1e293b, #0f172a, #1e293b); border: 1px solid #38bdf8; border-radius: 10px; margin-bottom: 14px; display: flex; align-items: center; overflow: hidden; height: 38px; box-shadow: 0 0 12px rgba(56, 189, 248, 0.15); flex-shrink: 0; }
         .ticker-badge { background-color: #0284c7; color: #fff; font-size: 0.72rem; font-weight: 800; padding: 0 12px; height: 100%; display: flex; align-items: center; justify-content: center; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; cursor: pointer; border-right: 1px solid #38bdf8; z-index: 2; flex-shrink: 0; }
         .ticker-content { display: flex; white-space: nowrap; animation: ticker-scroll 24s linear infinite; padding-left: 20px; will-change: transform; }
-        .ticker-wrap:hover .ticker-content { animation-play-state: paused; }
+        @media (hover: hover) and (pointer: fine) {
+            .ticker-wrap:hover .ticker-content { animation-play-state: paused; }
+        }
         @keyframes ticker-scroll { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
         .ticker-item { display: inline-flex; align-items: center; gap: 8px; margin-right: 40px; font-size: 0.86rem; color: #e2e8f0; cursor: pointer; }
         .ticker-item:hover { color: #38bdf8; text-decoration: underline; }
@@ -1898,7 +1900,7 @@ img, video, canvas, pre, code {
             box-shadow: 0 0 12px rgba(0, 240, 255, 0.75), 0 0 20px rgba(168, 85, 247, 0.45);
             z-index: 999999;
             pointer-events: none;
-            transition: width 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: width 0.04s ease-out;
         }
         .cyber-scroll-tracker::after {
             content: '';
