@@ -1871,7 +1871,7 @@ async function loadUserNotifications() {
             
             div.innerHTML = `
                 <div class="notif-text">
-                    <strong class="clickable-username" data-username="${escapeHTML(n.actor_username)}">@${escapeHTML(n.actor_username)}</strong>
+                    <strong class="clickable-username" data-username="escapeHTML(n.actorusername)">@{escapeHTML(n.actor_username)}</strong>
                     ${escapeHTML(n.message)}
                 </div>
                 <div class="notif-time">${timeAgo}</div>
@@ -3152,7 +3152,7 @@ function renderJoinedThreadsSidebar() {
 
         item.innerHTML = `
             <div class="thread-nav-content">
-                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7; margin-left: 6px;">Default</span>' : ''}
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} escapeHTML(tName)</span>{isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7; margin-left: 6px;">Default</span>' : ''}
             </div>
             <span class="thread-drag-handle" title="Drag to reorder">⋮⋮</span>
         `;
@@ -4208,10 +4208,6 @@ function renderFormattedContent(text) {
     const withMdLinks = escaped.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, href) => {
         return `<a href="${href}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8; text-decoration: underline;">${label}</a>`;
     });
-
-
-
-
     // UI UPGRADE: Rich Link Previews
     const withBareUrls = withMdLinks.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, (_match, space, href) => {
         try {
@@ -4227,14 +4223,10 @@ function renderFormattedContent(text) {
             return `${space}<a href="${href}" target="_blank" rel="noopener noreferrer" style="color: #38bdf8;">${href}</a>`;
         }
     });
-
-
-
-
     // NEW: Parse T/Thread_Name formatting (replaces underscores with spaces)
     const withThreadLinks = withBareUrls.replace(/(^|\s)T\/([a-zA-Z0-9_.-]+)/g, (_match, space, threadRaw) => {
         const actualName = threadRaw.replace(/_/g, ' ');
-        return `${space}<span class="clickable-thread" data-thread="${escapeHTML(actualName)}" title="Go to ${escapeHTML(actualName)}">T/${threadRaw}</span>`;
+        return `${space}<span class="clickable-thread" data-thread="${escapeHTML(actualName)}" title="Go to #${escapeHTML(actualName)}">#${threadRaw}</span>`;
     });
 
 
@@ -4255,7 +4247,7 @@ safeAddListener(postImageFile, 'change', () => {
     const file = postImageFile.files[0];
     if (file) {
         selectedPostPhotoFile = file;
-        if (postPhotoFilename) postPhotoFilename.textContent = `◈ ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
+        if (postPhotoFilename) postPhotoFilename.textContent = `◈ file.name({(file.size / 1024).toFixed(0)} KB)`;
         if (postPhotoPreviewBar) postPhotoPreviewBar.classList.remove('hidden');
     }
 });
@@ -4571,7 +4563,7 @@ async function loadFriendRequests() {
         const item = document.createElement('div');
         item.className = 'req-item';
         item.innerHTML = `
-            <span class="clickable-username" data-username="${escapeHTML(username)}">@${escapeHTML(username)}</span>
+            <span class="clickable-username" data-username="escapeHTML(username)">@{escapeHTML(username)}</span>
             <div class="req-actions">
                 <button class="btn-accept" title="Accept">✓</button>
                 <button class="btn-deny" title="Deny">✕</button>
@@ -4616,7 +4608,7 @@ async function handleRequest(requestId, accept) {
             await db
                 .from('chat_messages')
                 .update({ pending_approval: false })
-                .or(`and(sender_id.eq.${updatedReq.user_id}),and(sender_id.eq.${updatedReq.friend_id})`)
+                .or(`and(sender_id.eq.${updatedReq.user_id},friend_id.eq.${updatedReq.friend_id}),and(sender_id.eq.${updatedReq.friend_id},friend_id.eq.${updatedReq.user_id})`)
                 .eq('pending_approval', true);
         }
     } else {
@@ -4640,7 +4632,7 @@ async function loadFriends() {
         .from('friendships')
         .select('user_id, friend_id')
         .eq('status', 'accepted')
-        .or(`user_id.eq.${currentUser.id},friend_id.eq.${currentUser.id}`);
+        .or(`user_id.eq.currentUser.id,friendid.eq.{currentUser.id}`);
 
 
 
@@ -4738,7 +4730,7 @@ async function loadFriends() {
             <div class="conv-item-label">
                 <span>@${escapeHTML(friend.username)}</span>
             </div>
-            <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+            <span class="conv-badge badgeHidden">{unreadCount}</span>
         `;
 
 
@@ -4909,7 +4901,7 @@ async function loadConversations() {
                 <div class="conv-item-label">
                     <span>${escapeHTML(gTitle)}</span>
                 </div>
-                <span class="conv-badge ${badgeHidden}">${unreadCount}</span>
+                <span class="conv-badge badgeHidden">{unreadCount}</span>
             `;
 
 
@@ -5145,7 +5137,7 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
 
     if (chatHeader) {
         if (partnerUsername) {
-            chatHeader.innerHTML = `<span class="clickable-username" title="Click to view @${escapeHTML(partnerUsername)}'s profile">@${escapeHTML(partnerUsername)}</span>`;
+            chatHeader.innerHTML = `<span class="clickable-username" title="Click to view @escapeHTML(partnerUsername)'sprofile">@{escapeHTML(partnerUsername)}</span>`;
         } else {
             chatHeader.textContent = title;
         }
@@ -5294,10 +5286,10 @@ function createMessageElement(msg) {
 
 
 
-    const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
-    const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
+    const avatarImgHtml = `<img src="senderAvatar"class="msg-avatarclickable-avatar"data-username="{escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
+    const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="escapeHTML(msg.senderusername)">@{escapeHTML(msg.sender_username)}</div>` : '';
     const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
-    const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+    const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank" rel="noopener noreferrer"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo"></a>` : '';
     
     let pendingBadge = '';
     if (isOptimistic) {
@@ -5309,7 +5301,7 @@ function createMessageElement(msg) {
     }
     const bubbleHtml = `
         <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
-            ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
+            authorHtml{textHtml}imgHtml{pendingBadge}
         </div>
     `;
 
@@ -6318,7 +6310,7 @@ function createPostCardElement(post) {
             </button>
             <button type="button" class="btn-post-action btn-share-post" data-post-id="${post.id}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                <span>Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></span>
+                <span>Share <span id="share-count-post.id"style="margin-left:4px;opacity:0.8;">{post.shares || 0}</span></span>
             </button>
             ${userCanEdit ? `
             <button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">
@@ -6341,7 +6333,7 @@ function createPostCardElement(post) {
 
 
 
-    const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
+    const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo"></a>` : '';
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
     const renderedBody = post.is_pinned && !post.poll_options ? post.content : renderFormattedContent(post.content || '');
@@ -6387,7 +6379,7 @@ function createPostCardElement(post) {
                     </div>
                 `;
             } else {
-                pollHtml += `<button type="button" class="poll-option-btn vote-poll-btn" data-post-id="${post.id}" data-opt-idx="${idx}">${escapeHTML(opt)}</button>`;
+                pollHtml += `<button type="button" class="poll-option-btn vote-poll-btn" data-post-id="${post.id}" data-opt-idx="${idx}">${escapeHTML(opt.text)} (${opt.votes || 0})</button>`;
             }
         });
         pollHtml += `<div class="poll-meta">${totalVotes} votes • ${isExpired ? 'Final Results' : 'Poll Open'}</div></div>`;
@@ -6412,20 +6404,20 @@ function createPostCardElement(post) {
 
     item.innerHTML = `
         <div class="vote-box">
-            <button class="vote-btn ${myVote === 1 ? 'upvoted' : ''}" data-post-id="${post.id}" data-dir="1" title="Like">
+            <button class="vote-btn myVote===1?'upvoted':''"data-post-id="{post.id}" data-dir="1" title="Like">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
             <span class="vote-score">${score}</span>
-            <button class="vote-btn ${myVote === -1 ? 'downvoted' : ''}" data-post-id="${post.id}" data-dir="-1" title="Dislike">
+            <button class="vote-btn myVote===-1?'downvoted':''"data-post-id="{post.id}" data-dir="-1" title="Dislike">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
         </div>
         <div class="post-body">
             <div class="post-meta">
                 <div class="post-author-wrap">
-                    <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
-                    <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>${activeThread === 'Trending' && post.thread ? `<span class="clickable-thread" data-thread="${escapeHTML(post.thread)}" style="font-size: 0.72rem; color: #38bdf8; background: #0f172a; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155;">#${escapeHTML(post.thread)}</span>` : ''}
-                    ${roleBadge}${userFlairBadge}
+                    <img src="authorAvatar"class="post-author-avatar"data-username="{escapeHTML(cleanAuthor)}" alt="pfp">
+                    <span>By: <strong class="post-author clickable-username" data-username="escapeHTML(cleanAuthor)">@{escapeHTML(cleanAuthor)}</strong></span>${activeThread === 'Trending' && post.thread ? `<span class="clickable-thread" data-thread="${escapeHTML(post.thread)}" style="font-size: 0.72rem; color: #38bdf8; background: #0f172a; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155;">#${escapeHTML(post.thread)}</span>` : ''}
+                    roleBadge{userFlairBadge}
                 </div>
                 <div style="display:flex; align-items:center; gap:6px;">
                     <span>${dateFormatted}</span>${post.is_edited ? `<span class="edited-badge view-edit-history" data-post-id="${post.id}">Edited 🕒</span>` : ''}
@@ -6646,9 +6638,9 @@ async function loadCommentsForPost(postId) {
         const commentBody = document.createElement('div');
         commentBody.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem;";
         commentBody.innerHTML = `
-            <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; cursor: pointer;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">
+            <img src="avatar"style="width:24px;height:24px;border-radius:50%;object-fit:cover;cursor:pointer;"class="clickable-username"data-username="{escapeHTML(cleanAuthor)}">
             <div style="flex: 1;">
-                <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</div>
+                <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="escapeHTML(cleanAuthor)">@{escapeHTML(cleanAuthor)}</div>
                 <div style="color: #e2e8f0; line-height: 1.3;">${escapeHTML(c.content)}</div>
                 <div style="margin-top: 4px;">
                     <button type="button" class="btn-reply-toggle" style="background:none; border:none; color:#64748b; font-size:0.75rem; cursor:pointer; padding:0; width:auto; text-decoration:underline;">Reply</button>
@@ -7021,7 +7013,7 @@ async function loadProminentUpdates() {
     cachedUpdates = updates;
     const items = updates.map(u => {
         const date = u.created_at ? new Date(u.created_at).toLocaleDateString() : '';
-        return `<span class="ticker-item" data-id="${u.id}">◈ [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content).substring(0, 100)}...</span>`;
+        return `<span class="ticker-item" data-id="${u.id}">◈ [${date}] <strong>@${escapeHTML(u.author)}:</strong> ${escapeHTML(u.content)}</span>`;
     }).join('');
 
 
@@ -7661,7 +7653,7 @@ safeAddListener(threadSearchSelect, 'input', () => {
             const isJoined = myJoinedThreadNames.has(tName);
             const div = document.createElement('div');
             div.className = 'suggest-item';
-            div.innerHTML = `<strong>${escapeHTML(tName)}</strong> <span style="font-size: 0.75rem; color: #64748b; float: right;">${isJoined ? 'Joined ✓' : ''}</span>`;
+            div.innerHTML = `<strong>escapeHTML(tName)</strong><spanstyle="font-size:0.75rem;color:#64748b;float:right;">{isJoined ? 'Joined ✓' : ''}</span>`;
             
             div.addEventListener('click', () => {
                 threadSearchSelect.value = tName;
@@ -8411,8 +8403,8 @@ async function loadUserInvites() {
                         </div>
                     </div>
                     <div class="pod-info">
-                        <div class="pod-code-label" title="${escapeHTML(inv.code)}">${escapeHTML(inv.code)}</div>
-                        <div class="pod-timer-text" data-regen="${regenTarget}">${formatCountdown(msRemaining)}</div>
+                        <div class="pod-code-label" title="escapeHTML(inv.code)">{escapeHTML(inv.code)}</div>
+                        <div class="pod-timer-text" data-regen="regenTarget">{formatCountdown(msRemaining)}</div>
                         <div class="pod-progress-bar-wrap">
                             <div class="pod-progress-bar-fill" style="width: ${percentDone}%;"></div>
                         </div>
@@ -8544,7 +8536,7 @@ async function renderInviteLedger(userInvites, isAdmin) {
                     <span class="ledger-code">${escapeHTML(inv.code)}</span>
                     ${inv.is_bot_flagged ? '<span class="badge badge-red" style="font-size: 0.65rem;">▵ BOT FLAGGED</span>' : (isClaimed ? '<span class="badge badge-green" style="font-size: 0.65rem;">✓ VERIFIED</span>' : '<span class="badge badge-blue" style="font-size: 0.65rem;">PENDING</span>')}
                 </div>
-                <span class="ledger-meta">Issued: ${createdDate} by <strong>@${escapeHTML(inv.inviter_username || (inv.inviter_id === currentUser.id ? currentUsername : 'inviter'))}</strong></span>
+                <span class="ledger-meta">Issued: createdDateby<strong>@{escapeHTML(inv.inviter_username || (inv.inviter_id === currentUser.id ? currentUsername : 'inviter'))}</strong></span>
             </div>
             <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
                 <span style="font-size: 0.72rem; color: ${isClaimed ? '#38bdf8' : '#94a3b8'};">
@@ -9042,7 +9034,7 @@ function evaluateLiveChatStatus(threadData) {
         const minStr = parts.find(p => p.type === 'minute').value;
         
         // Pad single digits (e.g. 9:00 -> 09:00) for string comparison
-        const currentStr = `${hrStr.padStart(2, '0')}:${minStr.padStart(2, '0')}`;
+        const currentStr = `hrStr.padStart(2,'0'):{minStr.padStart(2, '0')}`;
 
 
 
@@ -9289,7 +9281,7 @@ function triggerIncomingCallUI(data) {
     incomingCallData = data;
     if (incomingCallerName) {
         if (data.isGroup && data.groupName) {
-            incomingCallerName.textContent = `${data.groupName} (@${data.callerUsername || 'User'})`;
+            incomingCallerName.textContent = `data.groupName(@{data.callerUsername || 'User'})`;
         } else {
             incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
         }
@@ -9428,6 +9420,8 @@ function cleanupCall(statusNotice = null) {
     queuedIceCandidates = [];
 
 
+
+
     if (activeCall) {
         if (activeCall.dialingInterval) {
             clearInterval(activeCall.dialingInterval);
@@ -9455,9 +9449,13 @@ function cleanupCall(statusNotice = null) {
     }
 
 
+
+
     if (remoteAudioEl) {
         remoteAudioEl.srcObject = null;
     }
+
+
 
 
     isMicMuted = false;
@@ -9465,6 +9463,8 @@ function cleanupCall(statusNotice = null) {
         callMuteBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
         callMuteBtn.className = 'call-ctrl-btn secondary';
     }
+
+
 
 
     if (statusNotice && callStatusText) {
@@ -9478,42 +9478,42 @@ function cleanupCall(statusNotice = null) {
 }
 
 
+
+
 function setupCallChannelListeners(callChan, pc) {
     callChan
         .on('broadcast', { event: 'incoming_call' }, (payload) => {
             const data = payload?.payload;
             if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-            if (!activeCall || activeCall.conversationId !== data.conversationId) {
+            if (!activeCall) {
                 triggerIncomingCallUI(data);
             }
         })
         .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.offer || data.from === currentUser?.id) return;
-
-
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-
-                // Process any queued ICE candidates
+                const sdpInit = data.offer.sdp ? { type: data.offer.type || 'offer', sdp: data.offer.sdp } : data.offer;
+                await pc.setRemoteDescription(new RTCSessionDescription(sdpInit));
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     await pc.addIceCandidate(new RTCIceCandidate(c));
                 }
-
-
-                // Generate Answer
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-
-
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_answer',
-                    payload: { answer: answer, from: currentUser.id }
-                });
+                const answerPayload = { answer: { type: answer.type, sdp: answer.sdp }, from: currentUser.id };
+                callChan.send({ type: 'broadcast', event: 'webrtc_answer', payload: answerPayload });
+                if (activeCall?.partnerId && db) {
+                    try {
+                        const callerSig = db.channel(`user_call_sig_${activeCall.partnerId}`);
+                        callerSig.subscribe((st) => {
+                            if (st === 'SUBSCRIBED') {
+                                callerSig.send({ type: 'broadcast', event: 'webrtc_answer', payload: answerPayload });
+                            }
+                        });
+                    } catch(e) {}
+                }
             } catch (err) {
                 console.error("Error handling webrtc_offer:", err);
             }
@@ -9521,17 +9521,23 @@ function setupCallChannelListeners(callChan, pc) {
         .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.answer || data.from === currentUser?.id) return;
-
-
+            if (activeCall?.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+            stopRingtoneSound();
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-
-
-                // Process any queued ICE candidates
+                const sdpInit = data.answer.sdp ? { type: data.answer.type || 'answer', sdp: data.answer.sdp } : data.answer;
+                await pc.setRemoteDescription(new RTCSessionDescription(sdpInit));
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     await pc.addIceCandidate(new RTCIceCandidate(c));
+                }
+                if (activeCall.localIceCandidates && activeCall.localIceCandidates.length > 0) {
+                    activeCall.localIceCandidates.forEach(cand => {
+                        callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: { candidate: cand, from: currentUser.id } });
+                    });
                 }
             } catch (err) {
                 console.error("Error handling webrtc_answer:", err);
@@ -9540,8 +9546,6 @@ function setupCallChannelListeners(callChan, pc) {
         .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.candidate || data.from === currentUser?.id) return;
-
-
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
                 if (pc.remoteDescription && pc.remoteDescription.type) {
@@ -9569,7 +9573,9 @@ function setupCallChannelListeners(callChan, pc) {
             stopRingtoneSound();
             cleanupCall("Call Declined");
         })
-        .on('broadcast', { event: 'call_busy' }, () => {
+        .on('broadcast', { event: 'call_busy' }, (payload) => {
+            const data = payload?.payload;
+            if (data?.from === currentUser?.id || !activeCall?.isCaller) return;
             stopRingtoneSound();
             cleanupCall("User is Busy");
         })
@@ -9577,6 +9583,8 @@ function setupCallChannelListeners(callChan, pc) {
             cleanupCall("Call Ended");
         });
 }
+
+
 
 
 async function startAudioCall() {
@@ -9591,8 +9599,12 @@ async function startAudioCall() {
     }
 
 
+
+
     try {
         const stream = await getMicrophoneStream();
+
+
 
 
         const rtcConfig = {
@@ -9603,8 +9615,12 @@ async function startAudioCall() {
         };
 
 
+
+
         const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+
 
 
         pc.ontrack = (event) => {
@@ -9615,12 +9631,18 @@ async function startAudioCall() {
         };
 
 
+
+
         const targetConvId = activeConversationId;
         const targetPartnerId = activeConversationPartnerId;
         const targetPartnerUsername = activeConversationPartnerUsername || 'User';
 
 
+
+
         const callChan = db.channel(`call_room_${targetConvId}`);
+
+
 
 
         activeCall = {
@@ -9632,19 +9654,29 @@ async function startAudioCall() {
             isCaller: true,
             callChannel: callChan,
             callStartTime: null,
-            callTimerInterval: null
+            callTimerInterval: null,
+            localIceCandidates: []
         };
+
+
 
 
         pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: event.candidate, from: currentUser.id }
-                });
+            if (event.candidate) {
+                if (activeCall?.localIceCandidates) {
+                    activeCall.localIceCandidates.push(event.candidate);
+                }
+                if (callChan) {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_ice',
+                        payload: { candidate: event.candidate, from: currentUser.id }
+                    });
+                }
             }
         };
+
+
 
 
         pc.onconnectionstatechange = () => {
@@ -9656,12 +9688,18 @@ async function startAudioCall() {
         };
 
 
+
+
         setupCallChannelListeners(callChan, pc);
+
+
 
 
         // Pre-create offer before broadcasting so it is bundled directly in the invitation
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+
+
 
 
         const plainOffer = { type: offer.type, sdp: offer.sdp };
@@ -9676,6 +9714,8 @@ async function startAudioCall() {
         };
 
 
+
+
         if (isGroupCall) {
             // Group Calling: Query all members of conversation
             const { data: members } = await db
@@ -9685,12 +9725,16 @@ async function startAudioCall() {
                 .neq('user_id', currentUser.id);
 
 
+
+
             const sendGroupSignals = () => {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
                     callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
+
+
 
 
                 (members || []).forEach(m => {
@@ -9706,6 +9750,8 @@ async function startAudioCall() {
             };
 
 
+
+
             await callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     sendGroupSignals();
@@ -9714,14 +9760,20 @@ async function startAudioCall() {
             });
 
 
+
+
             // Notify group members in database
             (members || []).forEach(m => {
                 sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
             });
 
 
+
+
             showActiveCallBar(`Group Call Active (Dialing members...)`, true);
             playRingtoneSound();
+
+
 
 
         } else {
@@ -9731,6 +9783,8 @@ async function startAudioCall() {
             });
 
 
+
+
             const sendCallSignals = () => {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
@@ -9738,11 +9792,15 @@ async function startAudioCall() {
                 } catch (e) {}
 
 
+
+
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
                     callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
             };
+
+
 
 
             partnerSig.subscribe((sigStatus) => {
@@ -9754,11 +9812,15 @@ async function startAudioCall() {
             });
 
 
+
+
             await callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     sendCallSignals();
                 }
             });
+
+
 
 
             // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
@@ -9779,13 +9841,19 @@ async function startAudioCall() {
             }, 2500);
 
 
+
+
             // Layer 3: Database Signal Dispatch via user_notifications fallback
             sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
+
+
 
 
             showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
             playRingtoneSound();
         }
+
+
 
 
     } catch (err) {
@@ -9796,6 +9864,8 @@ async function startAudioCall() {
 }
 
 
+
+
 async function answerAudioCall() {
     if (!incomingCallData || !currentUser) return;
     stopRingtoneSound();
@@ -9803,21 +9873,29 @@ async function answerAudioCall() {
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
 
 
+
+
     const data = incomingCallData;
     incomingCallData = null;
 
 
+
+
     if (db && currentUser) {
         db.from('user_notifications')
-            .update({ is_read: true })
+            .delete()
             .eq('user_id', currentUser.id)
             .eq('type', 'incoming_call')
             .catch(() => {});
     }
 
 
+
+
     try {
         const stream = await getMicrophoneStream();
+
+
 
 
         const rtcConfig = {
@@ -9828,8 +9906,12 @@ async function answerAudioCall() {
         };
 
 
+
+
         const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+
 
 
         pc.ontrack = (event) => {
@@ -9840,7 +9922,11 @@ async function answerAudioCall() {
         };
 
 
+
+
         const callChan = db.channel(`call_room_${data.conversationId}`);
+
+
 
 
         activeCall = {
@@ -9852,19 +9938,39 @@ async function answerAudioCall() {
             isCaller: false,
             callChannel: callChan,
             callStartTime: null,
-            callTimerInterval: null
+            callTimerInterval: null,
+            localIceCandidates: []
         };
+
+
 
 
         pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: event.candidate, from: currentUser.id }
-                });
+            if (event.candidate) {
+                if (activeCall?.localIceCandidates) {
+                    activeCall.localIceCandidates.push(event.candidate);
+                }
+                if (callChan) {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_ice',
+                        payload: { candidate: event.candidate, from: currentUser.id }
+                    });
+                }
+                if (data.callerId && db) {
+                    try {
+                        const callerSig = db.channel(`user_call_sig_${data.callerId}`);
+                        callerSig.subscribe((st) => {
+                            if (st === 'SUBSCRIBED') {
+                                callerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: { candidate: event.candidate, from: currentUser.id } });
+                            }
+                        });
+                    } catch(e) {}
+                }
             }
         };
+
+
 
 
         pc.onconnectionstatechange = () => {
@@ -9876,12 +9982,18 @@ async function answerAudioCall() {
         };
 
 
+
+
         setupCallChannelListeners(callChan, pc);
+
+
 
 
         // Robust offer processing
         const offerData = data && data.offer;
         const hasValidOffer = offerData && (offerData.sdp || typeof offerData === 'object');
+
+
 
 
         if (hasValidOffer) {
@@ -9895,18 +10007,24 @@ async function answerAudioCall() {
                 }
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-
-
+                const answerPayload = { answer: { type: answer.type, sdp: answer.sdp }, from: currentUser.id };
+                const sendAnswer = () => {
+                    callChan.send({ type: 'broadcast', event: 'webrtc_answer', payload: answerPayload });
+                    if (data.callerId && db) {
+                        try {
+                            const callerSig = db.channel(`user_call_sig_${data.callerId}`);
+                            callerSig.subscribe((st) => {
+                                if (st === 'SUBSCRIBED') {
+                                    callerSig.send({ type: 'broadcast', event: 'webrtc_answer', payload: answerPayload });
+                                }
+                            });
+                        } catch(e) {}
+                    }
+                };
                 await callChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
-                        callChan.send({
-                            type: 'broadcast',
-                            event: 'webrtc_answer',
-                            payload: {
-                                answer: { type: answer.type, sdp: answer.sdp },
-                                from: currentUser.id
-                            }
-                        });
+                        sendAnswer();
+                        setTimeout(sendAnswer, 300);
                     }
                 });
             } catch (err) {
@@ -9925,11 +10043,15 @@ async function answerAudioCall() {
         }
 
 
+
+
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
         } else {
             showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
         }
+
+
 
 
         // Open direct messages modal and select active conversation
@@ -9941,6 +10063,8 @@ async function answerAudioCall() {
         } else {
             selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
         }
+
+
 
 
     } catch (err) {
@@ -9957,10 +10081,14 @@ async function answerAudioCall() {
 }
 
 
+
+
 function declineAudioCall() {
     stopRingtoneSound();
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
     if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
+
+
 
 
     if (incomingCallData) {
@@ -9968,8 +10096,12 @@ function declineAudioCall() {
         const callerId = incomingCallData.callerId;
 
 
+
+
         if (convId) recentlyDeclinedCalls.set(convId, Date.now());
         if (callerId) recentlyDeclinedCalls.set(callerId, Date.now());
+
+
 
 
         if (db) {
@@ -9985,6 +10117,8 @@ function declineAudioCall() {
                     }
                 });
             } catch (e) {}
+
+
 
 
             if (callerId) {
@@ -10005,6 +10139,8 @@ function declineAudioCall() {
     }
 
 
+
+
     if (db && currentUser) {
         db.from('user_notifications')
             .delete()
@@ -10014,8 +10150,12 @@ function declineAudioCall() {
     }
 
 
+
+
     incomingCallData = null;
 }
+
+
 
 
 function toggleCallMute() {
@@ -10024,8 +10164,12 @@ function toggleCallMute() {
     if (tracks.length === 0) return;
 
 
+
+
     isMicMuted = !isMicMuted;
     tracks[0].enabled = !isMicMuted;
+
+
 
 
     if (callMuteBtn) {
@@ -10035,6 +10179,8 @@ function toggleCallMute() {
         else callMuteBtn.className = 'call-ctrl-btn secondary';
     }
 }
+
+
 
 
 function endCurrentAudioCall() {
@@ -10067,11 +10213,15 @@ function endCurrentAudioCall() {
 }
 
 
+
+
 function initUserCallSignaling() {
     if (!db || !currentUser) return;
     if (userCallSignalingChannel) {
         try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
     }
+
+
 
 
     userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`)
@@ -10080,7 +10230,10 @@ function initUserCallSignaling() {
             if (!data || !data.callerId) return;
 
 
+
+
             if (activeCall) {
+                if (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId) return;
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -10095,6 +10248,8 @@ function initUserCallSignaling() {
             }
 
 
+
+
             if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
                 // If user has disabled call notifications, auto decline/busy
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
@@ -10105,6 +10260,8 @@ function initUserCallSignaling() {
                 });
                 return;
             }
+
+
 
 
             triggerIncomingCallUI(data);
@@ -10122,6 +10279,47 @@ function initUserCallSignaling() {
             if (activeCall && activeCall.isCaller) {
                 stopRingtoneSound();
                 cleanupCall("Call Declined");
+            }
+        })
+        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.answer || data.from === currentUser?.id) return;
+            if (activeCall?.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+            stopRingtoneSound();
+            try {
+                if (!activeCall || !activeCall.peerConnection) return;
+                const sdpInit = data.answer.sdp ? { type: data.answer.type || 'answer', sdp: data.answer.sdp } : data.answer;
+                await activeCall.peerConnection.setRemoteDescription(new RTCSessionDescription(sdpInit));
+                while (queuedIceCandidates.length > 0) {
+                    const c = queuedIceCandidates.shift();
+                    await activeCall.peerConnection.addIceCandidate(new RTCIceCandidate(c));
+                }
+                if (activeCall.localIceCandidates && activeCall.localIceCandidates.length > 0) {
+                    activeCall.localIceCandidates.forEach(cand => {
+                        if (activeCall?.callChannel) {
+                            activeCall.callChannel.send({ type: 'broadcast', event: 'webrtc_ice', payload: { candidate: cand, from: currentUser.id } });
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Error handling webrtc_answer in user channel:", err);
+            }
+        })
+        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.candidate || data.from === currentUser?.id) return;
+            try {
+                if (!activeCall || !activeCall.peerConnection) return;
+                if (activeCall.peerConnection.remoteDescription && activeCall.peerConnection.remoteDescription.type) {
+                    await activeCall.peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } else {
+                    queuedIceCandidates.push(data.candidate);
+                }
+            } catch (err) {
+                console.warn("Notice adding ICE candidate in user channel:", err);
             }
         })
         .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
@@ -10142,9 +10340,6 @@ function initUserCallSignaling() {
         })
         .subscribe();
 }
-
-
-// Call button click listeners
 safeAddListener(startCallBtn, 'click', startAudioCall);
 safeAddListener(acceptCallBtn, 'click', answerAudioCall);
 safeAddListener(declineCallBtn, 'click', declineAudioCall);
@@ -10483,7 +10678,7 @@ function initVoiceStageRoomChannel(threadName) {
             updateVoiceStagePrivacyUI();
             showToast({
                 title: "Stage Privacy Changed",
-                message: `Voice Stage is now ${payload.mode === 'invite_only' ? 'Invite Only' : 'Open to Everyone'} (by @${payload.moderatorUsername || 'Mod'}).`,
+                message: `Voice Stage is now payload.mode==='inviteonly'?'InviteOnly':'OpentoEveryone'(by@{payload.moderatorUsername || 'Mod'}).`,
                 type: "info",
                 icon: payload.mode === 'invite_only' ? "🔒" : "🔓"
             });
@@ -11247,19 +11442,19 @@ function renderVoiceStageGrid() {
 
 
         return `
-            <div id="voice-participant-${escapeHTML(p.user_id)}" class="voice-participant-card ${isSpeaking ? 'is-speaking' : ''}" data-userid="${escapeHTML(p.user_id)}">
+            <div id="voice-participant-${escapeHTML(p.user_id)}" class="voice-participant-card isSpeaking?'is-speaking':''"data-userid="{escapeHTML(p.user_id)}">
                 ${showModActions ? `
                     <div style="position: absolute; top: 4px; right: 4px; display: flex; gap: 2px; z-index: 10;">
-                        <button type="button" class="voice-card-mute-btn" data-userid="${escapeHTML(p.user_id)}" data-username="${escapeHTML(p.username || 'User')}" title="Mute Participant" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #f87171; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">🔇</button>
-                        <button type="button" class="voice-card-kick-btn" data-userid="${escapeHTML(p.user_id)}" data-username="${escapeHTML(p.username || 'User')}" title="Kick from Stage" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #ef4444; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">👢</button>
+                        <button type="button" class="voice-card-mute-btn" data-userid="escapeHTML(p.userid)"data-username="{escapeHTML(p.username || 'User')}" title="Mute Participant" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #f87171; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">🔇</button>
+                        <button type="button" class="voice-card-kick-btn" data-userid="escapeHTML(p.userid)"data-username="{escapeHTML(p.username || 'User')}" title="Kick from Stage" style="background: rgba(30,41,59,0.8); border: 1px solid #334155; border-radius: 4px; color: #ef4444; font-size: 0.72rem; padding: 2px 5px; cursor: pointer;">👢</button>
                     </div>
                 ` : ''}
                 <div class="voice-participant-avatar-wrap">
-                    <img src="${p.avatar_url || DEFAULT_AVATAR}" class="voice-participant-avatar" alt="${escapeHTML(p.username || 'User')}">
-                    <div class="voice-speaking-indicator" title="${isMuted ? 'Muted' : (isDeafened ? 'Deafened' : 'Active')}">${micIcon}</div>
+                    <img src="p.avatarurl||DEFAULTAVATAR"class="voice-participant-avatar"alt="{escapeHTML(p.username || 'User')}">
+                    <div class="voice-speaking-indicator" title="isMuted?'Muted':(isDeafened?'Deafened':'Active')">{micIcon}</div>
                 </div>
-                <div class="voice-participant-name" title="@${escapeHTML(p.username || 'User')}">@${escapeHTML(p.username || 'User')}${isSelf ? ' (You)' : ''}</div>
-                <div class="voice-participant-role badge ${roleBadgeClass}" style="font-size: 0.65rem; padding: 2px 6px;">${escapeHTML(pRole)}</div>
+                <div class="voice-participant-name" title="@escapeHTML(p.username||'User')">@{escapeHTML(p.username || 'User')}${isSelf ? ' (You)' : ''}</div>
+                <div class="voice-participant-role badge roleBadgeClass"style="font-size:0.65rem;padding:2px6px;">{escapeHTML(pRole)}</div>
             </div>
         `;
     }).join('');
@@ -11412,7 +11607,7 @@ function openVoiceStageInsideLiveChat(threadName) {
 
 
     if (voiceStageIsConnected && activeVoiceStageThread !== targetThread) {
-        if (!confirm(`You are currently in the voice stage for "${activeVoiceStageThread}". Disconnect and switch to "${targetThread}"?`)) {
+        if (!confirm(`You are currently on the voice stage in "${activeVoiceStageThread}". Would you like to leave that stage and join "${targetThread}"?`)) {
             return;
         }
         disconnectFromVoiceStage();
@@ -13460,3 +13655,4 @@ safeAddListener(document.getElementById('opt-remove-banner-btn'), 'click', () =>
     closeThreadOptionsModal();
     removeCurrentThreadBanner();
 });
+
