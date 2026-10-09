@@ -2440,12 +2440,14 @@ async function syncUserState(user) {
         updateSuspicionUI();
 
 
+        callSignalingInitTicket++;
+        userNotifInitTicket++;
         if (userCallSignalingChannel && db) {
-            try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
+            removeChannelTracked(userCallSignalingChannel);
             userCallSignalingChannel = null;
         }
         if (userNotifRealtimeChannel && db) {
-            try { db.removeChannel(userNotifRealtimeChannel); } catch (e) {}
+            removeChannelTracked(userNotifRealtimeChannel);
             userNotifRealtimeChannel = null;
         }
         cleanupCall();
@@ -2588,10 +2590,16 @@ if (db) {
 
 
 
-    db.auth.onAuthStateChange(async (_event, session) => {
-        if (hasBooted) {
-            await syncUserState(session?.user || null);
+    db.auth.onAuthStateChange(async (event, session) => {
+        if (!hasBooted) return;
+        const user = session?.user || null;
+        // Supabase re-emits SIGNED_IN (tab refocus) and TOKEN_REFRESHED for the already signed-in user. A full
+        // re-sync rebuilds the realtime channels, leaving a window where incoming calls can't be received.
+        if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && user && currentUser && user.id === currentUser.id) {
+            currentUser = user;
+            return;
         }
+        await syncUserState(user);
     });
 }
 
@@ -5231,7 +5239,7 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
                     db.from('chat_messages')
                         .update({ is_read: true })
                         .eq('id', newMsg.id)
-                        .catch(() => {});
+                        .then(null, () => {});
                 }
             }
         )
@@ -5817,10 +5825,11 @@ safeAddListener(dmForm, 'submit', async (e) => {
 
 
 
-                db.from('user_notifications').insert(notifsToInsert).catch(err => {
+                db.from('user_notifications').insert(notifsToInsert).then(({ error }) => {
+                    if (!error) return;
                     const fallbackNotifs = notifsToInsert.map(n => ({ ...n, entity_id: null }));
-                    db.from('user_notifications').insert(fallbackNotifs).catch(() => {});
-                });
+                    return db.from('user_notifications').insert(fallbackNotifs);
+                }).then(null, () => {});
             }
         }
     } catch (err) {
@@ -5934,7 +5943,7 @@ async function checkNotifications() {
                 callNotifs.forEach(notif => {
                     const notifAge = Date.now() - new Date(notif.created_at || Date.now()).getTime();
                     if (notifAge > 35000) {
-                        db.from('user_notifications').delete().eq('id', notif.id).catch(() => {});
+                        db.from('user_notifications').delete().eq('id', notif.id).then(null, () => {});
                     } else if (!activeCall && !isAnsweringCall) {
                         triggerIncomingCallUI({
                             callerId: notif.actor_id || null,
@@ -9261,9 +9270,147 @@ async function submitPollVote(postId, optIdx) {
 
 
 
+// --- CALL SIGNALING HELPERS ---
+// supabase-js behaviours the call system has to work around:
+//  * db.channel(name) returns the EXISTING channel for that name (even one that is still being removed), and
+//    subscribe() on a channel that is already joined never fires its callback. Re-using a topic therefore
+//    silently drops signals, so every call channel is created through openFreshChannel().
+//  * Query builders are thenables without .catch(); fire-and-forget queries use .then(null, handler).
+const handledCallIds = new Set();
+const channelRemovals = new Map();
+const signalQueues = new Map();
+const notifiedCallers = new Set();
+let callSetupInProgress = false;
+let incomingCallTimer = null;
+let callSignalingInitTicket = 0;
+
+function callLog(...args) { console.log('[call]', ...args); }
+
+function newCallId() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// Direct audio needs a TURN relay on restrictive networks (mobile carriers, corporate/school Wi-Fi, some home
+// routers). STUN alone only works when both peers can reach each other directly. Add TURN credentials here,
+// e.g. { urls: 'turn:turn.example.com:3478', username: '...', credential: '...' }.
+const TURN_ICE_SERVERS = [];
+
+function getIceServers() {
+    return [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        ...TURN_ICE_SERVERS
+    ];
+}
+
+function removeChannelTracked(ch) {
+    if (!ch || !db) return Promise.resolve();
+    const done = Promise.resolve(db.removeChannel(ch)).then(() => {}, () => {}).then(() => {
+        if (channelRemovals.get(ch.topic) === done) channelRemovals.delete(ch.topic);
+    });
+    channelRemovals.set(ch.topic, done);
+    return done;
+}
+
+async function openFreshChannel(name) {
+    const topic = `realtime:${name}`;
+    if (channelRemovals.has(topic)) await channelRemovals.get(topic);
+    for (const stale of db.getChannels().filter(c => c.topic === topic)) {
+        await removeChannelTracked(stale);
+    }
+    return db.channel(name);
+}
+
+// Resolves true once the channel has joined, false on error/timeout.
+function subscribeChannel(ch, timeoutMs = 8000) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (ok) => { if (!settled) { settled = true; clearTimeout(timer); resolve(ok); } };
+        const timer = setTimeout(() => finish(false), timeoutMs);
+        ch.subscribe((status) => {
+            if (status === 'SUBSCRIBED') finish(true);
+            else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') finish(false);
+        });
+    });
+}
+
+// One-shot broadcast to a channel this client does not otherwise hold open (decline, busy, ...).
+// Sends to the same topic are serialised so a second send never tears down the first one's channel.
+function sendSignalOnce(channelName, events) {
+    if (!db) return Promise.resolve(false);
+    const list = Array.isArray(events) ? events : [events];
+    const prev = signalQueues.get(channelName) || Promise.resolve();
+    const run = prev.then(async () => {
+        let ch = null;
+        try {
+            ch = await openFreshChannel(channelName);
+            if (!(await subscribeChannel(ch))) {
+                callLog(`could not join ${channelName} to deliver`, list.map(e => e.event));
+                return false;
+            }
+            for (const e of list) {
+                await ch.send({ type: 'broadcast', event: e.event, payload: e.payload });
+            }
+            return true;
+        } catch (err) {
+            console.warn(`Signal delivery to ${channelName} failed:`, err);
+            return false;
+        } finally {
+            if (ch) await removeChannelTracked(ch);
+        }
+    });
+    const tail = run.then(() => {}, () => {});
+    signalQueues.set(channelName, tail);
+    tail.then(() => { if (signalQueues.get(channelName) === tail) signalQueues.delete(channelName); });
+    return run;
+}
+
+function describeMicError(err) {
+    const name = err && err.name;
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+        return 'Microphone access is blocked. Allow the microphone for this site in your browser settings, then try again.';
+    }
+    if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'No usable microphone was found on this device.';
+    if (name === 'NotReadableError') return 'Your microphone is being used by another app.';
+    return `Could not start the call: ${(err && (err.message || err.name)) || 'unknown error'}`;
+}
+
+function purgeIncomingCallNotifications() {
+    if (!db || !currentUser) return;
+    db.from('user_notifications')
+        .delete()
+        .eq('user_id', currentUser.id)
+        .eq('type', 'incoming_call')
+        .then(null, () => {});
+}
+
+function dismissIncomingCallUI() {
+    stopRingtoneSound();
+    if (incomingCallTimer) {
+        clearTimeout(incomingCallTimer);
+        incomingCallTimer = null;
+    }
+    incomingCallData = null;
+    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
+    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
+}
+
+function renderIncomingCallerName(data) {
+    if (!incomingCallerName) return;
+    if (data.isGroup && data.groupName) {
+        incomingCallerName.textContent = `${data.groupName} (@${data.callerUsername || 'User'})`;
+    } else {
+        incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
+    }
+}
+
 // =========================================================================
 // --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
 // =========================================================================
+// Flow: caller opens call_room_<conversation> and pulses `incoming_call` to the callee's user_call_sig_<id>
+// channel (plus a user_notifications row as a fallback). The callee joins the room and sends `call_accepted`;
+// the caller then creates the WebRTC offer, the callee answers, and ICE candidates are exchanged over the room.
 
 function triggerIncomingCallUI(data) {
     if (!data || !data.callerId || data.callerId === currentUser?.id) return;
@@ -9273,23 +9420,27 @@ function triggerIncomingCallUI(data) {
         return;
     }
 
-    // Ignore if this call was explicitly declined within the last 45 seconds
-    const lastDeclined = Math.max(
-        recentlyDeclinedCalls.get(data.conversationId) || 0,
-        recentlyDeclinedCalls.get(data.callerId) || 0
-    );
-    if (Date.now() - lastDeclined < 45000) {
+    if (data.callId) {
+        // Dialing pulses of a call we already answered/declined/lost are ignored; a brand new call has a new id.
+        if (handledCallIds.has(data.callId)) return;
+    } else {
+        // Database-notification fallback carries no call id, so honour explicit declines for a while.
+        const lastDeclined = Math.max(
+            recentlyDeclinedCalls.get(data.conversationId) || 0,
+            recentlyDeclinedCalls.get(data.callerId) || 0
+        );
+        if (Date.now() - lastDeclined < 45000) return;
+    }
+
+    // Broadcast pulse and notification fallback both arrive for the same call: don't restart the ringtone.
+    if (incomingCallData && incomingCallData.conversationId === data.conversationId) {
+        incomingCallData = { ...incomingCallData, ...data };
+        renderIncomingCallerName(incomingCallData);
         return;
     }
 
     incomingCallData = data;
-    if (incomingCallerName) {
-        if (data.isGroup && data.groupName) {
-            incomingCallerName.textContent = `${data.groupName} (@${data.callerUsername || 'User'})`;
-        } else {
-            incomingCallerName.textContent = `@${data.callerUsername || 'User'}`;
-        }
-    }
+    renderIncomingCallerName(data);
     playRingtoneSound();
     if (navigator.vibrate) {
         try { navigator.vibrate([400, 200, 400, 200, 600]); } catch (e) {}
@@ -9300,6 +9451,12 @@ function triggerIncomingCallUI(data) {
     if (incomingCallPopout) {
         incomingCallPopout.classList.remove('hidden');
     }
+    // Never leave a ghost popup if the caller's cancel signal is lost.
+    if (incomingCallTimer) clearTimeout(incomingCallTimer);
+    incomingCallTimer = setTimeout(() => {
+        incomingCallTimer = null;
+        if (incomingCallData && !isAnsweringCall) dismissIncomingCallUI();
+    }, 45000);
 }
 
 function playRingtoneSound() {
@@ -9413,31 +9570,31 @@ function cleanupCall(statusNotice = null) {
         callAmbientBackdrop.classList.add('hidden');
     }
     queuedIceCandidates = [];
+    isAnsweringCall = false;
+    answeringConversationId = null;
 
     if (activeCall) {
-        if (activeCall.dialingInterval) {
-            clearInterval(activeCall.dialingInterval);
-            activeCall.dialingInterval = null;
-        }
-        if (activeCall.callTimerInterval) {
-            clearInterval(activeCall.callTimerInterval);
-        }
-        if (activeCall.localStream) {
+        const call = activeCall;
+        activeCall = null;
+        callLog('cleaning up call', call.callId || '', statusNotice || '');
+
+        if (call.dialingInterval) clearInterval(call.dialingInterval);
+        if (call.callTimerInterval) clearInterval(call.callTimerInterval);
+        if (call.connectTimeout) clearTimeout(call.connectTimeout);
+        if (call.acceptRetry) clearInterval(call.acceptRetry);
+        if (call.localStream) {
             // Completely stop all audio tracks so the hardware microphone shuts down and recording dot disappears
             try {
-                activeCall.localStream.getTracks().forEach(t => {
+                call.localStream.getTracks().forEach(t => {
                     try { t.stop(); } catch (e) {}
                 });
             } catch (e) {}
-            activeCall.localStream = null;
         }
-        if (activeCall.peerConnection) {
-            try { activeCall.peerConnection.close(); } catch (e) {}
+        if (call.peerConnection) {
+            try { call.peerConnection.close(); } catch (e) {}
         }
-        if (activeCall.callChannel && db) {
-            try { db.removeChannel(activeCall.callChannel); } catch (e) {}
-        }
-        activeCall = null;
+        if (call.callChannel) removeChannelTracked(call.callChannel);
+        (call.sigTargets || []).forEach(t => removeChannelTracked(t.chan));
     }
 
     if (remoteAudioEl) {
@@ -9460,90 +9617,165 @@ function cleanupCall(statusNotice = null) {
     }
 }
 
+async function flushQueuedIceCandidates(pc) {
+    while (queuedIceCandidates.length > 0) {
+        const candidate = queuedIceCandidates.shift();
+        try {
+            await pc.addIceCandidate(candidate);
+        } catch (err) {
+            console.warn("Notice adding queued ICE candidate:", err);
+        }
+    }
+}
+
+// If audio hasn't connected shortly after the offer/answer exchange, give up instead of hanging on "Connecting...".
+function armConnectTimeout(pc) {
+    if (!activeCall || activeCall.peerConnection !== pc) return;
+    if (activeCall.connectTimeout) clearTimeout(activeCall.connectTimeout);
+    activeCall.connectTimeout = setTimeout(() => {
+        if (activeCall && activeCall.peerConnection === pc && !activeCall.callStartTime) {
+            callLog('timed out waiting for audio to connect; ICE state:', pc.iceConnectionState);
+            cleanupCall("Connection Failed");
+        }
+    }, 25000);
+}
+
+// Shared RTCPeerConnection wiring for caller and callee.
+function wireCallPeer(pc, callChan) {
+    const isCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
+    const candidateTypes = { host: 0, srflx: 0, relay: 0 };
+
+    pc.ontrack = (event) => {
+        if (!remoteAudioEl) return;
+        const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
+        remoteAudioEl.srcObject = stream;
+        remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
+    };
+
+    pc.onicecandidate = (event) => {
+        if (!event.candidate) {
+            callLog('ICE gathering finished', candidateTypes);
+            return;
+        }
+        if (event.candidate.type in candidateTypes) candidateTypes[event.candidate.type]++;
+        if (!isCurrent()) return;
+        callChan.send({
+            type: 'broadcast',
+            event: 'webrtc_ice',
+            payload: {
+                candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
+                from: currentUser.id
+            }
+        }).catch(() => {});
+    };
+
+    const checkConnected = () => {
+        if (!isCurrent()) return;
+        const ice = pc.iceConnectionState;
+        const conn = pc.connectionState;
+        callLog('connection state', { ice, conn });
+        if (ice === 'connected' || ice === 'completed' || conn === 'connected') {
+            isAnsweringCall = false;
+            if (activeCall.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+            if (activeCall.connectTimeout) {
+                clearTimeout(activeCall.connectTimeout);
+                activeCall.connectTimeout = null;
+            }
+            if (!activeCall.callStartTime) setCallConnectedState();
+        } else if (ice === 'failed' || conn === 'failed') {
+            console.warn('[call] Audio connection failed.', candidateTypes.relay === 0
+                ? 'No TURN relay candidates were available; this network likely blocks direct peer-to-peer audio (see TURN_ICE_SERVERS).'
+                : '');
+            cleanupCall("Connection Failed");
+        }
+    };
+
+    pc.oniceconnectionstatechange = checkConnected;
+    pc.onconnectionstatechange = checkConnected;
+}
+
 function setupCallChannelListeners(callChan, pc) {
+    const isCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
+    const sendRoom = (event, payload = {}) => callChan.send({
+        type: 'broadcast',
+        event,
+        payload: { ...payload, from: currentUser.id }
+    }).catch(() => {});
+
     callChan
         .on('broadcast', { event: 'call_accepted' }, async () => {
-            // Recipient accepted and joined the room - caller initiates offer (Voice Forum pattern)
-            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
-                if (activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
-                }
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'webrtc_offer',
-                        payload: { offer: { type: offer.type, sdp: offer.sdp }, from: currentUser.id }
-                    });
-                } catch (err) {
-                    console.error("Error creating caller offer on room join:", err);
-                }
+            // Callee joined the room: the caller creates the offer. Duplicates (accept is retried) are ignored.
+            if (!isCurrent() || !activeCall.isCaller || activeCall.offerSent) return;
+            activeCall.offerSent = true;
+            callLog('callee joined the room, sending offer');
+            if (activeCall.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+            stopRingtoneSound();
+            showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
+            armConnectTimeout(pc);
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                sendRoom('webrtc_offer', { offer: { type: offer.type, sdp: offer.sdp } });
+            } catch (err) {
+                console.error("Error creating caller offer on room join:", err);
+                cleanupCall("Call Failed");
             }
         })
         .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.offer || data.from === currentUser?.id) return;
-            if (!activeCall || !activeCall.peerConnection) return;
+            if (!isCurrent() || activeCall.isCaller || activeCall.offerHandled) return;
+            activeCall.offerHandled = true;
+            callLog('received offer, answering');
+            if (activeCall.acceptRetry) {
+                clearInterval(activeCall.acceptRetry);
+                activeCall.acceptRetry = null;
+            }
+            armConnectTimeout(pc);
 
             try {
-                if (pc.signalingState !== 'stable') {
-                    await Promise.all([
-                        pc.setLocalDescription({ type: 'rollback' }).catch(() => {}),
-                        pc.setRemoteDescription(new RTCSessionDescription(data.offer))
-                    ]);
-                } else {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                }
-
-                while (queuedIceCandidates.length > 0) {
-                    const c = queuedIceCandidates.shift();
-                    await pc.addIceCandidate(new RTCIceCandidate(c));
-                }
+                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+                await flushQueuedIceCandidates(pc);
 
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_answer',
-                    payload: { answer: { type: answer.type, sdp: answer.sdp }, from: currentUser.id }
-                });
+                sendRoom('webrtc_answer', { answer: { type: answer.type, sdp: answer.sdp } });
             } catch (err) {
                 console.error("Error handling webrtc_offer in room:", err);
+                cleanupCall("Call Failed");
             }
         })
         .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.answer || data.from === currentUser?.id) return;
-            if (!activeCall || !activeCall.peerConnection) return;
-
-            if (activeCall.dialingInterval) {
-                clearInterval(activeCall.dialingInterval);
-                activeCall.dialingInterval = null;
-            }
+            if (!isCurrent() || !activeCall.isCaller) return;
 
             try {
                 if (pc.signalingState === 'have-local-offer') {
+                    callLog('received answer');
                     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    while (queuedIceCandidates.length > 0) {
-                        const c = queuedIceCandidates.shift();
-                        await pc.addIceCandidate(new RTCIceCandidate(c));
-                    }
+                    await flushQueuedIceCandidates(pc);
                 }
             } catch (err) {
                 console.error("Error handling webrtc_answer in room:", err);
+                cleanupCall("Call Failed");
             }
         })
         .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.candidate || data.from === currentUser?.id) return;
-            if (!activeCall || !activeCall.peerConnection) return;
+            if (!isCurrent()) return;
 
             try {
                 if (pc.remoteDescription && pc.remoteDescription.type) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                    await pc.addIceCandidate(data.candidate);
                 } else {
                     queuedIceCandidates.push(data.candidate);
                 }
@@ -9552,16 +9784,29 @@ function setupCallChannelListeners(callChan, pc) {
             }
         })
         .on('broadcast', { event: 'call_declined' }, () => {
-            stopRingtoneSound();
+            if (!isCurrent() || !activeCall.isCaller || activeCall.callStartTime) return;
             cleanupCall("Call Declined");
         })
         .on('broadcast', { event: 'call_busy' }, () => {
-            stopRingtoneSound();
+            if (!isCurrent() || !activeCall.isCaller || activeCall.callStartTime) return;
             cleanupCall("User is Busy");
         })
         .on('broadcast', { event: 'call_ended' }, () => {
+            if (!isCurrent()) return;
             cleanupCall("Call Ended");
         });
+}
+
+// Tell every device that is still ringing to stop (caller hung up or nobody answered).
+function cancelOutgoingCall(call) {
+    (call.sigTargets || []).forEach(t => {
+        if (!t.ready) return;
+        t.chan.send({
+            type: 'broadcast',
+            event: 'cancel_call',
+            payload: { callerId: currentUser?.id, callId: call.callId, conversationId: call.conversationId }
+        }).catch(() => {});
+    });
 }
 
 async function startAudioCall() {
@@ -9569,276 +9814,199 @@ async function startAudioCall() {
         alert("Please select a conversation to start a call.");
         return;
     }
-    const isGroupCall = !activeConversationPartnerId;
-    if (activeCall) {
+    if (activeCall || isAnsweringCall || callSetupInProgress) {
         alert("You are already on an audio call.");
         return;
     }
+    callSetupInProgress = true;
 
+    const targetConvId = activeConversationId;
+    const targetPartnerId = activeConversationPartnerId;
+    const targetPartnerUsername = activeConversationPartnerUsername || 'User';
+    const isGroupCall = !targetPartnerId;
+    const callId = newCallId();
+    const stillCurrent = () => Boolean(activeCall && activeCall.callId === callId);
+
+    let stream = null;
+    let pc = null;
     try {
-        const stream = await getMicrophoneStream();
+        stream = await getMicrophoneStream();
 
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
-
-        const pc = new RTCPeerConnection(rtcConfig);
+        pc = new RTCPeerConnection({ iceServers: getIceServers() });
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-        pc.ontrack = (event) => {
-            if (remoteAudioEl && event.streams[0]) {
-                remoteAudioEl.srcObject = event.streams[0];
-                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
-            }
-        };
-
-        const targetConvId = activeConversationId;
-        const targetPartnerId = activeConversationPartnerId;
-        const targetPartnerUsername = activeConversationPartnerUsername || 'User';
-
-        const callChan = db.channel(`call_room_${targetConvId}`);
-        const partnerSig = targetPartnerId ? db.channel(`user_call_sig_${targetPartnerId}`) : null;
-
-        activeCall = {
-            peerConnection: pc,
-            localStream: stream,
-            conversationId: targetConvId,
-            partnerId: targetPartnerId,
-            partnerUsername: targetPartnerUsername,
-            isCaller: true,
-            callChannel: callChan,
-            callStartTime: null,
-            callTimerInterval: null,
-            dialingInterval: null
-        };
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: event.candidate, from: currentUser.id }
-                });
-            }
-        };
-
-        const checkConnected = () => {
-            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed' || pc.connectionState === 'connected') {
-                if (activeCall && activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
-                }
-                setCallConnectedState();
-            } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
-                cleanupCall("Connection Failed");
-            }
-        };
-
-        pc.oniceconnectionstatechange = checkConnected;
-        pc.onconnectionstatechange = checkConnected;
-
-        setupCallChannelListeners(callChan, pc);
-
+        const groupName = isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null;
         const callPayload = {
+            callId,
             isGroup: isGroupCall,
-            groupName: isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null,
+            groupName,
             callerId: currentUser.id,
             callerUsername: currentUsername,
             callerAvatar: currentAvatarUrl,
             conversationId: targetConvId
         };
 
+        activeCall = {
+            callId,
+            peerConnection: pc,
+            localStream: stream,
+            conversationId: targetConvId,
+            partnerId: targetPartnerId,
+            partnerUsername: targetPartnerUsername,
+            isCaller: true,
+            isGroup: isGroupCall,
+            callChannel: null,
+            sigTargets: [],
+            offerSent: false,
+            callStartTime: null,
+            callTimerInterval: null,
+            dialingInterval: null,
+            connectTimeout: null
+        };
+        callLog('starting call', callId, isGroupCall ? 'group' : 'direct');
+        showActiveCallBar(isGroupCall ? `Group Call Active (Dialing members...)` : `Calling @${targetPartnerUsername}...`, true);
+        playRingtoneSound();
+
+        let targetIds = [targetPartnerId];
         if (isGroupCall) {
             const { data: members } = await db
                 .from('conversation_members')
                 .select('user_id')
                 .eq('conversation_id', targetConvId)
                 .neq('user_id', currentUser.id);
-
-            const sendGroupSignals = () => {
-                if (!activeCall || !activeCall.isCaller) return;
-                try {
-                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                } catch (e) {}
-
-                (members || []).forEach(m => {
-                    try {
-                        const mChan = db.channel(`user_call_sig_${m.user_id}`);
-                        mChan.subscribe((st) => {
-                            if (st === 'SUBSCRIBED') {
-                                mChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                            }
-                        });
-                    } catch (e) {}
-                });
-            };
-
-            callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    sendGroupSignals();
-                    setTimeout(sendGroupSignals, 400);
-                }
-            });
-
-            (members || []).forEach(m => {
-                sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
-            });
-
-            showActiveCallBar(`Group Call Active (Dialing members...)`, true);
-            playRingtoneSound();
-
-        } else {
-            const sendCallSignals = () => {
-                if (!activeCall || !activeCall.isCaller) return;
-                try {
-                    partnerSig.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                } catch (e) {}
-
-                try {
-                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                } catch (e) {}
-            };
-
-            partnerSig.subscribe((sigStatus) => {
-                if (sigStatus === 'SUBSCRIBED') {
-                    sendCallSignals();
-                    setTimeout(sendCallSignals, 350);
-                    setTimeout(sendCallSignals, 1000);
-                }
-            });
-
-            callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    sendCallSignals();
-                }
-            });
-
-            let dialCount = 0;
-            activeCall.dialingInterval = setInterval(() => {
-                if (!activeCall || !activeCall.isCaller || dialCount > 14) {
-                    if (activeCall && activeCall.dialingInterval) {
-                        clearInterval(activeCall.dialingInterval);
-                        activeCall.dialingInterval = null;
-                    }
-                    if (dialCount > 14 && (!pc.connectionState || pc.connectionState !== 'connected')) {
-                        cleanupCall("No Answer");
-                    }
-                    return;
-                }
-                dialCount++;
-                sendCallSignals();
-            }, 2500);
-
-            sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
-            showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
-            playRingtoneSound();
+            targetIds = (members || []).map(m => m.user_id);
+            if (!stillCurrent()) return;
         }
+
+        const callChan = await openFreshChannel(`call_room_${targetConvId}`);
+        if (!stillCurrent()) { removeChannelTracked(callChan); return; }
+        activeCall.callChannel = callChan;
+        wireCallPeer(pc, callChan);
+        setupCallChannelListeners(callChan, pc);
+
+        const sigTargets = [];
+        for (const id of targetIds) {
+            sigTargets.push({ id, chan: await openFreshChannel(`user_call_sig_${id}`), ready: false });
+        }
+        if (!stillCurrent()) { sigTargets.forEach(t => removeChannelTracked(t.chan)); return; }
+        activeCall.sigTargets = sigTargets;
+
+        const pulse = (target) => {
+            if (!stillCurrent() || activeCall.offerSent || !target.ready) return;
+            target.chan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload }).catch(() => {});
+        };
+
+        // Ring each callee as soon as their signaling channel is up; keep pulsing until someone accepts.
+        sigTargets.forEach(t => {
+            subscribeChannel(t.chan).then((ok) => {
+                t.ready = ok;
+                if (ok) pulse(t);
+            });
+        });
+
+        const roomJoined = await subscribeChannel(callChan);
+        if (!stillCurrent()) return;
+        if (!roomJoined) {
+            console.error("[call] Could not join the call room (Realtime unavailable).");
+            cleanupCall("Call Failed");
+            showToast({
+                title: "Call Failed",
+                message: "Could not reach the call server. Check your connection and try again.",
+                type: "error",
+                icon: "📞",
+                force: true
+            });
+            return;
+        }
+
+        // Database notification fallback for callees whose realtime signaling channel is down.
+        targetIds.forEach(id => {
+            sendNotification(
+                id,
+                'incoming_call',
+                targetConvId,
+                isGroupCall ? 'started a group call in ' + (groupName || 'Chat') : 'is calling you...'
+            );
+        });
+
+        let dialCount = 0;
+        const dialTimer = setInterval(() => {
+            if (!stillCurrent() || activeCall.offerSent) {
+                clearInterval(dialTimer);
+                return;
+            }
+            if (dialCount >= 14) {
+                clearInterval(dialTimer);
+                cancelOutgoingCall(activeCall);
+                cleanupCall("No Answer");
+                return;
+            }
+            dialCount++;
+            activeCall.sigTargets.forEach(pulse);
+        }, 2500);
+        activeCall.dialingInterval = dialTimer;
 
     } catch (err) {
         console.error("Audio call error:", err);
-        alert("Could not access microphone: " + (err.message || err.name));
+        if (!activeCall) {
+            if (pc) { try { pc.close(); } catch (e) {} }
+            if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+        }
         cleanupCall();
+        showToast({
+            title: "Call Failed",
+            message: describeMicError(err),
+            type: "error",
+            icon: "🎤",
+            force: true
+        });
+    } finally {
+        callSetupInProgress = false;
     }
 }
 
 async function answerAudioCall() {
     if (!incomingCallData || !currentUser) return;
-    stopRingtoneSound();
-    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
-    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
+    if (activeCall || isAnsweringCall) return;
 
     const data = incomingCallData;
-    incomingCallData = null;
+    dismissIncomingCallUI();
 
     isAnsweringCall = true;
     answeringConversationId = data.conversationId;
+    // Ignore any dialing pulses of this call that are still in flight.
+    if (data.callId) handledCallIds.add(data.callId);
+    // Purge the database notification so polling never re-triggers the popup
+    purgeIncomingCallNotifications();
 
-    // Immediately mark in map to block any ghost popouts
-    recentlyDeclinedCalls.set(data.conversationId, Date.now());
-    recentlyDeclinedCalls.set(data.callerId, Date.now());
-
-    // Purge the database notification immediately so polling never re-triggers the modal
-    if (db && currentUser) {
-        db.from('user_notifications')
-            .delete()
-            .eq('user_id', currentUser.id)
-            .eq('type', 'incoming_call')
-            .catch(() => {});
-    }
+    let stream = null;
+    let pc = null;
+    const stillCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
 
     try {
-        const stream = await getMicrophoneStream();
+        stream = await getMicrophoneStream();
 
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
-
-        const pc = new RTCPeerConnection(rtcConfig);
+        pc = new RTCPeerConnection({ iceServers: getIceServers() });
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-        pc.ontrack = (event) => {
-            if (remoteAudioEl && event.streams[0]) {
-                remoteAudioEl.srcObject = event.streams[0];
-                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
-            }
-        };
-
-        const callChan = db.channel(`call_room_${data.conversationId}`);
-
         activeCall = {
+            callId: data.callId || null,
             peerConnection: pc,
             localStream: stream,
             conversationId: data.conversationId,
             partnerId: data.callerId,
             partnerUsername: data.callerUsername || 'User',
             isCaller: false,
-            callChannel: callChan,
+            callChannel: null,
+            sigTargets: [],
+            offerHandled: false,
             callStartTime: null,
             callTimerInterval: null,
-            dialingInterval: null
+            dialingInterval: null,
+            connectTimeout: null,
+            acceptRetry: null
         };
-
-        pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: event.candidate, from: currentUser.id }
-                });
-            }
-        };
-
-        const checkConnected = () => {
-            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed' || pc.connectionState === 'connected') {
-                isAnsweringCall = false;
-                setCallConnectedState();
-            } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
-                isAnsweringCall = false;
-                cleanupCall("Connection Failed");
-            }
-        };
-
-        pc.oniceconnectionstatechange = checkConnected;
-        pc.onconnectionstatechange = checkConnected;
-
-        setupCallChannelListeners(callChan, pc);
-
-        // Join room and signal acceptance to caller
-        callChan.subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'call_accepted',
-                    payload: { from: currentUser.id }
-                });
-            }
-        });
+        callLog('answering call', data.callId || '(no id)');
 
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
@@ -9855,72 +10023,77 @@ async function answerAudioCall() {
             selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
         }
 
+        const callChan = await openFreshChannel(`call_room_${data.conversationId}`);
+        if (!stillCurrent()) { removeChannelTracked(callChan); return; }
+        activeCall.callChannel = callChan;
+        wireCallPeer(pc, callChan);
+        setupCallChannelListeners(callChan, pc);
+
+        // Join the room and signal acceptance; the caller replies with the WebRTC offer.
+        const joined = await subscribeChannel(callChan);
+        if (!stillCurrent()) return;
+        if (!joined) throw new Error("Could not join the call room");
+
+        const sendAccepted = () => callChan.send({
+            type: 'broadcast',
+            event: 'call_accepted',
+            payload: { from: currentUser.id }
+        }).catch(() => {});
+        callLog('joined room, telling caller we accepted');
+        sendAccepted();
+        armConnectTimeout(pc);
+
+        // The accept is a single broadcast; repeat it briefly in case the caller's channel missed it.
+        let acceptTries = 0;
+        activeCall.acceptRetry = setInterval(() => {
+            if (!stillCurrent() || activeCall.offerHandled || ++acceptTries > 5) {
+                if (stillCurrent() && activeCall.acceptRetry) {
+                    clearInterval(activeCall.acceptRetry);
+                    activeCall.acceptRetry = null;
+                }
+                return;
+            }
+            sendAccepted();
+        }, 2000);
+
     } catch (err) {
-        isAnsweringCall = false;
         console.error("Answer call error:", err);
+        if (!activeCall) {
+            if (pc) { try { pc.close(); } catch (e) {} }
+            if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+        }
+        cleanupCall();
         showToast({
-            title: "Microphone Access Required",
-            message: "Please allow microphone access to answer the voice call.",
+            title: "Could Not Answer Call",
+            message: describeMicError(err),
             type: "error",
             icon: "🎤",
             force: true
         });
-        cleanupCall();
     }
 }
 
 function declineAudioCall() {
-    stopRingtoneSound();
-    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
+    const data = incomingCallData;
+    dismissIncomingCallUI();
 
-    if (incomingCallData) {
-        const convId = incomingCallData.conversationId;
-        const callerId = incomingCallData.callerId;
+    if (data) {
+        if (data.callId) handledCallIds.add(data.callId);
+        if (data.conversationId) recentlyDeclinedCalls.set(data.conversationId, Date.now());
+        if (data.callerId) recentlyDeclinedCalls.set(data.callerId, Date.now());
 
-        if (convId) recentlyDeclinedCalls.set(convId, Date.now());
-        if (callerId) recentlyDeclinedCalls.set(callerId, Date.now());
-
-        if (db) {
-            try {
-                const roomChan = db.channel(`call_room_${convId}`);
-                roomChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        roomChan.send({
-                            type: 'broadcast',
-                            event: 'call_declined',
-                            payload: { from: currentUser?.id, conversationId: convId }
-                        });
-                    }
-                });
-            } catch (e) {}
-
-            if (callerId) {
-                try {
-                    const callerSig = db.channel(`user_call_sig_${callerId}`);
-                    callerSig.subscribe((status) => {
-                        if (status === 'SUBSCRIBED') {
-                            callerSig.send({
-                                type: 'broadcast',
-                                event: 'call_declined',
-                                payload: { from: currentUser?.id, conversationId: convId }
-                            });
-                        }
-                    });
-                } catch (e) {}
-            }
+        // Declining a group call only dismisses it for this user; it must not hang up everyone else.
+        if (db && !data.isGroup) {
+            const declined = {
+                event: 'call_declined',
+                payload: { from: currentUser?.id, conversationId: data.conversationId, callId: data.callId || null }
+            };
+            sendSignalOnce(`call_room_${data.conversationId}`, declined);
+            if (data.callerId) sendSignalOnce(`user_call_sig_${data.callerId}`, declined);
         }
     }
 
-    if (db && currentUser) {
-        db.from('user_notifications')
-            .delete()
-            .eq('user_id', currentUser.id)
-            .eq('type', 'incoming_call')
-            .catch(() => {});
-    }
-
-    incomingCallData = null;
+    purgeIncomingCallNotifications();
 }
 
 function toggleCallMute() {
@@ -9940,115 +10113,115 @@ function toggleCallMute() {
 }
 
 function endCurrentAudioCall() {
-    if (activeCall) {
-        if (activeCall.callChannel) {
-            try {
-                activeCall.callChannel.send({
-                    type: 'broadcast',
-                    event: 'call_ended',
-                    payload: { from: currentUser?.id }
-                });
-            } catch (e) {}
+    const call = activeCall;
+    if (call) {
+        if (call.callChannel) {
+            call.callChannel.send({
+                type: 'broadcast',
+                event: 'call_ended',
+                payload: { from: currentUser?.id }
+            }).catch(() => {});
         }
-        if (activeCall.partnerId && db) {
-            try {
-                const partnerSig = db.channel(`user_call_sig_${activeCall.partnerId}`);
-                partnerSig.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        partnerSig.send({
-                            type: 'broadcast',
-                            event: 'call_ended',
-                            payload: { from: currentUser?.id }
-                        });
-                        partnerSig.send({
-                            type: 'broadcast',
-                            event: 'cancel_call',
-                            payload: { callerId: currentUser?.id }
-                        });
-                    }
-                });
-            } catch (e) {}
-        }
+        // Still ringing? Make sure the callee's popup goes away too.
+        if (call.isCaller && !call.offerSent) cancelOutgoingCall(call);
     }
     cleanupCall("Call Ended");
 }
 
-function initUserCallSignaling() {
+async function initUserCallSignaling() {
     if (!db || !currentUser) return;
-    if (userCallSignalingChannel) {
-        try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
-    }
+    const userId = currentUser.id;
+    const ticket = ++callSignalingInitTicket;
 
-    userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`)
-        .on('broadcast', { event: 'incoming_call' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.callerId) return;
+    try {
+        // Awaits removal of any previous channel for this user first (see openFreshChannel).
+        const chan = await openFreshChannel(`user_call_sig_${userId}`);
+        if (ticket !== callSignalingInitTicket || !currentUser || currentUser.id !== userId) {
+            removeChannelTracked(chan);
+            return;
+        }
+        userCallSignalingChannel = chan;
 
-            // If we are currently answering or on this call, ignore repeat dialing pulses
-            if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
-                return;
-            }
+        chan
+            .on('broadcast', { event: 'incoming_call' }, (payload) => {
+                const data = payload?.payload;
+                if (!data || !data.callerId) return;
 
-            // Only report busy if in a call with another conversation
-            if (activeCall) {
-                const returnChan = db.channel(`call_room_${data.conversationId}`);
-                returnChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        returnChan.send({
-                            type: 'broadcast',
+                // If we are currently answering or on this call, ignore repeat dialing pulses
+                if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
+                    return;
+                }
+
+                // Answer each call attempt with a single busy/declined signal, not one per dialing pulse.
+                const replyKey = data.callId || `${data.callerId}:${data.conversationId}`;
+
+                // Only report busy if in a call with another conversation
+                if (activeCall) {
+                    if (!notifiedCallers.has(`busy:${replyKey}`)) {
+                        notifiedCallers.add(`busy:${replyKey}`);
+                        sendSignalOnce(`call_room_${data.conversationId}`, {
                             event: 'call_busy',
-                            payload: { from: currentUser.id }
+                            payload: { from: currentUser.id, callId: data.callId || null }
                         });
                     }
-                });
-                return;
-            }
+                    return;
+                }
 
-            if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
-                const returnChan = db.channel(`call_room_${data.conversationId}`);
-                returnChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        returnChan.send({ type: 'broadcast', event: 'call_declined', payload: { from: currentUser?.id } });
+                if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
+                    if (!notifiedCallers.has(`declined:${replyKey}`)) {
+                        notifiedCallers.add(`declined:${replyKey}`);
+                        sendSignalOnce(`call_room_${data.conversationId}`, {
+                            event: 'call_declined',
+                            payload: { from: currentUser?.id, callId: data.callId || null }
+                        });
+                    }
+                    return;
+                }
+
+                triggerIncomingCallUI(data);
+            })
+            .on('broadcast', { event: 'cancel_call' }, (payload) => {
+                const data = payload?.payload;
+                if (data?.callId) handledCallIds.add(data.callId);
+                if (incomingCallData && incomingCallData.callerId === data?.callerId) {
+                    dismissIncomingCallUI();
+                }
+                // Remove the notification fallback row so the poller can't bring the popup back.
+                if (!incomingCallData) purgeIncomingCallNotifications();
+            })
+            .on('broadcast', { event: 'call_declined' }, (payload) => {
+                const data = payload?.payload;
+                if (!activeCall || !activeCall.isCaller || activeCall.callStartTime) return;
+                if (data?.callId && data.callId !== activeCall.callId) return;
+                cleanupCall("Call Declined");
+            })
+            .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
+                const data = payload?.payload;
+                if (!data || !data.threadName) return;
+                playTechChirp();
+                showToast({
+                    title: "🎙️ Voice Stage Invite",
+                    message: `@${data.inviterUsername || 'Moderator'} invited you to join the Voice Stage in "${data.threadName}"!`,
+                    type: "info",
+                    icon: "🎙️",
+                    duration: 9000,
+                    onClick: () => {
+                        navigateToThread(data.threadName);
+                        setTimeout(() => openVoiceForumModal(data.threadName), 350);
                     }
                 });
-                return;
-            }
-
-            triggerIncomingCallUI(data);
-        })
-        .on('broadcast', { event: 'cancel_call' }, (payload) => {
-            const data = payload?.payload;
-            if (incomingCallData && incomingCallData.callerId === data?.callerId) {
-                stopRingtoneSound();
-                incomingCallData = null;
-                if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-                if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
-            }
-        })
-        .on('broadcast', { event: 'call_declined' }, (payload) => {
-            if (activeCall && activeCall.isCaller) {
-                stopRingtoneSound();
-                cleanupCall("Call Declined");
-            }
-        })
-        .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.threadName) return;
-            playTechChirp();
-            showToast({
-                title: "🎙️ Voice Stage Invite",
-                message: `@${data.inviterUsername || 'Moderator'} invited you to join the Voice Stage in "${data.threadName}"!`,
-                type: "info",
-                icon: "🎙️",
-                duration: 9000,
-                onClick: () => {
-                    navigateToThread(data.threadName);
-                    setTimeout(() => openVoiceForumModal(data.threadName), 350);
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') callLog('listening for incoming calls');
+                else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[call] Incoming-call channel problem:', status);
                 }
             });
-        })
-        .subscribe();
+    } catch (err) {
+        console.warn("Call signaling init notice:", err);
+    }
 }
+
 
 safeAddListener(startCallBtn, 'click', startAudioCall);
 safeAddListener(acceptCallBtn, 'click', answerAudioCall);
@@ -10061,13 +10234,28 @@ safeAddListener(callHangupBtn, 'click', endCurrentAudioCall);
 let userNotifRealtimeChannel = null;
 
 
-function initRealtimeActivityNotifications() {
+let userNotifInitTicket = 0;
+
+async function initRealtimeActivityNotifications() {
     if (!db || !currentUser) return;
-    if (userNotifRealtimeChannel) {
-        try { db.removeChannel(userNotifRealtimeChannel); } catch (e) {}
+    const userId = currentUser.id;
+    const ticket = ++userNotifInitTicket;
+
+    // db.channel() would hand back the old, still-closing channel (and .on() throws on a joined one), so wait for
+    // the previous channel to be fully removed first.
+    let chan;
+    try {
+        chan = await openFreshChannel(`user_realtime_notifs_${userId}`);
+    } catch (err) {
+        console.warn("Realtime notification init notice:", err);
+        return;
+    }
+    if (ticket !== userNotifInitTicket || !currentUser || currentUser.id !== userId) {
+        removeChannelTracked(chan);
+        return;
     }
 
-    userNotifRealtimeChannel = db.channel(`user_realtime_notifs_${currentUser.id}`)
+    userNotifRealtimeChannel = chan
         .on(
             'postgres_changes',
             {
@@ -10901,7 +11089,7 @@ async function sendVoiceStageInvite() {
             type: 'voice_stage_invite',
             entity_id: activeVoiceStageThread,
             message: `invited you to the live Voice Stage in "${activeVoiceStageThread}"`
-        }]).catch(() => {});
+        }]).then(null, () => {});
 
 
         voiceInviteUsernameInput.value = '';
@@ -10952,15 +11140,7 @@ async function createStagePeerConnection(peerId, isInitiator) {
     }
 
 
-    const rtcConfig = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-    };
-
-
-    const pc = new RTCPeerConnection(rtcConfig);
+    const pc = new RTCPeerConnection({ iceServers: getIceServers() });
 
 
     if (voiceStageLocalStream) {
@@ -13347,7 +13527,7 @@ async function removeCurrentThreadBanner() {
     if (tData && tData.id && db) {
         const { error } = await db.from('forum_threads').update({ banner_url: null }).eq('id', tData.id);
         if (error) {
-            await db.from('threads').update({ banner_url: null }).eq('id', tData.id).catch(() => {});
+            await db.from('threads').update({ banner_url: null }).eq('id', tData.id).then(null, () => {});
         }
         tData.banner_url = null;
     }
