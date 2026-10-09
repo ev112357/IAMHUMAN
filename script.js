@@ -2506,6 +2506,7 @@ async function syncUserState(user) {
         if (deleteConfirmUserTag) deleteConfirmUserTag.textContent = `@${currentUsername}`;
         
         if (authPanelWrapper) authPanelWrapper.classList.add('hidden');
+        onFounderSignedIn();
         if (openNotifBtn) openNotifBtn.classList.remove('hidden');
         if (openDmBtn) openDmBtn.classList.remove('hidden');
         if (openSettingsBtn) openSettingsBtn.classList.remove('hidden');
@@ -2746,8 +2747,10 @@ if (db) {
 
 
 
-safeAddListener(authToggleBtn, 'click', () => {
-    isSignUpMode = !isSignUpMode;
+safeAddListener(authToggleBtn, 'click', () => setSignUpMode(!isSignUpMode));
+
+function setSignUpMode(on) {
+    isSignUpMode = Boolean(on);
     const termsGroup = document.getElementById('auth-terms-group');
     if (termsGroup) termsGroup.classList.toggle('hidden', !isSignUpMode);
     if (isSignUpMode) {
@@ -2763,7 +2766,7 @@ safeAddListener(authToggleBtn, 'click', () => {
         authSubmitBtn.textContent = "Log In";
         authToggleBtn.textContent = "Need an account? Sign Up";
     }
-});
+}
 
 
 
@@ -2837,7 +2840,7 @@ safeAddListener(authForm, 'submit', async (e) => {
         const inviteCodeInput = document.getElementById('auth-invite-code');
         const inviteCode = inviteCodeInput ? inviteCodeInput.value.trim() : "";
         if (!inviteCode) {
-            alert("A Golden Invite Code is required to join Turing's Gate.");
+            alert("A Red Pearl code is required to join Turing's Gate.");
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = "Sign Up";
             if (window.turnstile) turnstile.reset();
@@ -2847,18 +2850,39 @@ safeAddListener(authForm, 'submit', async (e) => {
 
 
 
-        const { data: inviteData, error: inviteErr } = await db
-            .from('invitations')
-            .select('id, status')
-            .eq('code', inviteCode)
-            .eq('status', 'pending')
-            .maybeSingle();
+        // A Founder Red Pearl key is checked by the database function; ordinary invite codes live in `invitations`.
+        const pearlCode = FOUNDER_KEY_RE.test(inviteCode.toUpperCase()) ? inviteCode.toUpperCase() : null;
+        let inviteData = null, inviteErr = null;
+        if (pearlCode) {
+            const res = await db.rpc('check_founder_pearl', { p_code: pearlCode });
+            inviteErr = res.error;
+            inviteData = res.data === true ? { id: pearlCode, status: 'pending' } : null;
+            if (!inviteData && !inviteErr) {
+                clearFounderPearl();
+                alert("That Red Pearl code has expired or was already used. Pop a fresh pearl from the bowl.");
+                authSubmitBtn.disabled = false;
+                authSubmitBtn.textContent = "Sign Up";
+                if (window.turnstile) turnstile.reset();
+                if (authInviteInput()) authInviteInput().value = '';
+                refreshFounder().then(() => { if (founderRemaining() > 0) openFounderModal(); });
+                return;
+            }
+        } else {
+            const res = await db
+                .from('invitations')
+                .select('id, status')
+                .eq('code', inviteCode)
+                .eq('status', 'pending')
+                .maybeSingle();
+            inviteData = res.data;
+            inviteErr = res.error;
+        }
 
 
 
 
         if (inviteErr || !inviteData) {
-            alert("Invalid or already claimed invite code.");
+            alert("Invalid or already used Red Pearl code.");
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = "Sign Up";
             if (window.turnstile) turnstile.reset();
@@ -2895,8 +2919,14 @@ safeAddListener(authForm, 'submit', async (e) => {
 
 
 
+        // Burn the founder pearl so it can't be used twice (the bowl counter drops as the new profile appears).
+        if (pearlCode) {
+            db.rpc('claim_founder_pearl', { p_code: pearlCode, p_username: username }).then(null, () => {});
+            clearFounderPearl();
+        }
+
         // Mark invite as claimed and log chain-of-custody lineage
-        if (inviteCode) {
+        if (inviteCode && !pearlCode) {
             try {
                 const { data: { user: newUser } } = await db.auth.getUser().catch(() => ({ data: {} }));
                 const claimPayload = {
@@ -9889,12 +9919,12 @@ async function loadUserInvites() {
                         <span class="pod-status-badge pod-status-ready">READY</span>
                     </div>
                     <div class="pod-chamber">
-                        <div class="red-pearl" title="Red Pearl Ready — Click to extract key"></div>
+                        <div class="red-pearl" title="Red Pearl Ready — Click to extract your code"></div>
                     </div>
                     <div class="pod-info">
-                        <div style="font-size: 0.72rem; color: #cbd5e1; font-weight: 600;">Red Pearl Invite</div>
+                        <div style="font-size: 0.72rem; color: #cbd5e1; font-weight: 600;">Red Pearl Code</div>
                         <button type="button" class="btn-pod-action" style="background: linear-gradient(135deg, #ff2a5f, #b3002b); color: #fff; border: 1px solid #ff2a5f; cursor: pointer;">
-                            Extract Key
+                            Extract Code
                         </button>
                     </div>
                 `;
@@ -9951,7 +9981,7 @@ async function loadUserInvites() {
 
 
                         showToast({
-                            title: `Invite Key Minted: ${newCode}`,
+                            title: `Red Pearl Code Minted: ${newCode}`,
                             message: `Copied to clipboard. Pod 0${slotIndex + 1} entered 30-day incubation cycle.`,
                             type: 'success',
                             icon: '◈',
@@ -13560,10 +13590,403 @@ safeAddListener(sendVoiceInviteBtn, 'click', sendVoiceStageInvite);
 // GUEST / NON-SIGNED IN USER DISCLAIMER SYSTEM
 // Alerts every guest visitor that an invite ticket is required to post or interact.
 // =============================================================================
+// ---------------------------------------------------------------------------------------------------------
+// FOUNDER RED PEARLS: open enrollment for the first 1,000 members (founder.sql).
+// Guests see a fish bowl of pearls; popping one reserves a one-time key (PEARL-XXXX-XXXX) and writes it into the
+// sign-up form. Pearls left = 1000 - members - keys reserved but not yet used, so it starts at 991 with 9 members
+// and falls as people join. When it reaches 0 the bowl stops appearing and normal invite codes are required.
+// ---------------------------------------------------------------------------------------------------------
+const FOUNDER_CAP = 1000;
+const FOUNDER_KEY_RE = /^PEARL-[0-9A-F]{4}-[0-9A-F]{4}$/;
+const FOUNDER_STORE_KEY = 'tg_founder_pearl';
+const FOUNDER_DISMISS_KEY = 'tg_founder_dismissed_session';
+const FOUNDER_HOLD_MS = 55 * 60 * 1000; // a key is reserved for 60 minutes server-side; stop showing it a little earlier
+const FOUNDER_POLL_MS = 15000;
+let founderStatus = null;   // { remaining, members } once the database has answered, else null (feature stays hidden)
+let founderBusy = false;
+let founderPollTimer = null;
+let founderShownCount = null;
+const founderPopped = new Set();
+
+const authInviteInput = () => document.getElementById('auth-invite-code');
+const fEl = (id) => document.getElementById(id);
+const founderReducedMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const founderRemaining = () => (founderStatus ? founderStatus.remaining : 0);
+
+function readFounderPearl() {
+    try {
+        const v = JSON.parse(localStorage.getItem(FOUNDER_STORE_KEY) || 'null');
+        if (v && FOUNDER_KEY_RE.test(String(v.code)) && Date.now() - Number(v.ts) < FOUNDER_HOLD_MS) return v;
+        if (v) localStorage.removeItem(FOUNDER_STORE_KEY);
+    } catch (e) { /* storage unavailable */ }
+    return null;
+}
+function saveFounderPearl(code) {
+    try { localStorage.setItem(FOUNDER_STORE_KEY, JSON.stringify({ code, ts: Date.now() })); } catch (e) { /* storage unavailable */ }
+}
+function clearFounderPearl() {
+    try { localStorage.removeItem(FOUNDER_STORE_KEY); } catch (e) { /* storage unavailable */ }
+}
+
+// Pearl positions for a full bowl (bottom rows first). Drawing only the ones below the "water line" makes the pile
+// shrink as pearls are claimed. Seeded so the layout never jumps between renders.
+const FOUNDER_LAYOUT = (() => {
+    const cx = 160, cy = 178, R = 118, r = 8.5, top = 98, bottom = 292;
+    let seed = 1337;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const out = [];
+    let row = 0;
+    for (let y = bottom - r; y >= top; y -= 15, row++) {
+        for (let x = cx - R; x <= cx + R; x += 17) {
+            const px = x + (row % 2 ? 8.5 : 0) + (rnd() - 0.5) * 2.4;
+            const py = y + (rnd() - 0.5) * 2.4;
+            if (Math.hypot(px - cx, py - cy) <= R - r - 2.5) {
+                out.push({ x: px, y: py, g: ['fp-a', 'fp-b', 'fp-c'][Math.floor(rnd() * 3)], glint: rnd() < 0.09 });
+            }
+        }
+    }
+    return out;
+})();
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svgCircle = (cx, cy, r, fill) => {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', cx.toFixed(1)); c.setAttribute('cy', cy.toFixed(1)); c.setAttribute('r', r); c.setAttribute('fill', fill);
+    return c;
+};
+
+function renderFounderPearls() {
+    const g = fEl('founder-pearls');
+    if (!g) return;
+    const remaining = Math.max(0, Math.min(FOUNDER_CAP, founderRemaining()));
+    // 0 pearls left = empty bowl; otherwise the pile's height follows the share that is left
+    const fill = remaining <= 0 ? 0 : 0.1 + 0.9 * (remaining / FOUNDER_CAP);
+    const surface = 292 - fill * (292 - 98);
+    g.textContent = '';
+    FOUNDER_LAYOUT.forEach((p, i) => {
+        if (p.y < surface || founderPopped.has(i)) return;
+        const c = svgCircle(p.x, p.y, 8.5, `url(#${p.g})`);
+        c.setAttribute('class', p.glint ? 'pearl glint' : 'pearl');
+        if (p.glint) c.style.animationDelay = (i % 7) * 0.45 + 's';
+        c.dataset.i = i;
+        g.appendChild(c);
+    });
+}
+
+function paintFounderCount(animate = true) {
+    const countEl = fEl('founder-count');
+    const target = Math.max(0, founderRemaining());
+    if (countEl) {
+        const from = founderShownCount == null ? target : founderShownCount;
+        founderShownCount = target;
+        if (!animate || from === target || founderReducedMotion()) countEl.textContent = target.toLocaleString();
+        else {
+            const t0 = performance.now(), dur = 500;
+            const step = (now) => {
+                const k = Math.min(1, (now - t0) / dur);
+                countEl.textContent = Math.round(from + (target - from) * k).toLocaleString();
+                if (k < 1 && founderShownCount === target) requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+        }
+    }
+    const fillEl = fEl('founder-meter-fill');
+    if (fillEl) fillEl.style.width = (Math.max(0, Math.min(1, target / FOUNDER_CAP)) * 100).toFixed(1) + '%';
+}
+
+// Reflect the current state in the modal, the sign-up panel ribbon and the "all claimed" note.
+function paintFounder() {
+    const open = founderStatus && founderRemaining() > 0;
+    const held = readFounderPearl();
+    paintFounderCount();
+    renderFounderPearls();
+
+    const box = fEl('founder-box');
+    if (box) box.classList.toggle('is-closed', !open);
+    const label = fEl('founder-count-label');
+    if (label) label.textContent = open ? 'of 1,000 pearls left' : 'pearls left. All 1,000 are claimed!';
+    const explainer = fEl('founder-explainer');
+    if (explainer) {
+        if (!explainer.dataset.open) explainer.dataset.open = explainer.innerHTML;
+        explainer.innerHTML = open
+            ? explainer.dataset.open
+            : '<strong>How to join now:</strong> Turing\'s Gate is <strong>invite-only</strong>. Ask someone who is already inside for a Red Pearl code, then enter it on the sign-up form. Every member gets Red Pearls of their own to share.';
+    }
+    const title = fEl('founder-title'), sub = fEl('founder-sub'), hint = fEl('founder-hint');
+    if (title) title.textContent = open ? 'Claim your Founder Red Pearl' : 'The founder pearls are all claimed';
+    if (sub) sub.textContent = open
+        ? "Turing's Gate is opening to its first 1,000 humans with no invite needed. Pop a pearl to get your Red Pearl code."
+        : "Thank you to everyone who joined the first 1,000. Turing's Gate is now invite-only.";
+    if (hint) hint.classList.toggle('hidden', !open);
+    const bowl = fEl('founder-bowl');
+    if (bowl) bowl.disabled = !open && !held;
+
+    const ribbon = fEl('founder-ribbon'), ribbonText = fEl('founder-ribbon-text'), closedNote = fEl('founder-closed-note');
+    const guest = !currentUser;
+    if (ribbon && ribbonText) {
+        const showRibbon = guest && (open || held);
+        ribbon.classList.toggle('hidden', !showRibbon);
+        ribbonText.innerHTML = held
+            ? 'Your Red Pearl code is ready: finish signing up below'
+            : `Claim a Founder Red Pearl <b>${Math.max(0, founderRemaining()).toLocaleString()}</b> of 1,000 left`;
+    }
+    if (closedNote) closedNote.classList.toggle('hidden', !(guest && founderStatus && !open && !held));
+}
+
+async function refreshFounder() {
+    if (!db) return null;
+    try {
+        const { data, error } = await db.rpc('founder_status');
+        if (error) throw error;
+        const d = Array.isArray(data) ? data[0] : data;
+        if (d && Number.isFinite(Number(d.remaining))) {
+            founderStatus = { remaining: Math.max(0, Number(d.remaining)), members: Number(d.members) || 0 };
+            paintFounder();
+            return founderStatus;
+        }
+    } catch (e) {
+        if (!isMissingFunctionError(e)) console.warn("Founder pearl status notice:", e);
+    }
+    return founderStatus;
+}
+
+function startFounderPolling() {
+    if (founderPollTimer) return;
+    founderPollTimer = setInterval(() => {
+        if (document.hidden || currentUser) return;
+        refreshFounder();
+    }, FOUNDER_POLL_MS);
+}
+function stopFounderPolling() {
+    if (founderPollTimer) clearInterval(founderPollTimer);
+    founderPollTimer = null;
+}
+
+function founderModalOpen() {
+    const m = fEl('founder-modal');
+    return Boolean(m && !m.classList.contains('hidden'));
+}
+
+function openFounderModal() {
+    const m = fEl('founder-modal');
+    if (!m || currentUser) return;
+    const held = readFounderPearl();
+    fEl('founder-result').classList.toggle('hidden', !held);
+    if (held) fEl('founder-code').textContent = held.code;
+    setFounderStatusText('');
+    paintFounder();
+    m.classList.remove('hidden');
+    startFounderPolling();
+}
+
+function closeFounderModal(dismiss = true) {
+    const m = fEl('founder-modal');
+    if (m) m.classList.add('hidden');
+    if (dismiss) { try { sessionStorage.setItem(FOUNDER_DISMISS_KEY, 'true'); } catch (e) { /* storage unavailable */ } }
+}
+
+function setFounderStatusText(text) {
+    const el = fEl('founder-status');
+    if (el) el.textContent = text || '';
+}
+
+// Put the key into the sign-up form and switch it to sign-up mode, so closing the bowl leaves a ready-to-submit form.
+function applyFounderCode(code) {
+    setSignUpMode(true);
+    const input = authInviteInput();
+    if (input) input.value = code;
+    const wrap = document.getElementById('auth-panel-wrapper');
+    if (wrap) wrap.classList.remove('hidden');
+    paintFounder();
+}
+
+function burstFounder(x, y) {
+    const fx = fEl('founder-fx');
+    if (!fx) return;
+    for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2 + Math.random() * 0.4;
+        const d = 26 + Math.random() * 30;
+        const c = svgCircle(x, y, 2.2 + Math.random() * 2, i % 3 ? '#fb7185' : '#ffe4e6');
+        fx.appendChild(c);
+        const anim = c.animate(
+            [{ transform: 'translate(0px,0px) scale(1)', opacity: 1 }, { transform: `translate(${Math.cos(a) * d}px,${Math.sin(a) * d}px) scale(.2)`, opacity: 0 }],
+            { duration: 560, easing: 'cubic-bezier(.1,.7,.3,1)' }
+        );
+        anim.onfinish = () => c.remove();
+    }
+}
+
+// Lifts one pearl from the top of the pile, swells it, then bursts it. `done` runs when the animation is over.
+function animateFounderPop(done) {
+    const g = fEl('founder-pearls'), fx = fEl('founder-fx');
+    const nodes = g ? [...g.children] : [];
+    if (!nodes.length || !fx) { done(); return; }
+    nodes.sort((a, b) => Number(a.getAttribute('cy')) - Number(b.getAttribute('cy')));
+    const el = nodes[Math.floor(Math.random() * Math.min(12, nodes.length))];
+    const cx = Number(el.getAttribute('cx')), cy = Number(el.getAttribute('cy'));
+    founderPopped.add(Number(el.dataset.i));
+    const fly = svgCircle(cx, cy, 8.5, el.getAttribute('fill'));
+    fly.style.transformBox = 'fill-box';
+    fly.style.transformOrigin = 'center';
+    el.remove();
+    fx.appendChild(fly);
+    const endX = cx + (160 - cx) * 0.4, endY = cy - 66;
+    if (founderReducedMotion() || !fly.animate) {
+        fly.remove(); burstFounder(endX, endY); done(); return;
+    }
+    const dx = (160 - cx) * 0.4;
+    const anim = fly.animate([
+        { transform: 'translate(0px,0px) scale(1)', filter: 'brightness(1)' },
+        { transform: `translate(${dx}px,-52px) scale(3.1)`, filter: 'brightness(1.5)', offset: 0.45 },
+        { transform: `translate(${dx}px,-60px) scale(3.5)`, filter: 'brightness(1.9)', offset: 0.75 },
+        { transform: `translate(${dx}px,-66px) scale(0.2)`, filter: 'brightness(2.2)', opacity: 0 }
+    ], { duration: 640, easing: 'ease-out' });
+    anim.onfinish = () => { burstFounder(endX, endY); fly.remove(); done(); };
+}
+
+function showFounderTicket(code) {
+    fEl('founder-code').textContent = code;
+    fEl('founder-result').classList.remove('hidden');
+    const use = fEl('founder-use-btn');
+    if (use) setTimeout(() => use.scrollIntoView({ block: 'nearest', behavior: founderReducedMotion() ? 'auto' : 'smooth' }), 80);
+}
+
+async function popFounderPearl() {
+    if (founderBusy || currentUser || !db) return;
+    const bowl = fEl('founder-bowl');
+
+    // Already holding a key: show it again instead of taking another pearl.
+    const held = readFounderPearl();
+    if (held) {
+        applyFounderCode(held.code);
+        showFounderTicket(held.code);
+        setFounderStatusText('This Red Pearl code is already yours. It is filled in on the sign-up form.');
+        return;
+    }
+    if (founderRemaining() <= 0) return;
+
+    founderBusy = true;
+    setFounderStatusText('');
+    if (bowl) { bowl.classList.remove('is-wobble'); void bowl.offsetWidth; bowl.classList.add('is-wobble'); }
+    let res = null;
+    try {
+        const { data, error } = await db.rpc('issue_founder_pearl');
+        if (error) throw error;
+        res = Array.isArray(data) ? data[0] : data;
+    } catch (e) {
+        res = { error: isMissingFunctionError(e) ? 'unavailable' : 'failed' };
+    }
+
+    if (res && res.code && FOUNDER_KEY_RE.test(String(res.code))) {
+        saveFounderPearl(res.code);
+        if (founderStatus) founderStatus.remaining = Math.max(0, Number(res.remaining));
+        hapticTap('medium');
+        try { playTechChirp('pop'); } catch (e) { /* audio blocked */ }
+        animateFounderPop(() => {
+            paintFounderCount();
+            applyFounderCode(res.code);
+            showFounderTicket(res.code);
+            setFounderStatusText('Your Red Pearl code is filled in on the sign-up form. Finish signing up within an hour.');
+            founderBusy = false;
+        });
+        return;
+    }
+
+    founderBusy = false;
+    const err = res && res.error;
+    if (err === 'sold_out') {
+        await refreshFounder();
+        if (founderStatus) founderStatus.remaining = 0;
+        paintFounder();
+        setFounderStatusText('Someone just took the last pearl. The founder window is now closed.');
+    } else if (err === 'rate_limited') {
+        setFounderStatusText("You've popped a few pearls already. Please try again in a little while.");
+    } else if (err === 'unavailable') {
+        setFounderStatusText('Founder pearls are not available right now. If you have a Red Pearl code, enter it on the sign-up form.');
+    } else {
+        setFounderStatusText("Couldn't reach the bowl. Check your connection and tap it again.");
+    }
+}
+
+// Decide whether the bowl is the welcome screen. Resolves true when the founder flow "owns" the guest welcome.
+async function founderWelcome() {
+    for (let i = 0; i < 40 && !hasBooted; i++) await new Promise(r => setTimeout(r, 150)); // wait for the session check
+    if (currentUser) return true;
+    const st = await refreshFounder();
+    if (currentUser) return true;
+    if (!st || st.remaining <= 0) { paintFounder(); return false; }
+    startFounderPolling();
+    const held = readFounderPearl();
+    if (held) { applyFounderCode(held.code); return true; }
+    try {
+        if (localStorage.getItem('tg_known_member') === '1') return false; // a returning member logging in doesn't need the pitch
+        if (sessionStorage.getItem(FOUNDER_DISMISS_KEY) === 'true') return true;
+    } catch (e) { /* storage unavailable */ }
+    openFounderModal();
+    return true;
+}
+
+function onFounderSignedIn() {
+    try { localStorage.setItem('tg_known_member', '1'); } catch (e) { /* storage unavailable */ }
+    closeFounderModal(false);
+    stopFounderPolling();
+    const ribbon = fEl('founder-ribbon'), note = fEl('founder-closed-note');
+    if (ribbon) ribbon.classList.add('hidden');
+    if (note) note.classList.add('hidden');
+}
+
+safeAddListener(fEl('founder-bowl'), 'click', popFounderPearl);
+safeAddListener(fEl('founder-close-btn'), 'click', () => closeFounderModal(true));
+safeAddListener(fEl('founder-browse'), 'click', () => closeFounderModal(true));
+safeAddListener(fEl('founder-modal'), 'click', (e) => { if (e.target === fEl('founder-modal')) closeFounderModal(true); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && founderModalOpen()) closeFounderModal(true); });
+safeAddListener(fEl('founder-login'), 'click', () => {
+    closeFounderModal(true);
+    setSignUpMode(false);
+    const wrap = document.getElementById('auth-panel-wrapper');
+    if (wrap) { wrap.classList.remove('hidden'); wrap.scrollIntoView({ behavior: 'smooth' }); }
+    const email = document.getElementById('auth-email');
+    if (email) email.focus({ preventScroll: true });
+});
+safeAddListener(fEl('founder-have-code'), 'click', () => {
+    closeFounderModal(true);
+    setSignUpMode(true);
+    const wrap = document.getElementById('auth-panel-wrapper');
+    if (wrap) { wrap.classList.remove('hidden'); wrap.scrollIntoView({ behavior: 'smooth' }); }
+    const input = authInviteInput();
+    if (input) input.focus({ preventScroll: true });
+});
+safeAddListener(fEl('founder-use-btn'), 'click', () => {
+    closeFounderModal(true);
+    const wrap = document.getElementById('auth-panel-wrapper');
+    if (wrap) { wrap.classList.remove('hidden'); wrap.scrollIntoView({ behavior: 'smooth' }); }
+    const user = document.getElementById('auth-username');
+    if (user) user.focus({ preventScroll: true });
+});
+safeAddListener(fEl('founder-copy-btn'), 'click', async () => {
+    const code = fEl('founder-code').textContent;
+    try { await navigator.clipboard.writeText(code); setFounderStatusText('Code copied.'); }
+    catch (e) { setFounderStatusText('Copy failed. Press and hold the code to select it.'); }
+});
+safeAddListener(fEl('founder-ribbon'), 'click', () => {
+    if (readFounderPearl()) {
+        const user = document.getElementById('auth-username');
+        if (user) user.focus();
+    } else {
+        openFounderModal();
+    }
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !currentUser && founderStatus) refreshFounder(); });
+
 function triggerGuestDisclaimer() {
     // If logged in, do not show
     if (currentUser) return;
 
+    // While founder pearls remain, the founder bowl is the welcome screen; the classic notice only appears afterwards.
+    founderWelcome().then((handled) => { if (!handled) showGuestDisclaimerNotice(); }, () => showGuestDisclaimerNotice());
+}
+
+function showGuestDisclaimerNotice() {
+    if (currentUser) return;
 
     const modal = document.getElementById('guest-disclaimer-modal');
     if (!modal) return;

@@ -2202,6 +2202,68 @@ img, video, canvas, pre, code {
         }
 
         #offline-banner { position: fixed; left: 0; right: 0; top: 0; z-index: 30000; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px; background: #7c2d12; color: #ffedd5; font-size: 0.82rem; text-align: center; border-bottom: 1px solid #fb923c; }
+        /* ---- Founder Red Pearls (first 1,000 members) ---- */
+        #founder-modal { z-index: 10060 !important; }
+        .founder-box { position: relative; max-width: 560px; height: auto !important; max-height: 100% !important; overflow-y: auto; border: 1px solid #7f1d3a; background: radial-gradient(120% 70% at 50% 0%, #2a0f1e 0%, #0f172a 62%); box-shadow: 0 24px 60px rgba(0,0,0,.7), 0 0 40px rgba(244, 63, 94, .18); padding: 22px 22px 18px; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "counter" "stage" "explain" "links"; gap: 12px; }
+        .founder-box > * { min-width: 0; }
+        .founder-close { position: absolute; top: 10px; right: 12px; z-index: 2; }
+        .founder-head { grid-area: head; text-align: center; padding: 0 28px; }
+        .founder-kicker { display: inline-block; font-size: 0.7rem; font-weight: 800; letter-spacing: .16em; color: #fda4af; background: rgba(244,63,94,.14); border: 1px solid rgba(244,63,94,.35); border-radius: 999px; padding: 3px 12px; margin-bottom: 8px; }
+        .founder-head h2 { font-size: 1.35rem; line-height: 1.15; color: #fff1f2; margin: 0 0 6px; border: none; padding: 0; }
+        .founder-sub { font-size: 0.92rem; color: #cbd5e1; line-height: 1.45; margin: 0; }
+        .founder-counter-wrap { grid-area: counter; text-align: center; }
+        .founder-counter { font-size: 0.95rem; color: #fecdd3; }
+        .founder-counter strong { font-size: 2.1rem; font-weight: 800; color: #fb7185; font-variant-numeric: tabular-nums; margin-right: 4px; text-shadow: 0 0 18px rgba(251,113,133,.5); }
+        .founder-meter { height: 6px; border-radius: 999px; background: #1e293b; overflow: hidden; margin: 6px auto 0; max-width: 320px; }
+        .founder-meter > div { height: 100%; width: 99%; background: linear-gradient(90deg, #be123c, #fb7185); border-radius: 999px; transition: width .6s ease; }
+        .founder-stage { grid-area: stage; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+        .founder-bowl { background: none !important; border: none !important; padding: 0 !important; margin: 0 !important; width: min(400px, 90vw) !important; max-width: 100%; outline: none; cursor: pointer; display: block; position: relative; -webkit-tap-highlight-color: transparent; transition: transform .25s ease; border-radius: 50%; }
+        .founder-bowl:hover { transform: translateY(-3px) rotate(-1.2deg); }
+        .founder-bowl:active { transform: scale(.97); }
+        .founder-bowl:focus-visible .founder-svg { filter: drop-shadow(0 0 10px #fb7185) drop-shadow(0 14px 22px rgba(0,0,0,.45)); }
+        .founder-bowl[disabled] { cursor: default; transform: none; }
+        .founder-svg { display: block; width: 100%; height: auto; overflow: visible; filter: drop-shadow(0 14px 22px rgba(0,0,0,.45)); }
+        .founder-svg .pearl { transform-box: fill-box; transform-origin: center; }
+        .founder-svg .pearl.glint { animation: pearl-glint 3.6s ease-in-out infinite; }
+        @keyframes pearl-glint { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.45); } }
+        .founder-bowl.is-wobble { animation: bowl-wobble .5s ease; }
+        @keyframes bowl-wobble { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-3deg) scale(1.02); } 60% { transform: rotate(2.2deg); } }
+        .founder-hint { font-size: 0.82rem; font-weight: 700; color: #fda4af; letter-spacing: .02em; animation: hint-pulse 2s ease-in-out infinite; }
+        @keyframes hint-pulse { 0%, 100% { opacity: .65; } 50% { opacity: 1; } }
+        .founder-result { width: 100%; max-width: 360px; text-align: center; background: linear-gradient(180deg, rgba(190,18,60,.22), rgba(15,23,42,.9)); border: 1px solid #be123c; border-radius: 14px; padding: 12px 14px; animation: ticket-in .45s cubic-bezier(.2,1.3,.4,1); }
+        @keyframes ticket-in { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: none; } }
+        .founder-result .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .12em; color: #fda4af; font-weight: 700; }
+        .founder-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1.45rem; font-weight: 800; letter-spacing: .06em; color: #fff; margin: 4px 0 10px; user-select: all; overflow-wrap: anywhere; }
+        .founder-result .row { display: flex; gap: 8px; }
+        .founder-result .row button { margin: 0; min-height: 42px; }
+        #founder-use-btn { flex: 1; background: linear-gradient(180deg, #fb4b6b, #be123c); color: #fff; font-weight: 800; border: none; }
+        #founder-copy-btn { width: auto; padding: 0 14px; }
+        .founder-status { min-height: 1.2em; font-size: 0.85rem; color: #fda4af; text-align: center; margin: 0; }
+        .founder-explainer { grid-area: explain; background: #0b1220; border: 1px solid #334155; border-left: 3px solid #fb7185; border-radius: 10px; padding: 11px 14px; font-size: 0.84rem; line-height: 1.5; color: #cbd5e1; }
+        .founder-explainer strong { color: #fecdd3; }
+        .founder-links { grid-area: links; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; font-size: 0.82rem; }
+        .founder-links button { background: none !important; border: none !important; color: #7dd3fc; text-decoration: underline; padding: 8px 8px !important; width: auto; margin: 0 !important; font-size: 0.82rem; min-height: 36px; }
+        .founder-box.is-closed .founder-hint, .founder-box.is-closed .founder-bowl { opacity: .7; }
+        .founder-ribbon { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; margin: 0 0 14px !important; padding: 10px 14px !important; background: linear-gradient(90deg, rgba(190,18,60,.35), rgba(251,113,133,.18)) !important; border: 1px solid #be123c !important; color: #ffe4e6 !important; font-weight: 700; font-size: 0.9rem; border-radius: 10px; cursor: pointer; text-align: left; }
+        .founder-ribbon .dot { width: 14px; height: 14px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #ffd1d9, #fb4b6b 35%, #9f1239); box-shadow: 0 0 10px rgba(251,113,133,.8); flex-shrink: 0; }
+        .founder-ribbon b { color: #fb7185; font-variant-numeric: tabular-nums; }
+        .founder-closed-note { font-size: 0.82rem; color: #cbd5e1; background: #0b1220; border: 1px solid #334155; border-left: 3px solid #fb7185; border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; line-height: 1.45; }
+        @media (max-height: 560px) and (orientation: landscape) {
+            .founder-box { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "head stage" "counter stage" "explain stage" "links stage"; align-items: center; column-gap: 18px; padding: 14px 16px; }
+            .founder-stage { align-self: start; position: sticky; top: 2px; }
+            .founder-head { padding: 0 20px 0 0; text-align: left; }
+            .founder-counter-wrap { text-align: left; }
+            .founder-meter { margin-left: 0; }
+            .founder-bowl { width: min(280px, 66vh) !important; }
+            .founder-head h2 { font-size: 1.15rem; }
+            .founder-sub { font-size: 0.8rem; }
+            .founder-explainer { font-size: 0.74rem; padding: 8px 10px; }
+            .founder-links { justify-content: flex-start; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .founder-svg .pearl.glint, .founder-hint, .founder-bowl.is-wobble, .founder-result { animation: none !important; }
+            .founder-bowl:hover { transform: none; }
+        }
         /* ---- Safety: report / block ---- */
         #report-modal { z-index: 22000 !important; }
         .report-reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
@@ -2255,7 +2317,7 @@ img, video, canvas, pre, code {
             #guest-disclaimer-modal .modal-box, #delete-confirm-modal .modal-box, #link-modal .modal-box,
             #voice-invite-modal .modal-box, #thread-options-modal .modal-box, #share-modal .modal-box,
             #thread-delete-modal .modal-box, #captcha-suspension-modal .modal-box, #post-edit-modal .modal-box,
-            #thread-modal .modal-box, #chat-config-modal .modal-box, #report-modal .modal-box {
+            #thread-modal .modal-box, #chat-config-modal .modal-box, #report-modal .modal-box, #founder-modal .founder-box {
                 height: auto !important; max-height: 100% !important; overflow-y: auto;
             }
         }
@@ -2381,12 +2443,14 @@ img, video, canvas, pre, code {
             <div id="auth-panel-wrapper">
                 <div id="auth-panel" class="card" style="margin-bottom: 16px;">
                     <h2 id="auth-header"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3M18.5 4.5l3 3"/></svg>Member Terminal</h2>
+                    <button type="button" id="founder-ribbon" class="founder-ribbon hidden"><span class="dot"></span><span id="founder-ribbon-text">Claim a Founder Red Pearl</span></button>
+                    <div id="founder-closed-note" class="founder-closed-note hidden"><strong>The 1,000 founder pearls have all been claimed.</strong> New members now join by invite: ask someone who is already inside for a Red Pearl code, then enter it below.</div>
                     <form id="authForm">
                         <div id="username-field-group" class="hidden">
                             <label for="auth-username">Unique Username</label>
                             <input type="text" id="auth-username" placeholder="e.g. human_voyager" autocomplete="username">
-                            <label for="auth-invite-code" style="margin-top:10px; color:#10b981;">Golden Invite Code (Required)</label>
-                            <input type="text" id="auth-invite-code" placeholder="Enter your invite code" autocomplete="off">
+                            <label for="auth-invite-code" style="margin-top:10px; color:#10b981;">Red Pearl Code (Required)</label>
+                            <input type="text" id="auth-invite-code" placeholder="Pop a Red Pearl, or enter your code" autocomplete="off" autocapitalize="characters" spellcheck="false">
                         </div>
 
 
@@ -2809,7 +2873,7 @@ img, video, canvas, pre, code {
                             <div>
                                 <h3 class="biomech-title">Trust Chamber: Red Pearl Invites</h3>
                                 <p class="biomech-subtitle">
-                                    3 Red Pearls allocated per 30-day cycle. Each pearl generates an invite code. Vouching creates a direct chain of custody—sponsoring bots or bad actors lowers your human verification score.
+                                    3 Red Pearls allocated per 30-day cycle. Each Red Pearl generates a Red Pearl code. Vouching creates a direct chain of custody—sponsoring bots or bad actors lowers your human verification score.
                                 </p>
                             </div>
                         </div>
@@ -3010,6 +3074,63 @@ img, video, canvas, pre, code {
                     <div id="blocked-users-list"><div class="no-posts" style="font-size: 0.8rem;">You haven't blocked anyone.</div></div>
                 </div>
                 <div class="legal-links" style="margin-top: 16px;"><a href="terms.html">Terms of Use</a><a href="privacy.html">Privacy Policy</a><a href="support.html">Help &amp; Support</a></div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- FOUNDER RED PEARLS: open enrollment for the first 1,000 members -->
+    <div id="founder-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="founder-title">
+        <div class="modal-box founder-box" id="founder-box">
+            <button type="button" id="founder-close-btn" class="close-btn founder-close" aria-label="Close">&times;</button>
+            <div class="founder-head">
+                <div class="founder-kicker">THE FIRST 1,000</div>
+                <h2 id="founder-title">Claim your Founder Red Pearl</h2>
+                <p class="founder-sub" id="founder-sub">Turing's Gate is opening to its first 1,000 humans with no invite needed. Pop a pearl to get your Red Pearl code.</p>
+            </div>
+            <div class="founder-counter-wrap">
+                <div class="founder-counter" aria-live="polite"><strong id="founder-count">991</strong><span id="founder-count-label">of 1,000 pearls left</span></div>
+                <div class="founder-meter" aria-hidden="true"><div id="founder-meter-fill"></div></div>
+            </div>
+            <div class="founder-stage">
+                <button type="button" id="founder-bowl" class="founder-bowl" aria-label="Pop a Red Pearl to claim your Red Pearl code">
+                    <svg id="founder-svg" class="founder-svg" viewBox="34 58 252 258" aria-hidden="true" focusable="false">
+                        <defs>
+                            <radialGradient id="fp-a" cx="34%" cy="28%" r="78%"><stop offset="0" stop-color="#ffe1e6"/><stop offset=".22" stop-color="#fb4b6b"/><stop offset=".7" stop-color="#be123c"/><stop offset="1" stop-color="#650a22"/></radialGradient>
+                            <radialGradient id="fp-b" cx="34%" cy="28%" r="78%"><stop offset="0" stop-color="#ffd6dd"/><stop offset=".22" stop-color="#f43f5e"/><stop offset=".7" stop-color="#9f1239"/><stop offset="1" stop-color="#4c0519"/></radialGradient>
+                            <radialGradient id="fp-c" cx="34%" cy="28%" r="78%"><stop offset="0" stop-color="#fff0d9"/><stop offset=".22" stop-color="#ff5a4d"/><stop offset=".7" stop-color="#c81e3a"/><stop offset="1" stop-color="#6a0c1c"/></radialGradient>
+                            <radialGradient id="fp-glass" cx="50%" cy="38%" r="62%"><stop offset="0" stop-color="#bae6fd" stop-opacity=".03"/><stop offset=".75" stop-color="#7dd3fc" stop-opacity=".09"/><stop offset="1" stop-color="#bae6fd" stop-opacity=".3"/></radialGradient>
+                            <linearGradient id="fp-shine" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+                            <clipPath id="fp-clip"><path d="M100.7 78 A118 118 0 1 0 219.3 78 Z"/></clipPath>
+                        </defs>
+                        <ellipse cx="160" cy="304" rx="100" ry="7" fill="rgba(0,0,0,.5)"/>
+                        <ellipse cx="160" cy="78" rx="59.3" ry="10" fill="rgba(125,211,252,.07)" stroke="rgba(186,230,253,.3)" stroke-width="1.5"/>
+                        <g clip-path="url(#fp-clip)"><g id="founder-pearls"></g></g>
+                        <path d="M100.7 78 A118 118 0 1 0 219.3 78" fill="url(#fp-glass)" stroke="rgba(186,230,253,.5)" stroke-width="2.5"/>
+                        <path d="M70 130 A104 104 0 0 0 82 238" fill="none" stroke="url(#fp-shine)" stroke-width="7" stroke-linecap="round" opacity=".7"/>
+                        <path d="M92 258 Q108 276 130 283" fill="none" stroke="#fff" stroke-opacity=".3" stroke-width="4" stroke-linecap="round"/>
+                        <path d="M100.7 78 A59.3 10 0 0 0 219.3 78" fill="none" stroke="rgba(224,242,254,.65)" stroke-width="3" stroke-linecap="round"/>
+                        <g id="founder-fx"></g>
+                    </svg>
+                </button>
+                <div class="founder-hint" id="founder-hint">Tap the bowl to pop a pearl</div>
+                <div id="founder-result" class="founder-result hidden">
+                    <div class="label">Your Red Pearl code</div>
+                    <div class="founder-code" id="founder-code">PEARL-0000-0000</div>
+                    <div class="row">
+                        <button type="button" id="founder-use-btn">Sign up with this code &rarr;</button>
+                        <button type="button" id="founder-copy-btn" class="secondary">Copy</button>
+                    </div>
+                </div>
+                <p id="founder-status" class="founder-status" role="status" aria-live="polite"></p>
+            </div>
+            <div class="founder-explainer" id="founder-explainer">
+                <strong>What happens after the first 1,000?</strong> Once every founder pearl is claimed, this screen disappears and Turing's Gate becomes <strong>invite-only</strong>: new members will need a Red Pearl code from someone who is already inside. Every member gets Red Pearls of their own, so joining now means you can bring your friends in later. Your code is reserved for 60 minutes, so finish signing up before it expires.
+            </div>
+            <div class="founder-links">
+                <button type="button" id="founder-have-code">I have a Red Pearl code</button>
+                <button type="button" id="founder-login">Log in</button>
+                <button type="button" id="founder-browse">Just browse</button>
             </div>
         </div>
     </div>
@@ -3547,7 +3668,7 @@ img, video, canvas, pre, code {
                     ◈ <strong>Guest Browsing:</strong> You are welcome to freely explore, read community threads, and view discussions as a guest.
                 </div>
                 <div style="background: rgba(255, 42, 95, 0.12); border-left: 3px solid #ff2a5f; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; color: #fecdd3;">
-                    ◈ <strong>Red Pearl Key Required:</strong> To publish posts, reply, vote, send direct messages, or speak on voice stages, an <strong>Invite Key</strong> generated from an active Red Pearl by a verified human is required.
+                    ◈ <strong>Red Pearl Code Required:</strong> To publish posts, reply, vote, send direct messages, or speak on voice stages, you need a <strong>Red Pearl code</strong> from a verified human who is already inside.
                 </div>
             </div>
 
@@ -3556,7 +3677,7 @@ img, video, canvas, pre, code {
                     Understood — Browse as Guest
                 </button>
                 <button type="button" id="guest-disclaimer-login-btn" class="secondary" style="font-size: 0.85rem; padding: 8px; margin-top: 0;">
-                    Have a Red Pearl Key? Log In / Sign Up
+                    Have a Red Pearl Code? Log In / Sign Up
                 </button>
             </div>
         </div>
@@ -3628,6 +3749,6 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=21"></script>
+    <script type="module" src="script.js?v=22"></script>
 </body>
 </html>
