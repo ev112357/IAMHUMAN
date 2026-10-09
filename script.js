@@ -9826,6 +9826,7 @@ async function answerAudioCall() {
         pc.ontrack = (event) => {
             if (remoteAudioEl && event.streams[0]) {
                 remoteAudioEl.srcObject = event.streams[0];
+                remoteAudioEl.muted = Boolean(userAudioSettings.deafen);
                 remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
             }
         };
@@ -9912,15 +9913,9 @@ async function answerAudioCall() {
             }
         };
 
-        // Immediately consume offer already available in incomingCallData
-        if (data.offer && pc.signalingState === 'stable') {
+        // Immediately consume offer from incoming_call payload
+        if (data.offer) {
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-            if (data.candidates && Array.isArray(data.candidates)) {
-                for (const c of data.candidates) {
-                    try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-                }
-            }
 
             while (queuedIceCandidates.length > 0) {
                 const c = queuedIceCandidates.shift();
@@ -9931,14 +9926,16 @@ async function answerAudioCall() {
             await pc.setLocalDescription(answer);
             const plainAnswer = { type: answer.type, sdp: answer.sdp };
 
+            sendAnswerToCaller(plainAnswer);
+
             callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     sendAnswerToCaller(plainAnswer);
-                    setTimeout(() => sendAnswerToCaller(plainAnswer), 300);
+                    setTimeout(() => sendAnswerToCaller(plainAnswer), 350);
                 }
             });
         } else {
-            // Fallback for notification-based calls with missing offer payload
+            // Fallback for notification-based triggers
             callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     callChan.send({
@@ -9950,7 +9947,7 @@ async function answerAudioCall() {
             });
         }
 
-        // Show the persistent floating call window while keeping the user on their current page
+        // Show floating PiP call window without navigating away from the current page
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
         } else {
@@ -10061,6 +10058,11 @@ function endCurrentAudioCall() {
                     if (status === 'SUBSCRIBED') {
                         partnerSig.send({
                             type: 'broadcast',
+                            event: 'call_ended',
+                            payload: { from: currentUser?.id }
+                        });
+                        partnerSig.send({
+                            type: 'broadcast',
                             event: 'cancel_call',
                             payload: { callerId: currentUser?.id }
                         });
@@ -10124,12 +10126,13 @@ function initUserCallSignaling() {
                 }
                 stopRingtoneSound();
                 showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
-                if (!activeCall.peerConnection.currentRemoteDescription && activeCall.peerConnection.signalingState !== 'stable') {
+                const pc = activeCall.peerConnection;
+                if (!pc.currentRemoteDescription && pc.signalingState !== 'stable') {
                     try {
-                        await activeCall.peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+                        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                         while (queuedIceCandidates.length > 0) {
                             const c = queuedIceCandidates.shift();
-                            try { await activeCall.peerConnection.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+                            try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
                         }
                     } catch (err) {
                         console.error("Error setting answer from signaling channel:", err);
@@ -10163,6 +10166,9 @@ function initUserCallSignaling() {
                 stopRingtoneSound();
                 cleanupCall("Call Declined");
             }
+        })
+        .on('broadcast', { event: 'call_ended' }, () => {
+            cleanupCall("Call Ended");
         })
         .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
             const data = payload?.payload;
