@@ -1818,14 +1818,19 @@ function saveThreadMeta() {
 async function sendNotification(targetUserId, type, entityId, message) {
     if (!db || !currentUser || !targetUserId || targetUserId === currentUser.id) return;
     try {
-        await db.from('user_notifications').insert([{
+        const row = {
             user_id: targetUserId,
             actor_username: currentUsername,
             type: type,
             entity_id: entityId || null,
             message: message,
             is_read: false
-        }]);
+        };
+        const { error } = await db.from('user_notifications').insert([row]);
+        // Some deployments reject a non-numeric entity_id (e.g. a conversation uuid); retry without it.
+        if (error && row.entity_id !== null) {
+            await db.from('user_notifications').insert([{ ...row, entity_id: null }]);
+        }
     } catch (e) {
         console.warn("Failed to dispatch notification:", e);
     }
@@ -5923,13 +5928,14 @@ function createMessageElement(msg) {
 
 
 
-    const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
+    const avatarImgHtml = `<img src="${attrUrl(senderAvatar, DEFAULT_AVATAR)}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
     const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
     const sharedLink = extractSharedLink(msg.content);
     const textHtml = sharedLink
         ? ((sharedLink.note ? `<div>${renderFormattedContent(sharedLink.note)}</div>` : '') + shareCardPlaceholder(sharedLink))
         : (msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '');
-    const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
+    const chatImageUrl = attrUrl(msg.image_url);
+    const imgHtml = chatImageUrl ? `<a href="${chatImageUrl}" target="_blank" rel="noopener noreferrer"><img src="${chatImageUrl}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
     
     let pendingBadge = '';
     if (isOptimistic) {
@@ -7170,7 +7176,7 @@ function createPostCardElement(post) {
         <div class="post-body">
             <div class="post-meta">
                 <div class="post-author-wrap">
-                    <img src="${authorAvatar}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
+                    <img src="${attrUrl(authorAvatar, DEFAULT_AVATAR)}" class="post-author-avatar" data-username="${escapeHTML(cleanAuthor)}" alt="pfp">
                     <span>By: <strong class="post-author clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</strong></span>${activeThread === 'Trending' && post.thread ? `<span class="clickable-thread" data-thread="${escapeHTML(post.thread)}" style="font-size: 0.72rem; color: #38bdf8; background: #0f172a; padding: 1px 6px; border-radius: 4px; border: 1px solid #334155;">#${escapeHTML(post.thread)}</span>` : ''}
                     ${roleBadge}${userFlairBadge}
                 </div>
@@ -7417,7 +7423,7 @@ async function loadCommentsForPost(postId) {
         const commentBody = document.createElement('div');
         commentBody.style.cssText = "display: flex; gap: 8px; font-size: 0.85rem;";
         commentBody.innerHTML = `
-            <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; cursor: pointer;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">
+            <img src="${attrUrl(avatar, DEFAULT_AVATAR)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; cursor: pointer;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">
             <div style="flex: 1;">
                 <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</div>
                 <div style="color: #e2e8f0; line-height: 1.3;">${escapeHTML(c.content)}</div>
@@ -7904,6 +7910,13 @@ if (textBox) {
 
 
 
+// URLs that come from the database (avatars, chat images, ...) are user-controlled. Only http(s) and our own
+// blob: previews may reach a src/href, and the value is escaped for the attribute. Anything else becomes `fallback`.
+function attrUrl(url, fallback = '') {
+    const text = typeof url === 'string' ? url.trim() : '';
+    return escapeHTML(/^(https?:\/\/|blob:)/i.test(text) ? text : fallback);
+}
+
 function escapeHTML(str) {
     if (!str) return '';
     return String(str).replace(/[&<>'"]/g, tag => ({
@@ -8225,6 +8238,8 @@ let sharePeopleTimer = null;
 let sharePeopleSeq = 0;
 
 function resetShareRecipients() {
+    clearTimeout(sharePeopleTimer);
+    sharePeopleSeq++; // drop any search still in flight
     shareChats = [];
     sharePeople = [];
     shareSelected.clear();
@@ -8238,7 +8253,7 @@ function renderShareRecipients() {
     const query = (shareRecipientSearch ? shareRecipientSearch.value : '').trim().replace(/^@/, '').toLowerCase();
 
     const matches = (r) => !query || r.label.toLowerCase().replace(/^@|^group:\s*/, '').includes(query) || r.label.toLowerCase().includes(query);
-    const rows = [...shareChats.filter(matches), ...sharePeople];
+    const rows = [...shareChats.filter(matches), ...sharePeople.filter(matches)];
 
     if (!currentUser) {
         shareRecipientList.innerHTML = '<div class="share-empty">Log in to share via direct message.</div>';
@@ -8264,7 +8279,7 @@ function renderShareRecipients() {
 
     if (internalShareBtn) {
         const n = shareSelected.size;
-        internalShareBtn.disabled = n === 0;
+        internalShareBtn.disabled = n === 0 || shareSending;
         internalShareBtn.textContent = n === 0 ? 'Send' : `Send to ${n} ${n === 1 ? 'chat' : 'chats'}`;
     }
 }
@@ -8314,8 +8329,8 @@ async function searchSharePeople(rawQuery) {
         return;
     }
 
-    // Prefix match only (and no LIKE wildcards from the user), so this can't be used to dump the user list.
-    const safe = query.replace(/[%_\\]/g, '');
+    // Prefix match only, with the user's own %, _ and \ treated literally (so "john_doe" finds john_doe).
+    const safe = query.replace(/[\\%_]/g, '\\$&');
     const { data } = await db.from('profiles')
         .select('id, username, is_private')
         .ilike('username', `${safe}%`)
@@ -8369,8 +8384,10 @@ async function ensureDirectConversation(friend) {
         .from('friendships')
         .select('status')
         .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
+        .eq('status', 'accepted')
+        .limit(1)
         .maybeSingle();
-    const isFriend = Boolean(friendship && friendship.status === 'accepted');
+    const isFriend = Boolean(friendship);
 
     const { data: myMemberships } = await db
         .from('conversation_members')
@@ -8482,26 +8499,40 @@ async function deliverShare(recipient, text, notifyText) {
             .from('friendships')
             .select('status')
             .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${recipient.partnerId}),and(user_id.eq.${recipient.partnerId},friend_id.eq.${currentUser.id})`)
+            .eq('status', 'accepted')
+            .limit(1)
             .maybeSingle();
-        isFriend = Boolean(friendship && friendship.status === 'accepted');
+        isFriend = Boolean(friendship);
     }
     return sendMessageToConversation({ convId: recipient.convId, partnerId: recipient.partnerId, isFriend, text, notifyText });
 }
 
 // 3. Send via Internal DM
+let shareSending = false;
+
 safeAddListener(internalShareBtn, 'click', async () => {
-    if (shareSelected.size === 0 || !currentShareTarget || !currentUser) return;
+    if (shareSending || shareSelected.size === 0 || !currentShareTarget || !currentUser) return;
+    if (isSuspended) {
+        triggerSuspensionGate();
+        return;
+    }
+
+    // Capture what is being shared now: the modal (and these globals) may change while messages are sent.
+    const shareType = currentShareType;
+    const shareTarget = currentShareTarget;
+    const shareUrl = currentSharePostUrl;
 
     const recipients = Array.from(shareSelected.values());
     const note = (shareNote ? shareNote.value : '').trim();
-    const link = currentShareType === 'thread'
-        ? `[Open Thread](${currentSharePostUrl})`
-        : `[View Post](${currentSharePostUrl})`;
+    const link = shareType === 'thread'
+        ? `[Open Thread](${shareUrl})`
+        : `[View Post](${shareUrl})`;
     const text = note ? `${note}\n${link}` : link;
-    const notifyText = currentShareType === 'thread'
-        ? `shared the #${currentShareTarget} community with you.`
+    const notifyText = shareType === 'thread'
+        ? `shared the #${shareTarget} community with you.`
         : 'shared a post with you.';
 
+    shareSending = true;
     internalShareBtn.disabled = true;
     internalShareBtn.textContent = 'Sending...';
 
@@ -8518,13 +8549,15 @@ safeAddListener(internalShareBtn, 'click', async () => {
         }
     }
 
-    if (sent > 0 && currentShareType === 'post') {
-        await incrementShareCount(currentShareTarget);
+    shareSending = false;
+
+    if (sent > 0 && shareType === 'post') {
+        await incrementShareCount(shareTarget);
     }
 
     if (failed.length === 0) {
         showToast({
-            title: currentShareType === 'thread' ? "Thread shared" : "Post shared",
+            title: shareType === 'thread' ? "Thread shared" : "Post shared",
             message: sent === 1 ? `Sent to ${recipients[0].label}.` : `Sent to ${sent} chats.`,
             type: "success",
             icon: "✉",
@@ -8549,13 +8582,20 @@ safeAddListener(internalShareBtn, 'click', async () => {
 // --- Shared-link cards inside chat bubbles ---
 const sharedPostCache = new Map(); // post id -> Promise<post | null>
 
+// Hosts whose ?post= / ?thread= links open in this app: this site, its www/bare twin, and former domains.
+const LEGACY_SITE_HOSTS = []; // e.g. ['old-name.vercel.app']
+function isOwnSiteHost(host) {
+    const bare = (h) => h.replace(/^www\./, '');
+    return bare(host) === bare(window.location.host) || LEGACY_SITE_HOSTS.includes(host);
+}
+
 function extractSharedLink(content) {
     if (!content) return null;
     const match = content.match(/\[(?:View Post|Open Thread)\]\((https?:\/\/[^\s)]+)\)\s*$/);
     if (!match) return null;
     try {
         const url = new URL(match[1]);
-        if (url.host !== window.location.host) return null;
+        if (!isOwnSiteHost(url.host)) return null;
         const note = content.slice(0, match.index).trim();
         const postId = url.searchParams.get('post');
         if (postId && /^\d+$/.test(postId)) return { kind: 'post', id: postId, url: url.href, note };
@@ -8584,7 +8624,10 @@ async function hydrateShareCard(card) {
     if (!sharedPostCache.has(id)) {
         sharedPostCache.set(id, db
             ? db.from('Posts').select('id, thread, author, title, content, image_url').eq('id', id).maybeSingle()
-                .then(({ data }) => data || null, () => null)
+                .then(({ data, error }) => {
+                    if (error) { sharedPostCache.delete(id); return null; } // transient: allow a retry later
+                    return data || null;
+                }, () => { sharedPostCache.delete(id); return null; })
             : Promise.resolve(null));
     }
     const post = await sharedPostCache.get(id);
@@ -8607,7 +8650,7 @@ async function hydrateShareCard(card) {
 
     card.classList.toggle('has-thumb', Boolean(thumb));
     card.innerHTML = `
-        ${thumb ? `<span class="share-card-thumb" style="background-image:url('${escapeHTML(thumb).replace(/'/g, '%27')}')">${extra}</span>` : ''}
+        ${thumb ? `<span class="share-card-thumb">${extra}</span>` : ''}
         <span class="share-card-body">
             <span class="share-card-kicker">#${escapeHTML(post.thread || 'forum')} · @${escapeHTML((post.author || 'anonymous').replace('@', ''))}</span>
             <span class="share-card-title">${escapeHTML(headline)}</span>
@@ -8615,6 +8658,9 @@ async function hydrateShareCard(card) {
             ${!thumb && extra ? extra : ''}
             <span class="share-card-cta">View post →</span>
         </span>`;
+
+    const thumbEl = card.querySelector('.share-card-thumb');
+    if (thumbEl && thumb) thumbEl.style.backgroundImage = `url(${JSON.stringify(thumb)})`;
 }
 
 // One delegated handler: tapping a card closes the chat and jumps to the post or thread.
@@ -9843,7 +9889,7 @@ function renderLiveChatBubble(username, avatarUrl, message) {
     const div = document.createElement('div');
     div.style.cssText = `display: flex; gap: 8px; margin-bottom: 6px; align-items: flex-start; justify-content: ${isMine ? 'flex-end' : 'flex-start'};`;
     
-    const avatarHtml = `<img src="${avatarUrl || DEFAULT_AVATAR}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">`;
+    const avatarHtml = `<img src="${attrUrl(avatarUrl, DEFAULT_AVATAR)}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">`;
     const bubbleHtml = `
         <div style="background: ${isMine ? '#10b981' : '#1e293b'}; color: ${isMine ? '#0f172a' : '#e2e8f0'}; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; max-width: 85%; word-wrap: break-word;">
             ${!isMine ? `<div style="font-size:0.7rem; font-weight:bold; color:#38bdf8; margin-bottom:2px;">@${escapeHTML(username)}</div>` : ''}
@@ -10384,12 +10430,14 @@ async function openFreshChannel(name, config) {
 }
 
 // Resolves true once the channel has joined, false on error/timeout.
-function subscribeChannel(ch, timeoutMs = 8000) {
+// `onStatus` keeps receiving later statuses too (e.g. the automatic rejoin after a network blip).
+function subscribeChannel(ch, timeoutMs = 8000, onStatus = null) {
     return new Promise((resolve) => {
         let settled = false;
         const finish = (ok) => { if (!settled) { settled = true; clearTimeout(timer); resolve(ok); } };
         const timer = setTimeout(() => finish(false), timeoutMs);
         ch.subscribe((status) => {
+            if (onStatus) { try { onStatus(status); } catch (e) { console.warn("Channel status handler error:", e); } }
             if (status === 'SUBSCRIBED') finish(true);
             else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') finish(false);
         });
@@ -10400,6 +10448,10 @@ function subscribeChannel(ch, timeoutMs = 8000) {
 // Sends to the same topic are serialised so a second send never tears down the first one's channel.
 function sendSignalOnce(channelName, events) {
     if (!db) return Promise.resolve(false);
+    // openFreshChannel() closes any existing channel with this name; never do that to the live call's room.
+    if (typeof activeCall !== 'undefined' && activeCall && !activeCall.ended && channelName === `call_room_${activeCall.conversationId}`) {
+        return Promise.resolve(false);
+    }
     const list = Array.isArray(events) ? events : [events];
     const prev = signalQueues.get(channelName) || Promise.resolve();
     const run = prev.then(async () => {
@@ -10475,7 +10527,7 @@ function renderIncomingCallerName(data) {
 
 function triggerIncomingCallUI(data) {
     if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-    if (activeCall || isAnsweringCall) return;
+    if (activeCall || isAnsweringCall || callSetupInProgress) return;
 
     if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
         return;
@@ -10636,7 +10688,7 @@ function setCallConnectedState() {
 //    notification row as a fallback). Answering simply means joining the room.
 // A 1-on-1 call is the same thing with a room of two that ends when the other person leaves.
 
-const MAX_CALL_PARTICIPANTS = 8;
+const MAX_CALL_PARTICIPANTS = 6; // full mesh: every extra person adds a connection to everyone else
 const CALL_SOLO_TIMEOUT_MS = 30000;
 const CALL_PRESENCE_GRACE_MS = 4000;
 const CALL_PEER_CONNECT_TIMEOUT_MS = 25000;
@@ -10665,7 +10717,10 @@ function createCallState(fields) {
         earlyIce: new Map(),    // ICE that arrived before its peer existed
         gaveUp: new Set(),      // peers we could not connect to
         sigTargets: [],         // personal channels we ring: { id, chan, ready }
-        ringTimers: new Set(),
+        rings: new Map(),       // ring id -> { id, targetIds, payload, pulses, timer }
+        members: null,          // Set of user ids allowed in this conversation (null = unknown)
+        lastRingAt: 0,
+        presencePayload: null,
         everHadPeer: false,
         ended: false,
         callStartTime: null,
@@ -10728,6 +10783,8 @@ function createCallPeer(call, id, username, { negotiate = true } = {}) {
         leaveTimer: null,
         connectTimer: null,
         disconnectTimer: null,
+        iceOutbox: [],
+        iceTimer: null,
         candidateTypes: { host: 0, srflx: 0, relay: 0 }
     };
     call.earlyIce.delete(id);
@@ -10747,9 +10804,7 @@ function createCallPeer(call, id, username, { negotiate = true } = {}) {
         }
         if (event.candidate.type in peer.candidateTypes) peer.candidateTypes[event.candidate.type]++;
         if (!callIsCurrent(call) || call.peers.get(id) !== peer) return;
-        sendCallSignal(call, 'call_ice', id, {
-            candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
-        });
+        queueCallIce(call, peer, event.candidate.toJSON ? event.candidate.toJSON() : event.candidate);
     };
 
     const onState = () => onCallPeerState(call, peer);
@@ -10761,6 +10816,19 @@ function createCallPeer(call, id, username, { negotiate = true } = {}) {
     // Deterministic roles: the higher id offers, the other side answers.
     if (negotiate && currentUser.id > id) negotiateCallPeer(call, peer, false);
     return peer;
+}
+
+// Candidates are sent in small batches: with several people in the room, one broadcast per candidate would
+// multiply into hundreds of realtime messages in the first second of a call.
+function queueCallIce(call, peer, candidate) {
+    peer.iceOutbox.push(candidate);
+    if (peer.iceTimer) return;
+    peer.iceTimer = setTimeout(() => {
+        peer.iceTimer = null;
+        if (!callIsCurrent(call) || call.peers.get(peer.id) !== peer) return;
+        const batch = peer.iceOutbox.splice(0);
+        if (batch.length) sendCallSignal(call, 'call_ice', peer.id, { candidates: batch });
+    }, 120);
 }
 
 function armCallPeerTimeout(call, peer) {
@@ -10796,8 +10864,15 @@ async function flushPeerIce(peer) {
     }
 }
 
+// The room is a public realtime channel, so anyone who learns a conversation id could join it. Only people
+// who really belong to the conversation (checked against conversation_members) are ever connected to.
+function callPeerAllowed(call, id) {
+    return !call.members || call.members.has(id);
+}
+
 async function onCallOffer(call, data) {
     if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.sdp) return;
+    if (!callPeerAllowed(call, data.from)) return;
 
     // An offer can overtake our own presence sync, so create the peer on demand.
     let peer = call.peers.get(data.from);
@@ -10829,6 +10904,7 @@ async function onCallOffer(call, data) {
 
 async function onCallAnswer(call, data) {
     if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.sdp) return;
+    if (!callPeerAllowed(call, data.from)) return;
     const peer = call.peers.get(data.from);
     if (!peer || peer.pc.signalingState !== 'have-local-offer') return;
 
@@ -10843,19 +10919,24 @@ async function onCallAnswer(call, data) {
 }
 
 async function onCallIce(call, data) {
-    if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.candidate) return;
+    if (!callIsCurrent(call) || !data || data.to !== currentUser.id) return;
+    if (!callPeerAllowed(call, data.from)) return;
+    const candidates = Array.isArray(data.candidates) ? data.candidates : (data.candidate ? [data.candidate] : []);
+    if (candidates.length === 0) return;
 
     const peer = call.peers.get(data.from);
     if (!peer) {
         if (!call.earlyIce.has(data.from)) call.earlyIce.set(data.from, []);
-        call.earlyIce.get(data.from).push(data.candidate);
+        call.earlyIce.get(data.from).push(...candidates);
         return;
     }
-    if (peer.remoteSet) {
-        try { await peer.pc.addIceCandidate(data.candidate); }
-        catch (err) { console.warn("Notice adding ICE candidate:", err); }
-    } else {
-        peer.queued.push(data.candidate);
+    for (const candidate of candidates) {
+        if (peer.remoteSet) {
+            try { await peer.pc.addIceCandidate(candidate); }
+            catch (err) { console.warn("Notice adding ICE candidate:", err); }
+        } else {
+            peer.queued.push(candidate);
+        }
     }
 }
 
@@ -10930,6 +11011,7 @@ function closeCallPeer(peer) {
     clearTimeout(peer.connectTimer);
     clearTimeout(peer.leaveTimer);
     clearTimeout(peer.disconnectTimer);
+    clearTimeout(peer.iceTimer);
     try { peer.pc.close(); } catch (e) {}
     try { if (peer.meterSource) peer.meterSource.disconnect(); } catch (e) {}
     peer.audioEl.srcObject = null;
@@ -10988,7 +11070,10 @@ function reconcileCallPeers(call) {
     const present = new Map();
 
     for (const [key, metas] of Object.entries(state || {})) {
-        const meta = (Array.isArray(metas) && metas[0]) || {};
+        // A key that is mid-leave can linger with no entries; and after a track() update the newest entry is last.
+        if (!Array.isArray(metas) || metas.length === 0) continue;
+        if (key !== me && !callPeerAllowed(call, key)) continue;
+        const meta = metas[metas.length - 1] || {};
         everyone.push({ key, at: Number(meta.at) || 0 });
         if (key !== me) present.set(key, { username: meta.username || 'User', muted: Boolean(meta.muted) });
     }
@@ -11049,6 +11134,14 @@ function reconcileCallPeers(call) {
     updateCallUI(call);
 }
 
+// A decline/busy reply only counts if it is from the person we are calling and answers one of our rings.
+function ringReplyApplies(call, payload) {
+    if (!callIsCurrent(call) || call.isGroup || !call.isCaller || call.everHadPeer) return false;
+    if (payload && payload.from && payload.from !== call.partnerId) return false;
+    if (payload && payload.callId && !call.ringIds.has(payload.callId)) return false;
+    return true;
+}
+
 function bindCallRoomEvents(call, chan) {
     const mine = (payload) => payload && payload.to === currentUser?.id;
 
@@ -11063,14 +11156,36 @@ function bindCallRoomEvents(call, chan) {
             const from = msg?.payload?.from;
             if (callIsCurrent(call) && from && from !== currentUser.id) onCallPeerLeft(call, from);
         })
-        .on('broadcast', { event: 'call_declined' }, () => {
-            if (!callIsCurrent(call) || call.isGroup || !call.isCaller || call.everHadPeer) return;
+        .on('broadcast', { event: 'call_declined' }, (msg) => {
+            if (!ringReplyApplies(call, msg?.payload)) return;
             cleanupCall("Call Declined");
         })
-        .on('broadcast', { event: 'call_busy' }, () => {
-            if (!callIsCurrent(call) || call.isGroup || !call.isCaller || call.everHadPeer) return;
+        .on('broadcast', { event: 'call_busy' }, (msg) => {
+            if (!ringReplyApplies(call, msg?.payload)) return;
             cleanupCall("User is Busy");
         });
+}
+
+// Announces (or re-announces) us in the room's presence. The server forgets our presence when the socket
+// drops, and supabase-js rejoins the channel without replaying track(), so this runs again on every rejoin.
+async function trackCallPresence(call, attempts = 2) {
+    for (let i = 0; i < attempts; i++) {
+        if (!callIsCurrent(call) || !call.callChannel) return false;
+        try {
+            const result = await call.callChannel.track({
+                user_id: currentUser.id,
+                username: currentUsername,
+                at: call.joinedAt,
+                muted: Boolean(isMicMuted)
+            });
+            if (result === 'ok') return true;
+            callLog('presence track returned', result);
+        } catch (err) {
+            console.warn("Presence track failed:", err);
+        }
+        await new Promise(resolve => setTimeout(resolve, 400));
+    }
+    return false;
 }
 
 // Opens the call room, listens for signals and announces ourselves in presence.
@@ -11083,15 +11198,20 @@ async function joinCallRoom(call) {
     call.callChannel = chan;
     bindCallRoomEvents(call, chan);
 
-    const joined = await subscribeChannel(chan);
+    let subscriptions = 0;
+    const joined = await subscribeChannel(chan, 8000, (status) => {
+        if (status === 'SUBSCRIBED') {
+            if (++subscriptions > 1 && callIsCurrent(call)) {
+                callLog('call room rejoined; announcing again');
+                trackCallPresence(call);
+            }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('[call] call room problem:', status);
+        }
+    });
     if (!callIsCurrent(call) || !joined) return false;
 
-    await chan.track({
-        user_id: currentUser.id,
-        username: currentUsername,
-        at: call.joinedAt,
-        muted: Boolean(isMicMuted)
-    });
+    if (!(await trackCallPresence(call))) return false;
     if (!callIsCurrent(call)) return false;
 
     callLog('joined call room', call.conversationId);
@@ -11099,17 +11219,63 @@ async function joinCallRoom(call) {
     return true;
 }
 
+async function loadCallMembers(conversationId) {
+    try {
+        const { data, error } = await db
+            .from('conversation_members')
+            .select('user_id')
+            .eq('conversation_id', conversationId);
+        if (error || !data) return null;
+        return new Set(data.map(m => m.user_id));
+    } catch (e) {
+        return null;
+    }
+}
+
 // ---- ringing ------------------------------------------------------------------------
 
-function cancelOutgoingCall(call) {
-    const callIds = Array.from(call.ringIds);
+// Tells the given members (default: everyone not in the call) that these rings are over.
+function cancelOutgoingCall(call, callIds = Array.from(call.ringIds), onlyIds = null) {
     call.sigTargets.forEach((target) => {
-        if (!target.ready || call.roster.has(target.id)) return;
+        if (!target.ready || !target.chan || call.roster.has(target.id)) return;
+        if (onlyIds && !onlyIds.includes(target.id)) return;
         target.chan.send({
             type: 'broadcast',
             event: 'cancel_call',
             payload: { callerId: currentUser?.id, callIds, conversationId: call.conversationId }
         }).catch(() => {});
+    });
+}
+
+function sendRingPulse(call, target, onlyRing = null) {
+    if (!callIsCurrent(call) || !target.ready || !target.chan || call.roster.has(target.id)) return;
+    const rings = onlyRing ? [onlyRing] : Array.from(call.rings.values());
+    rings.forEach((ring) => {
+        if (ring.targetIds.includes(target.id)) {
+            target.chan.send({ type: 'broadcast', event: 'incoming_call', payload: ring.payload }).catch(() => {});
+        }
+    });
+}
+
+// Opens (or re-opens) the personal channel we ring someone on.
+function openSigTarget(call, target) {
+    if (target.opening || !callIsCurrent(call)) return;
+    target.opening = true;
+    target.attempts = (target.attempts || 0) + 1;
+    target.ready = false;
+    if (target.chan) { removeChannelTracked(target.chan); target.chan = null; }
+
+    openFreshChannel(`user_call_sig_${target.id}`).then((chan) => {
+        if (!callIsCurrent(call)) { removeChannelTracked(chan); target.opening = false; return; }
+        target.chan = chan;
+        return subscribeChannel(chan).then((ok) => {
+            target.opening = false;
+            target.ready = ok;
+            if (ok) sendRingPulse(call, target);
+        });
+    }).catch((err) => {
+        target.opening = false;
+        console.warn("Could not reach a call member's channel:", err);
     });
 }
 
@@ -11122,39 +11288,35 @@ function startRinging(call, ids, { initial = false } = {}) {
     const ringId = newCallId();
     call.ringIds.add(ringId);
     if (!call.callId) call.callId = ringId;
+    call.lastRingAt = Date.now();
 
-    const payload = {
-        callId: ringId,
-        isGroup: call.isGroup,
-        groupName: call.groupName,
-        callerId: currentUser.id,
-        callerUsername: currentUsername,
-        callerAvatar: currentAvatarUrl,
-        conversationId: call.conversationId
+    const ring = {
+        id: ringId,
+        targetIds,
+        pulses: 0,
+        timer: null,
+        payload: {
+            callId: ringId,
+            isGroup: call.isGroup,
+            groupName: call.groupName,
+            callerId: currentUser.id,
+            callerUsername: currentUsername,
+            callerAvatar: currentAvatarUrl,
+            conversationId: call.conversationId
+        }
     };
-
-    const pulse = (target) => {
-        if (!callIsCurrent(call) || !target.ready || call.roster.has(target.id)) return;
-        target.chan.send({ type: 'broadcast', event: 'incoming_call', payload }).catch(() => {});
-    };
+    call.rings.set(ringId, ring);
 
     // Personal channels are opened once and reused by later rings.
     targetIds.forEach((id) => {
-        let target = call.sigTargets.find(t => t.id === id);
-        if (target) {
-            pulse(target);
-            return;
+        const existing = call.sigTargets.find(t => t.id === id);
+        if (existing) {
+            sendRingPulse(call, existing, ring);
+        } else {
+            const target = { id, chan: null, ready: false, opening: false, attempts: 0 };
+            call.sigTargets.push(target);
+            openSigTarget(call, target);
         }
-        target = { id, chan: null, ready: false };
-        call.sigTargets.push(target);
-        openFreshChannel(`user_call_sig_${id}`).then((chan) => {
-            if (!callIsCurrent(call)) { removeChannelTracked(chan); return; }
-            target.chan = chan;
-            return subscribeChannel(chan).then((ok) => {
-                target.ready = ok;
-                if (ok) pulse(target);
-            });
-        }).catch(err => console.warn("Could not reach a call member's channel:", err));
     });
 
     targetIds.forEach(id => {
@@ -11166,31 +11328,36 @@ function startRinging(call, ids, { initial = false } = {}) {
         );
     });
 
-    let pulses = 0;
-    const timer = setInterval(() => {
-        if (!callIsCurrent(call)) { clearInterval(timer); call.ringTimers.delete(timer); return; }
+    const finishRing = () => {
+        clearInterval(ring.timer);
+        call.rings.delete(ringId);
+    };
+
+    ring.timer = setInterval(() => {
+        if (!callIsCurrent(call)) { finishRing(); return; }
 
         const waiting = call.sigTargets.filter(t => targetIds.includes(t.id) && !call.roster.has(t.id));
         const answeredOneToOne = !call.isGroup && call.roster.size > 0;
 
         if (waiting.length === 0 || answeredOneToOne) {
-            clearInterval(timer);
-            call.ringTimers.delete(timer);
+            finishRing();
             return;
         }
 
-        if (pulses >= CALL_RING_PULSES) {
-            clearInterval(timer);
-            call.ringTimers.delete(timer);
-            cancelOutgoingCall(call);
+        if (ring.pulses >= CALL_RING_PULSES) {
+            finishRing();
+            cancelOutgoingCall(call, [ringId], targetIds);
             if (initial && !call.everHadPeer) cleanupCall("No Answer");
             return;
         }
 
-        pulses++;
-        waiting.forEach(pulse);
+        ring.pulses++;
+        waiting.forEach((target) => {
+            // A personal channel that failed to join gets another few tries.
+            if (!target.ready && !target.opening && target.attempts < 3) openSigTarget(call, target);
+            else sendRingPulse(call, target, ring);
+        });
     }, 2500);
-    call.ringTimers.add(timer);
 }
 
 // ---- UI ------------------------------------------------------------------------------
@@ -11321,7 +11488,12 @@ function cleanupCall(statusNotice = null) {
         activeCall = null;
         callLog('cleaning up call', call.callId || '', statusNotice || '');
 
-        call.ringTimers.forEach(timer => clearInterval(timer));
+        // Leaving for any reason (hang-up, everyone left, failure) ends rings that are still going out.
+        call.rings.forEach((ring) => {
+            clearInterval(ring.timer);
+            cancelOutgoingCall(call, [ring.id], ring.targetIds);
+        });
+        call.rings.clear();
         clearInterval(call.callTimerInterval);
         clearInterval(call.speakTimer);
         clearTimeout(call.soloTimer);
@@ -11364,6 +11536,14 @@ function cleanupCall(statusNotice = null) {
     }
 }
 
+// A ringing popup for the conversation we have just started or joined a call in is now meaningless.
+function closeStaleIncomingPopup(call) {
+    if (incomingCallData && incomingCallData.conversationId === call.conversationId) {
+        (incomingCallData.ringIds || [incomingCallData.callId]).forEach(id => { if (id) handledCallIds.add(id); });
+        dismissIncomingCallUI();
+    }
+}
+
 async function startAudioCall() {
     if (!currentUser || !activeConversationId) {
         alert("Please select a conversation to start a call.");
@@ -11395,19 +11575,28 @@ async function startAudioCall() {
         });
         activeCall = call;
         callLog('starting call', isGroupCall ? 'group' : 'direct');
+        closeStaleIncomingPopup(call);
         updateCallUI(call);
         playRingtoneSound();
         attachSelfMeter(call);
 
         let targetIds = [targetPartnerId];
+        call.members = new Set([currentUser.id, targetPartnerId]);
         if (isGroupCall) {
-            const { data: members } = await db
+            const { data: members, error: membersError } = await db
                 .from('conversation_members')
                 .select('user_id')
                 .eq('conversation_id', targetConvId)
                 .neq('user_id', currentUser.id);
-            targetIds = (members || []).map(m => m.user_id);
             if (!callIsCurrent(call)) return;
+            if (membersError) throw new Error("Could not load the group's members.");
+            targetIds = (members || []).map(m => m.user_id);
+            call.members = new Set([currentUser.id, ...targetIds]);
+            if (targetIds.length === 0) {
+                cleanupCall("Nobody to call");
+                showToast({ title: "Nobody to call", message: "This group has no other members yet.", type: "info", icon: "📞", force: true });
+                return;
+            }
         }
 
         const joined = await joinCallRoom(call);
@@ -11447,7 +11636,7 @@ async function startAudioCall() {
 
 async function answerAudioCall() {
     if (!incomingCallData || !currentUser) return;
-    if (activeCall || isAnsweringCall) return;
+    if (activeCall || isAnsweringCall || callSetupInProgress) return;
 
     const data = incomingCallData;
     dismissIncomingCallUI();
@@ -11479,6 +11668,18 @@ async function answerAudioCall() {
         callLog('answering call', data.callId || '(no id)', call.isGroup ? 'group' : 'direct');
         updateCallUI(call);
         attachSelfMeter(call);
+
+        // Ringing is just a message anyone can send, so confirm this conversation really includes us and the caller.
+        // Only act on a roster we can actually see: if database policies hide other people's rows we get an
+        // empty or me-only list, which proves nothing, so we neither refuse the call nor restrict who may join.
+        const members = await loadCallMembers(call.conversationId);
+        if (!callIsCurrent(call)) return;
+        if (members && members.size > 0) {
+            if (!members.has(currentUser.id) || (members.size > 1 && data.callerId && !members.has(data.callerId))) {
+                throw new Error("This call does not belong to one of your conversations.");
+            }
+            if (members.size > 1) call.members = members;
+        }
 
         if (dmModal && dmModal.classList.contains('hidden')) {
             openMessagesModal();
@@ -11551,14 +11752,7 @@ function toggleCallMute() {
     }
 
     // Let everyone else's participant list show the mute state.
-    if (activeCall.callChannel) {
-        activeCall.callChannel.track({
-            user_id: currentUser.id,
-            username: currentUsername,
-            at: activeCall.joinedAt,
-            muted: isMicMuted
-        }).catch(() => {});
-    }
+    if (activeCall.callChannel) trackCallPresence(activeCall, 1);
     updateCallUI(activeCall);
 }
 
@@ -11571,8 +11765,6 @@ function endCurrentAudioCall() {
             event: 'call_leave',
             payload: { from: currentUser?.id }
         }).catch(() => {});
-        // Still ringing? Make sure the callee popups go away too.
-        if (!call.everHadPeer) cancelOutgoingCall(call);
         try { call.callChannel.untrack(); } catch (e) {}
     }
     cleanupCall("Call Ended");
@@ -11582,6 +11774,10 @@ function endCurrentAudioCall() {
 async function ringGroupAgain() {
     const call = activeCall;
     if (!callIsCurrent(call) || !call.isGroup || !db) return;
+    if (Date.now() - call.lastRingAt < 10000) {
+        showToast({ title: "Just rang them", message: "Give it a few seconds before ringing again.", type: "info", icon: "⏳", force: true });
+        return;
+    }
 
     const { data: members } = await db
         .from('conversation_members')
@@ -11624,6 +11820,7 @@ async function initUserCallSignaling() {
             .on('broadcast', { event: 'incoming_call' }, (payload) => {
                 const data = payload?.payload;
                 if (!data || !data.callerId) return;
+                if (callSetupInProgress) return; // mid-dial (e.g. the mic prompt is open): ignore pulses
 
                 // Already answering, or already in this conversation's call: ignore repeat pulses.
                 if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
@@ -11663,7 +11860,10 @@ async function initUserCallSignaling() {
                 const ids = [...(data?.callIds || []), ...(data?.callId ? [data.callId] : [])];
                 ids.forEach(id => handledCallIds.add(id));
                 if (incomingCallData && incomingCallData.callerId === data?.callerId) {
-                    dismissIncomingCallUI();
+                    // The popup may be backed by several ring waves (ring-again); only close it when all are cancelled.
+                    const stillRinging = (incomingCallData.ringIds || []).filter(id => !ids.includes(id));
+                    if (stillRinging.length === 0) dismissIncomingCallUI();
+                    else incomingCallData.ringIds = stillRinging;
                 }
                 // Remove the notification fallback row so the poller can't bring the popup back.
                 if (!incomingCallData) purgeIncomingCallNotifications();
@@ -12816,7 +13016,7 @@ function renderVoiceStageGrid() {
                     </div>
                 ` : ''}
                 <div class="voice-participant-avatar-wrap">
-                    <img src="${p.avatar_url || DEFAULT_AVATAR}" class="voice-participant-avatar" alt="${escapeHTML(p.username || 'User')}">
+                    <img src="${attrUrl(p.avatar_url, DEFAULT_AVATAR)}" class="voice-participant-avatar" alt="${escapeHTML(p.username || 'User')}">
                     <div class="voice-speaking-indicator" title="${isMuted ? 'Muted' : (isDeafened ? 'Deafened' : 'Active')}">${micIcon}</div>
                 </div>
                 <div class="voice-participant-name" title="@${escapeHTML(p.username || 'User')}">@${escapeHTML(p.username || 'User')}${isSelf ? ' (You)' : ''}</div>
