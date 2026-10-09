@@ -9475,7 +9475,14 @@ function setupCallChannelListeners(callChan, pc) {
                 if (!activeCall || !activeCall.peerConnection) return;
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
-                // Process any queued ICE candidates
+                // Process bundled candidates
+                if (data.candidates && Array.isArray(data.candidates)) {
+                    for (const c of data.candidates) {
+                        try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+                    }
+                }
+
+                // Process any manually queued ICE candidates
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     await pc.addIceCandidate(new RTCIceCandidate(c));
@@ -9533,7 +9540,11 @@ function setupCallChannelListeners(callChan, pc) {
                     callChan.send({
                         type: 'broadcast',
                         event: 'webrtc_offer',
-                        payload: { offer: activeCall.peerConnection.localDescription, from: currentUser.id }
+                        payload: { 
+                            offer: activeCall.peerConnection.localDescription, 
+                            candidates: activeCall.localIceCandidates || [],
+                            from: currentUser.id 
+                        }
                     });
                 }
             }
@@ -9597,16 +9608,22 @@ async function startAudioCall() {
             isCaller: true,
             callChannel: callChan,
             callStartTime: null,
-            callTimerInterval: null
+            callTimerInterval: null,
+            localIceCandidates: [] // Cache for late receivers
         };
 
         pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: event.candidate, from: currentUser.id }
-                });
+            if (event.candidate) {
+                if (activeCall && activeCall.localIceCandidates) {
+                    activeCall.localIceCandidates.push(event.candidate);
+                }
+                if (callChan) {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_ice',
+                        payload: { candidate: event.candidate, from: currentUser.id }
+                    });
+                }
             }
         };
 
@@ -9620,7 +9637,6 @@ async function startAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        // Pre-create offer before broadcasting so it is bundled directly in the invitation
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -9636,7 +9652,6 @@ async function startAudioCall() {
         };
 
         if (isGroupCall) {
-            // Group Calling: Query all members of conversation
             const { data: members } = await db
                 .from('conversation_members')
                 .select('user_id')
@@ -9647,7 +9662,11 @@ async function startAudioCall() {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
+                    callChan.send({ 
+                        type: 'broadcast', 
+                        event: 'webrtc_offer', 
+                        payload: { offer: plainOffer, candidates: activeCall.localIceCandidates || [], from: currentUser.id } 
+                    });
                 } catch (e) {}
 
                 (members || []).forEach(m => {
@@ -9669,7 +9688,6 @@ async function startAudioCall() {
                 }
             });
 
-            // Notify group members in database
             (members || []).forEach(m => {
                 sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
             });
@@ -9678,7 +9696,6 @@ async function startAudioCall() {
             playRingtoneSound();
 
         } else {
-            // 1-on-1 Calling
             const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`, {
                 config: { broadcast: { self: false } }
             });
@@ -9691,7 +9708,11 @@ async function startAudioCall() {
 
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
+                    callChan.send({ 
+                        type: 'broadcast', 
+                        event: 'webrtc_offer', 
+                        payload: { offer: plainOffer, candidates: activeCall.localIceCandidates || [], from: currentUser.id } 
+                    });
                 } catch (e) {}
             };
 
@@ -9709,7 +9730,6 @@ async function startAudioCall() {
                 }
             });
 
-            // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
             let dialCount = 0;
             activeCall.dialingInterval = setInterval(() => {
                 if (!activeCall || !activeCall.isCaller || dialCount > 14) {
@@ -9726,7 +9746,6 @@ async function startAudioCall() {
                 sendCallSignals();
             }, 2500);
 
-            // Layer 3: Database Signal Dispatch via user_notifications fallback
             sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
 
             showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
@@ -9814,48 +9833,16 @@ async function answerAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        // Robust offer processing
-        const offerData = data && data.offer;
-        const hasValidOffer = offerData && (offerData.sdp || typeof offerData === 'object');
-
-        if (hasValidOffer) {
-            try {
-                const sdpInit = offerData.sdp ? { type: offerData.type || 'offer', sdp: offerData.sdp } : offerData;
-                await pc.setRemoteDescription(new RTCSessionDescription(sdpInit));
-                
-                while (queuedIceCandidates.length > 0) {
-                    const c = queuedIceCandidates.shift();
-                    await pc.addIceCandidate(new RTCIceCandidate(c));
-                }
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                await callChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        callChan.send({
-                            type: 'broadcast',
-                            event: 'webrtc_answer',
-                            payload: {
-                                answer: { type: answer.type, sdp: answer.sdp },
-                                from: currentUser.id
-                            }
-                        });
-                    }
+        // Defer to receiver_ready logic to get a fresh bundled offer
+        await callChan.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'receiver_ready',
+                    payload: { from: currentUser.id }
                 });
-            } catch (err) {
-                console.error("Error setting up bundled offer:", err);
             }
-        } else {
-            await callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'receiver_ready',
-                        payload: { from: currentUser.id }
-                    });
-                }
-            });
-        }
+        });
 
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
@@ -9863,7 +9850,6 @@ async function answerAudioCall() {
             showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
         }
 
-        // Open direct messages modal and select active conversation
         if (dmModal && dmModal.classList.contains('hidden')) {
             openMessagesModal();
         }
@@ -10000,13 +9986,11 @@ function initUserCallSignaling() {
             if (!data || !data.callerId) return;
 
             if (activeCall || isAnsweringCall) {
-                // If we are already answering THIS specific call or actively in it, ignore the duplicate dialer pulse
                 if ((activeCall && activeCall.conversationId === data.conversationId) || 
                     (isAnsweringCall && answeringConversationId === data.conversationId)) {
                     return; 
                 }
                 
-                // Otherwise, bounce with a busy signal
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -10021,7 +10005,6 @@ function initUserCallSignaling() {
             }
 
             if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
-                // If user has disabled call notifications, auto decline/busy
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -10067,7 +10050,6 @@ function initUserCallSignaling() {
         .subscribe();
 }
 
-// Call button click listeners
 safeAddListener(startCallBtn, 'click', startAudioCall);
 safeAddListener(acceptCallBtn, 'click', answerAudioCall);
 safeAddListener(declineCallBtn, 'click', declineAudioCall);
