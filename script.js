@@ -416,7 +416,6 @@ const postImageFile = document.getElementById('post-image-file');
 const postPhotoPreviewBar = document.getElementById('post-photo-preview-bar');
 const postPhotoFilename = document.getElementById('post-photo-filename');
 const removePostPhotoBtn = document.getElementById('remove-post-photo-btn');
-let selectedPostPhotoFile = null;
 
 
 
@@ -776,52 +775,42 @@ async function compressImage(file, maxWidth = 1200, quality = 0.75) {
     // Exempt GIFs to preserve animation
     if (file.type === 'image/gif') return file;
 
+    // Decode from an object URL (no base64 copy of the whole file in memory).
+    const objectUrl = URL.createObjectURL(file);
 
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = reject;
+            image.src = objectUrl;
+        });
 
+        const needsResize = img.width > maxWidth;
+        const alreadyLight = file.size <= 350 * 1024 && /^image\/(jpeg|webp)$/.test(file.type);
 
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (event) => {
-            const img = new Image();
-            img.src = event.target.result;
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
+        // Small JPEG/WebP files gain nothing from a lossy re-encode.
+        if (!needsResize && alreadyLight) return file;
 
+        const scale = needsResize ? maxWidth / img.width : 1;
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
 
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
 
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+        if (!blob) throw new Error('Canvas empty');
 
-                if (width > maxWidth) {
-                    height = (maxWidth / width) * height;
-                    width = maxWidth;
-                }
-
-
-
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-
-
-
-                canvas.toBlob((blob) => {
-                    if (!blob) { reject(new Error('Canvas empty')); return; }
-                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpeg", {
-                        type: 'image/jpeg',
-                        lastModified: Date.now()
-                    });
-                    resolve(compressedFile);
-                }, 'image/jpeg', quality);
-            };
-            img.onerror = (err) => reject(err);
-        };
-        reader.onerror = (err) => reject(err);
-    });
+        return new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpeg", {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+        });
+    } finally {
+        URL.revokeObjectURL(objectUrl);
+    }
 }
 
 
@@ -926,14 +915,40 @@ safeAddListener(tabBtnSettingsPrivacy, 'click', () => switchSettingsTab('privacy
 
 
 // Audio & Calling technical toggles listeners
-safeAddListener(audioOptEcho, 'change', () => { userAudioSettings.echoCancellation = audioOptEcho.checked; saveAudioSettings(); });
-safeAddListener(audioOptNoise, 'change', () => { userAudioSettings.noiseSuppression = audioOptNoise.checked; saveAudioSettings(); });
-safeAddListener(audioOptGain, 'change', () => { userAudioSettings.autoGainControl = audioOptGain.checked; saveAudioSettings(); });
+// Push mic-processing and deafen changes into any call / voice stage that is already running, so the
+// settings button works mid-session instead of only taking effect on the next connection.
+function applyAudioSettingsLive() {
+    const constraints = {
+        echoCancellation: Boolean(userAudioSettings.echoCancellation),
+        noiseSuppression: Boolean(userAudioSettings.noiseSuppression),
+        autoGainControl: Boolean(userAudioSettings.autoGainControl)
+    };
+    [typeof activeCall !== 'undefined' && activeCall ? activeCall.localStream : null,
+     typeof voiceStageLocalStream !== 'undefined' ? voiceStageLocalStream : null].forEach(stream => {
+        if (!stream) return;
+        stream.getAudioTracks().forEach(track => {
+            track.applyConstraints(constraints).catch(() => {});
+        });
+    });
+}
+
+function applyDeafenLive() {
+    if (remoteAudioEl) remoteAudioEl.muted = userAudioSettings.deafen;
+    if (typeof voiceStagePeers !== 'undefined') {
+        voiceStagePeers.forEach(peer => {
+            if (peer.audioEl) peer.audioEl.muted = Boolean(voiceStageIsDeafened || userAudioSettings.deafen);
+        });
+    }
+}
+
+safeAddListener(audioOptEcho, 'change', () => { userAudioSettings.echoCancellation = audioOptEcho.checked; saveAudioSettings(); applyAudioSettingsLive(); });
+safeAddListener(audioOptNoise, 'change', () => { userAudioSettings.noiseSuppression = audioOptNoise.checked; saveAudioSettings(); applyAudioSettingsLive(); });
+safeAddListener(audioOptGain, 'change', () => { userAudioSettings.autoGainControl = audioOptGain.checked; saveAudioSettings(); applyAudioSettingsLive(); });
 safeAddListener(audioOptHifi, 'change', () => { userAudioSettings.highFidelity = audioOptHifi.checked; saveAudioSettings(); });
 safeAddListener(audioOptDeafen, 'change', () => {
     userAudioSettings.deafen = audioOptDeafen.checked;
     saveAudioSettings();
-    if (remoteAudioEl) remoteAudioEl.muted = userAudioSettings.deafen;
+    applyDeafenLive();
     showToast({
         title: "Audio Setting",
         message: userAudioSettings.deafen ? "Global deafen enabled (all incoming audio muted)." : "Global deafen disabled.",
@@ -1342,7 +1357,14 @@ function openSettingsModal() {
     
     if (notificationsModal) notificationsModal.classList.add('hidden');
     if (userProfileModal) userProfileModal.classList.add('hidden');
-    if (profileModal) profileModal.classList.remove('hidden');
+    // The live chat / voice stage overlay is forced to z-index 20000 in the stylesheet; without lifting the
+    // settings modal above it, the modal opens hidden behind the stage and the settings button appears to do
+    // nothing. 21000 stays below the call windows and voice-invite dialog (24998+).
+    const liveChatOpen = Boolean(voiceForumModal && !voiceForumModal.classList.contains('hidden'));
+    if (profileModal) {
+        profileModal.style.zIndex = liveChatOpen ? '21000' : '';
+        profileModal.classList.remove('hidden');
+    }
     
     setMobileTabActive('profile');
 }
@@ -3104,9 +3126,38 @@ function saveSidebarThreadOrder() {
 
 
 
+// --- JOINED THREADS PANEL (collapsible on single-column / phone layouts) ---
+const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
+const sidebarActiveName = document.getElementById('sidebar-active-name');
+const singleColumnQuery = window.matchMedia ? window.matchMedia('(max-width: 860px)') : { matches: false };
+
+function setSidebarCollapsed(collapsed, remember = true) {
+    const panel = document.querySelector('.threads-sidebar');
+    if (!panel) return;
+    panel.classList.toggle('collapsed', collapsed);
+    if (sidebarCollapseBtn) sidebarCollapseBtn.setAttribute('aria-expanded', String(!collapsed));
+    if (remember) {
+        try { localStorage.setItem('forum_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+    }
+}
+
+(function initSidebarCollapse() {
+    let saved = null;
+    try { saved = localStorage.getItem('forum_sidebar_collapsed'); } catch (e) {}
+    // On phones start collapsed (feed first) unless the user chose otherwise.
+    setSidebarCollapsed(saved === null ? singleColumnQuery.matches : saved === '1', false);
+    if (sidebarCollapseBtn) {
+        sidebarCollapseBtn.addEventListener('click', () => {
+            const panel = document.querySelector('.threads-sidebar');
+            setSidebarCollapsed(!(panel && panel.classList.contains('collapsed')));
+        });
+    }
+})();
+
 function renderJoinedThreadsSidebar() {
     if (!joinedThreadsContainer) return;
     joinedThreadsContainer.innerHTML = '';
+    if (sidebarActiveName) sidebarActiveName.textContent = activeThread || '';
 
 
 
@@ -3162,7 +3213,7 @@ function renderJoinedThreadsSidebar() {
 
         item.innerHTML = `
             <div class="thread-nav-content">
-                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>${isMandatory ? '<span style="font-size: 0.68rem; opacity: 0.7; margin-left: 6px;">Default</span>' : ''}
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${icon} ${escapeHTML(tName)}</span>${isMandatory ? '<span class="thread-default-tag" style="font-size: 0.68rem; opacity: 0.7; margin-left: 6px;">Default</span>' : ''}
             </div>
             <span class="thread-drag-handle" title="Drag to reorder">⋮⋮</span>
         `;
@@ -3190,6 +3241,8 @@ function renderJoinedThreadsSidebar() {
 
                 renderJoinedThreadsSidebar();
                 updateThreadControlsUI();
+                // Picking a thread on a phone: tuck the list away and show the feed.
+                if (singleColumnQuery.matches) setSidebarCollapsed(true, false);
 
 
 
@@ -4256,27 +4309,635 @@ function renderFormattedContent(text) {
 
 
 
-// --- PHOTO ATTACHMENTS ---
+// --- POST MEDIA: MULTI-PHOTO CAROUSELS & INLINE VIDEO ---
+// Storage format (Posts.image_url, still a plain text column):
+//   * one photo        -> the bare URL, exactly as before (older posts keep working)
+//   * several / video  -> JSON array of { t: 'i'|'v', u: url, p?: poster url, w?, h? }
+const MAX_POST_MEDIA = 10;
+const MAX_POST_VIDEOS = 3;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // Supabase's default per-file cap
+const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
+const MEDIA_BUCKET = 'chat-images';
+const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)(?:[?#].*)?$/i;
 
+let postMediaQueue = []; // { id, file, kind, thumbUrl, poster: {blob, w, h} | null, duration }
+let postMediaSeq = 0;
 
+function isVideoFile(file) {
+    return (file.type && file.type.startsWith('video/')) || VIDEO_EXT_RE.test(file.name || '');
+}
 
+function safeMediaUrl(url) {
+    return typeof url === 'string' && /^https?:\/\//i.test(url.trim()) ? url.trim() : '';
+}
+
+function formatBytes(bytes) {
+    if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+// Small preview for the composer so ten 12MP photos don't sit decoded in memory.
+async function makeImageThumb(file) {
+    try {
+        const bitmap = await createImageBitmap(file, { resizeWidth: 220, resizeQuality: 'medium' });
+        const canvas = document.createElement('canvas');
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        if (bitmap.close) bitmap.close();
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.7));
+        if (blob) return URL.createObjectURL(blob);
+    } catch (e) {}
+    return URL.createObjectURL(file);
+}
+
+// First-frame poster + dimensions for a video, so feed cards lay out instantly
+// and don't download any video bytes until they are scrolled into view.
+function extractVideoMeta(file) {
+    return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        let settled = false;
+
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            video.removeAttribute('src');
+            video.load();
+            URL.revokeObjectURL(url);
+            resolve(result);
+        };
+
+        const timer = setTimeout(() => finish(null), 10000);
+
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.addEventListener('error', () => finish(null));
+        video.addEventListener('loadedmetadata', () => {
+            try {
+                video.currentTime = Math.min(0.1, (video.duration || 1) / 2);
+            } catch (e) { finish(null); }
+        });
+        video.addEventListener('seeked', () => {
+            const maxWidth = 960;
+            const scale = Math.min(1, maxWidth / (video.videoWidth || maxWidth));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(2, Math.round(video.videoWidth * scale));
+            canvas.height = Math.max(2, Math.round(video.videoHeight * scale));
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+            const duration = video.duration;
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            canvas.toBlob((blob) => {
+                finish(blob ? { blob, w, h, duration } : { blob: null, w, h, duration });
+            }, 'image/jpeg', 0.72);
+        });
+        video.src = url;
+    });
+}
+
+async function prepareMediaItem(item) {
+    if (item.kind === 'image') {
+        item.thumbUrl = await makeImageThumb(item.file);
+    } else {
+        const meta = await extractVideoMeta(item.file);
+        if (meta) {
+            item.poster = meta.blob ? { blob: meta.blob, w: meta.w, h: meta.h } : null;
+            item.width = meta.w;
+            item.height = meta.h;
+            item.duration = meta.duration;
+            if (meta.blob) item.thumbUrl = URL.createObjectURL(meta.blob);
+        }
+    }
+    // The item may have been removed while it was being prepared.
+    if (!postMediaQueue.includes(item)) {
+        releaseMediaItem(item);
+        return;
+    }
+    renderPostMediaPreview();
+}
+
+function releaseMediaItem(item) {
+    if (item.thumbUrl) {
+        try { URL.revokeObjectURL(item.thumbUrl); } catch (e) {}
+        item.thumbUrl = null;
+    }
+}
+
+function clearPostMedia() {
+    postMediaQueue.forEach(releaseMediaItem);
+    postMediaQueue = [];
+    if (postImageFile) postImageFile.value = '';
+    renderPostMediaPreview();
+}
+
+function renderPostMediaPreview() {
+    if (!postPhotoPreviewBar) return;
+    const grid = document.getElementById('post-media-grid');
+
+    if (postMediaQueue.length === 0) {
+        postPhotoPreviewBar.classList.add('hidden');
+        if (grid) grid.innerHTML = '';
+        return;
+    }
+
+    postPhotoPreviewBar.classList.remove('hidden');
+
+    const videos = postMediaQueue.filter(m => m.kind === 'video').length;
+    const photos = postMediaQueue.length - videos;
+    const totalBytes = postMediaQueue.reduce((sum, m) => sum + m.file.size, 0);
+    const parts = [];
+    if (photos) parts.push(`${photos} photo${photos === 1 ? '' : 's'}`);
+    if (videos) parts.push(`${videos} video${videos === 1 ? '' : 's'}`);
+    if (postPhotoFilename) {
+        postPhotoFilename.textContent = `◈ ${parts.join(' · ')} (${formatBytes(totalBytes)}) — ${postMediaQueue.length}/${MAX_POST_MEDIA}`;
+    }
+
+    if (!grid) return;
+    grid.innerHTML = postMediaQueue.map((m, i) => `
+        <div class="post-media-thumb" data-id="${m.id}">
+            ${m.thumbUrl
+                ? `<img src="${m.thumbUrl}" alt="Attachment ${i + 1}" draggable="false">`
+                : `<div class="post-media-loading"></div>`}
+            ${m.kind === 'video' ? '<span class="post-media-badge">▶ Video</span>' : ''}
+            <span class="post-media-order">${i + 1}</span>
+            <button type="button" class="post-media-btn post-media-remove" data-act="remove" data-id="${m.id}" aria-label="Remove attachment ${i + 1}">✕</button>
+            ${postMediaQueue.length > 1 ? `
+                <div class="post-media-move">
+                    <button type="button" class="post-media-btn" data-act="left" data-id="${m.id}" aria-label="Move earlier" ${i === 0 ? 'disabled' : ''}>‹</button>
+                    <button type="button" class="post-media-btn" data-act="right" data-id="${m.id}" aria-label="Move later" ${i === postMediaQueue.length - 1 ? 'disabled' : ''}>›</button>
+                </div>` : ''}
+        </div>
+    `).join('');
+}
+
+function addPostMediaFiles(fileList) {
+    const rejected = [];
+
+    for (const file of Array.from(fileList || [])) {
+        const video = isVideoFile(file);
+
+        if (!video && !(file.type && file.type.startsWith('image/'))) {
+            rejected.push(`${file.name}: only photos and videos can be attached.`);
+            continue;
+        }
+        if (postMediaQueue.length >= MAX_POST_MEDIA) {
+            rejected.push(`A post can have at most ${MAX_POST_MEDIA} attachments.`);
+            break;
+        }
+        if (video) {
+            if (postMediaQueue.filter(m => m.kind === 'video').length >= MAX_POST_VIDEOS) {
+                rejected.push(`A post can have at most ${MAX_POST_VIDEOS} videos.`);
+                continue;
+            }
+            if (file.size > MAX_VIDEO_BYTES) {
+                rejected.push(`${file.name} is ${formatBytes(file.size)}; videos must be under ${formatBytes(MAX_VIDEO_BYTES)}.`);
+                continue;
+            }
+        } else if (file.size > MAX_IMAGE_BYTES) {
+            rejected.push(`${file.name} is ${formatBytes(file.size)}; photos must be under ${formatBytes(MAX_IMAGE_BYTES)}.`);
+            continue;
+        }
+
+        const item = {
+            id: ++postMediaSeq,
+            file,
+            kind: video ? 'video' : 'image',
+            thumbUrl: null,
+            poster: null,
+            width: 0,
+            height: 0,
+            duration: 0
+        };
+        postMediaQueue.push(item);
+        item.ready = prepareMediaItem(item).then(null, () => {});
+    }
+
+    renderPostMediaPreview();
+
+    if (rejected.length) {
+        showToast({
+            title: "Some files were skipped",
+            message: Array.from(new Set(rejected)).join(' '),
+            type: "error",
+            icon: "⚠",
+            duration: 6500,
+            force: true
+        });
+    }
+}
 
 safeAddListener(postImageFile, 'change', () => {
-    const file = postImageFile.files[0];
-    if (file) {
-        selectedPostPhotoFile = file;
-        if (postPhotoFilename) postPhotoFilename.textContent = `◈ ${file.name} (${(file.size / 1024).toFixed(0)} KB)`;
-        if (postPhotoPreviewBar) postPhotoPreviewBar.classList.remove('hidden');
-    }
+    addPostMediaFiles(postImageFile.files);
+    // Allow picking the same file again after removing it.
+    postImageFile.value = '';
 });
 
+safeAddListener(removePostPhotoBtn, 'click', clearPostMedia);
 
+safeAddListener(document.getElementById('post-media-grid'), 'click', (e) => {
+    const btn = e.target.closest('.post-media-btn');
+    if (!btn || btn.disabled) return;
 
+    const id = Number(btn.getAttribute('data-id'));
+    const index = postMediaQueue.findIndex(m => m.id === id);
+    if (index < 0) return;
 
-safeAddListener(removePostPhotoBtn, 'click', () => {
-    selectedPostPhotoFile = null;
-    if (postImageFile) postImageFile.value = '';
-    if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
+    const act = btn.getAttribute('data-act');
+    if (act === 'remove') {
+        releaseMediaItem(postMediaQueue[index]);
+        postMediaQueue.splice(index, 1);
+    } else {
+        const target = act === 'left' ? index - 1 : index + 1;
+        if (target < 0 || target >= postMediaQueue.length) return;
+        [postMediaQueue[index], postMediaQueue[target]] = [postMediaQueue[target], postMediaQueue[index]];
+    }
+    renderPostMediaPreview();
+});
+
+// Uploads every queued attachment (3 at a time) and returns the media entries
+// to store on the post. On any failure the files already uploaded are removed.
+async function uploadPostMedia(items, onProgress) {
+    // Posters and dimensions are still being extracted if the user publishes quickly.
+    await Promise.all(items.map(item => item.ready).filter(Boolean));
+
+    const entries = new Array(items.length);
+    const uploadedPaths = [];
+    let completed = 0;
+    let next = 0;
+    let failure = null;
+
+    const uploadOne = async (item, index) => {
+        const stamp = `${currentUser.id}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`;
+        const uploadOpts = (contentType) => ({ contentType, cacheControl: '31536000', upsert: false });
+
+        if (item.kind === 'image') {
+            const compressed = await compressImage(item.file, 1280, 0.78);
+            const ext = (compressed.name.split('.').pop() || 'jpeg').toLowerCase();
+            const path = `forum_posts/${stamp}.${ext}`;
+            const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, compressed, uploadOpts(compressed.type || 'image/jpeg'));
+            if (error) throw new Error(`"${item.file.name}": ${error.message}`);
+            uploadedPaths.push(path);
+            entries[index] = { t: 'i', u: db.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl };
+            return;
+        }
+
+        const ext = (item.file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+        const path = `forum_posts/${stamp}.${ext}`;
+        const videoType = item.file.type || (ext === 'webm' ? 'video/webm' : 'video/mp4');
+        const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, item.file, uploadOpts(videoType));
+        if (error) throw new Error(`"${item.file.name}": ${error.message}`);
+        uploadedPaths.push(path);
+
+        const entry = { t: 'v', u: db.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl };
+        if (item.width && item.height) { entry.w = item.width; entry.h = item.height; }
+
+        if (item.poster && item.poster.blob) {
+            const posterPath = `forum_posts/${stamp}_poster.jpeg`;
+            const posterRes = await db.storage.from(MEDIA_BUCKET).upload(posterPath, item.poster.blob, uploadOpts('image/jpeg'));
+            if (!posterRes.error) {
+                uploadedPaths.push(posterPath);
+                entry.p = db.storage.from(MEDIA_BUCKET).getPublicUrl(posterPath).data.publicUrl;
+            }
+        }
+        entries[index] = entry;
+    };
+
+    const worker = async () => {
+        while (!failure && next < items.length) {
+            const index = next++;
+            try {
+                await uploadOne(items[index], index);
+                completed++;
+                if (onProgress) onProgress(completed, items.length);
+            } catch (err) {
+                failure = failure || err;
+            }
+        }
+    };
+
+    await Promise.all([worker(), worker(), worker()]);
+
+    if (failure) {
+        if (uploadedPaths.length) {
+            await db.storage.from(MEDIA_BUCKET).remove(uploadedPaths).then(null, () => {});
+        }
+        throw new Error(`Upload failed for ${failure.message}`);
+    }
+    return entries;
+}
+
+function encodePostMedia(entries) {
+    if (!entries || entries.length === 0) return null;
+    if (entries.length === 1 && entries[0].t === 'i') return entries[0].u; // legacy single-photo format
+    return JSON.stringify(entries);
+}
+
+function parsePostMedia(raw) {
+    if (!raw) return [];
+
+    let list = null;
+    if (Array.isArray(raw)) {
+        list = raw;
+    } else if (typeof raw === 'string') {
+        const text = raw.trim();
+        if (text.startsWith('[')) {
+            try { list = JSON.parse(text); } catch (e) { list = null; }
+        }
+        if (!Array.isArray(list)) list = [text];
+    }
+    if (!list) return [];
+
+    return list.slice(0, 20).map((entry) => {
+        if (typeof entry === 'string') {
+            const url = safeMediaUrl(entry);
+            return url ? { type: VIDEO_EXT_RE.test(url) ? 'video' : 'image', url } : null;
+        }
+        if (!entry || typeof entry !== 'object') return null;
+        const url = safeMediaUrl(entry.u || entry.url || entry.v);
+        if (!url) return null;
+        const isVideo = entry.t === 'v' || Boolean(entry.v) || VIDEO_EXT_RE.test(url);
+        return {
+            type: isVideo ? 'video' : 'image',
+            url,
+            poster: safeMediaUrl(entry.p),
+            width: Number(entry.w) || 0,
+            height: Number(entry.h) || 0
+        };
+    }).filter(Boolean);
+}
+
+const PLAY_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const MUTED_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
+const SOUND_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+const FULLSCREEN_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>';
+
+function videoSlideHtml(media, inCarousel) {
+    const ratio = media.width && media.height ? `aspect-ratio: ${media.width} / ${media.height};` : '';
+    const poster = media.poster ? ` poster="${escapeHTML(media.poster)}"` : '';
+    // Without a poster, fetch metadata up front so the first frame can show.
+    const preload = media.poster ? 'none' : 'metadata';
+    const initialSrc = media.poster ? '' : ` src="${escapeHTML(media.url)}#t=0.001"`;
+
+    return `
+        <div class="video-wrap${inCarousel ? ' in-carousel' : ''} is-paused is-muted" style="${ratio}">
+            <video class="inline-video" muted loop playsinline webkit-playsinline preload="${preload}"${poster}${initialSrc}
+                   data-src="${escapeHTML(media.url)}" aria-label="Video attachment"></video>
+            <button type="button" class="video-center-play" aria-label="Play video">${PLAY_ICON}</button>
+            <div class="video-controls">
+                <button type="button" class="video-btn video-mute" aria-label="Toggle sound"><span class="icon-muted">${MUTED_ICON}</span><span class="icon-sound">${SOUND_ICON}</span></button>
+                <button type="button" class="video-btn video-fs" aria-label="Fullscreen">${FULLSCREEN_ICON}</button>
+            </div>
+            <div class="video-progress" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100"><div class="video-progress-bar"></div></div>
+            <div class="video-error hidden">Video unavailable. <a href="${escapeHTML(media.url)}" target="_blank" rel="noopener noreferrer">Open file</a></div>
+        </div>`;
+}
+
+function renderPostMediaHtml(post) {
+    const media = parsePostMedia(post.image_url);
+    if (media.length === 0) return '';
+
+    const slide = (m, index, inCarousel) => {
+        if (m.type === 'video') return videoSlideHtml(m, inCarousel);
+        const url = escapeHTML(m.url);
+        return inCarousel
+            ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="media-link"><img src="${url}" class="media-img" alt="Post photo ${index + 1} of ${media.length}" loading="lazy" decoding="async" draggable="false"></a>`
+            : `<a href="${url}" target="_blank" rel="noopener noreferrer"><img src="${url}" class="post-img-thumb" alt="Post photo" loading="lazy" decoding="async"></a>`;
+    };
+
+    if (media.length === 1) {
+        return `<div class="post-media">${slide(media[0], 0, false)}</div>`;
+    }
+
+    return `
+        <div class="media-carousel" data-count="${media.length}" data-index="0" role="group" aria-roledescription="carousel" aria-label="${media.length} attachments">
+            <div class="media-track" tabindex="0">
+                ${media.map((m, i) => `<div class="media-slide" role="group" aria-roledescription="slide" aria-label="${i + 1} of ${media.length}">${slide(m, i, true)}</div>`).join('')}
+            </div>
+            <button type="button" class="media-nav media-prev" aria-label="Previous attachment" hidden>‹</button>
+            <button type="button" class="media-nav media-next" aria-label="Next attachment">›</button>
+            <div class="media-counter" aria-hidden="true">1 / ${media.length}</div>
+            <div class="media-dots">${media.map((_, i) => `<button type="button" class="media-dot${i === 0 ? ' active' : ''}" data-i="${i}" aria-label="Go to attachment ${i + 1}"></button>`).join('')}</div>
+        </div>`;
+}
+
+// --- Carousel behaviour (delegated, one listener set for the whole feed) ---
+function syncCarousel(carousel) {
+    const track = carousel.querySelector('.media-track');
+    if (!track || !track.clientWidth) return;
+
+    const count = Number(carousel.dataset.count) || 1;
+    const index = Math.max(0, Math.min(count - 1, Math.round(track.scrollLeft / track.clientWidth)));
+    carousel.dataset.index = String(index);
+
+    const counter = carousel.querySelector('.media-counter');
+    if (counter) counter.textContent = `${index + 1} / ${count}`;
+    carousel.querySelectorAll('.media-dot').forEach((dot, i) => dot.classList.toggle('active', i === index));
+
+    const prev = carousel.querySelector('.media-prev');
+    const next = carousel.querySelector('.media-next');
+    if (prev) prev.hidden = index === 0;
+    if (next) next.hidden = index === count - 1;
+}
+
+function goToSlide(carousel, index) {
+    const track = carousel.querySelector('.media-track');
+    const count = Number(carousel.dataset.count) || 1;
+    if (!track) return;
+    const target = Math.max(0, Math.min(count - 1, index));
+    track.scrollTo({ left: target * track.clientWidth, behavior: 'smooth' });
+}
+
+document.addEventListener('scroll', (e) => {
+    const track = e.target;
+    if (!(track instanceof Element) || !track.classList.contains('media-track')) return;
+    if (track._syncFrame) return;
+    track._syncFrame = requestAnimationFrame(() => {
+        track._syncFrame = 0;
+        const carousel = track.closest('.media-carousel');
+        if (carousel) syncCarousel(carousel);
+    });
+}, true);
+
+document.addEventListener('keydown', (e) => {
+    const track = e.target;
+    if (!(track instanceof Element) || !track.classList.contains('media-track')) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const carousel = track.closest('.media-carousel');
+    if (!carousel) return;
+    e.preventDefault();
+    goToSlide(carousel, Number(carousel.dataset.index) + (e.key === 'ArrowRight' ? 1 : -1));
+});
+
+// --- Inline video: plays muted while visible in the feed, pauses off-screen ---
+const trackedVideos = new Set();
+let activeInlineVideo = null;
+
+const autoplayAllowed = () => {
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const saver = navigator.connection && navigator.connection.saveData;
+    return !reduced && !saver;
+};
+
+function ensureVideoSource(video) {
+    if (!video.getAttribute('src') && video.dataset.src) {
+        video.src = video.dataset.src;
+        video.load();
+    }
+}
+
+function pauseInlineVideo(video) {
+    if (!video) return;
+    try { video.pause(); } catch (e) {}
+    if (activeInlineVideo === video) activeInlineVideo = null;
+}
+
+function playInlineVideo(video) {
+    if (video.dataset.userPaused === '1' || document.hidden || !autoplayAllowed()) return;
+    if (activeInlineVideo && activeInlineVideo !== video) pauseInlineVideo(activeInlineVideo);
+    activeInlineVideo = video;
+    ensureVideoSource(video);
+    const attempt = video.play();
+    if (attempt && attempt.catch) attempt.catch(() => { /* autoplay blocked; the play button stays visible */ });
+}
+
+function releaseVideoSource(video) {
+    // Free decoder/network resources for videos far from the viewport.
+    if (!video.paused || !video.getAttribute('src') || video.dataset.userPaused === '1') return;
+    video.removeAttribute('src');
+    video.load();
+}
+
+const videoPlayObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            const video = entry.target;
+            if (!video.isConnected) {
+                videoPlayObserver.unobserve(video);
+                trackedVideos.delete(video);
+                if (activeInlineVideo === video) activeInlineVideo = null;
+                continue;
+            }
+            video._ratio = entry.intersectionRatio;
+            if (entry.intersectionRatio >= 0.6) playInlineVideo(video);
+            else if (entry.intersectionRatio < 0.3) pauseInlineVideo(video);
+        }
+    }, { threshold: [0, 0.3, 0.6, 0.9] })
+    : null;
+
+const videoUnloadObserver = 'IntersectionObserver' in window
+    ? new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting && entry.target.isConnected) releaseVideoSource(entry.target);
+        }
+    }, { rootMargin: '250% 0px 250% 0px' })
+    : null;
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        pauseInlineVideo(activeInlineVideo);
+        return;
+    }
+    // Resume whichever video is most visible after returning to the tab.
+    let best = null;
+    trackedVideos.forEach((video) => {
+        if (video.isConnected && (video._ratio || 0) >= 0.6 && (!best || video._ratio > best._ratio)) best = video;
+    });
+    if (best) playInlineVideo(best);
+});
+
+function wireInlineVideo(video) {
+    const wrap = video.closest('.video-wrap');
+    if (!wrap) return;
+    const bar = wrap.querySelector('.video-progress-bar');
+
+    video.addEventListener('play', () => { wrap.classList.remove('is-paused'); });
+    video.addEventListener('pause', () => { wrap.classList.add('is-paused'); });
+    video.addEventListener('volumechange', () => { wrap.classList.toggle('is-muted', video.muted); });
+    video.addEventListener('timeupdate', () => {
+        if (bar && video.duration) bar.style.width = `${(video.currentTime / video.duration) * 100}%`;
+    });
+    video.addEventListener('error', () => {
+        // A released source also fires no error; only real failures reach here.
+        if (!video.getAttribute('src')) return;
+        const message = wrap.querySelector('.video-error');
+        if (message) message.classList.remove('hidden');
+        wrap.classList.add('has-error');
+    });
+
+    trackedVideos.add(video);
+    if (videoPlayObserver) videoPlayObserver.observe(video);
+    if (videoUnloadObserver) videoUnloadObserver.observe(video);
+}
+
+function hydratePostMedia(root) {
+    root.querySelectorAll('video.inline-video').forEach(wireInlineVideo);
+}
+
+document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+
+    // Carousel arrows and dots
+    const nav = target.closest('.media-nav, .media-dot');
+    if (nav) {
+        const carousel = nav.closest('.media-carousel');
+        if (!carousel) return;
+        const current = Number(carousel.dataset.index) || 0;
+        if (nav.classList.contains('media-dot')) goToSlide(carousel, Number(nav.dataset.i));
+        else goToSlide(carousel, current + (nav.classList.contains('media-next') ? 1 : -1));
+        return;
+    }
+
+    const wrap = target.closest('.video-wrap');
+    if (!wrap) return;
+    const video = wrap.querySelector('video');
+    if (!video) return;
+
+    if (target.closest('.video-mute')) {
+        video.muted = !video.muted;
+        if (!video.muted && video.paused) {
+            video.dataset.userPaused = '0';
+            playInlineVideo(video);
+        }
+        return;
+    }
+
+    if (target.closest('.video-fs')) {
+        ensureVideoSource(video);
+        const request = video.requestFullscreen || video.webkitRequestFullscreen || video.webkitEnterFullscreen;
+        if (request) {
+            const result = request.call(video);
+            if (result && result.catch) result.catch(() => {});
+        }
+        return;
+    }
+
+    if (target.closest('.video-progress')) {
+        ensureVideoSource(video);
+        const rect = wrap.querySelector('.video-progress').getBoundingClientRect();
+        if (video.duration && rect.width) {
+            video.currentTime = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * video.duration;
+        }
+        return;
+    }
+
+    if (target.closest('.video-error a')) return;
+
+    // Tap the picture or the big play button: toggle playback.
+    if (video.paused) {
+        video.dataset.userPaused = '0';
+        activeInlineVideo && activeInlineVideo !== video && pauseInlineVideo(activeInlineVideo);
+        activeInlineVideo = video;
+        ensureVideoSource(video);
+        const attempt = video.play();
+        if (attempt && attempt.catch) attempt.catch(() => {});
+    } else {
+        video.dataset.userPaused = '1';
+        pauseInlineVideo(video);
+    }
 });
 
 
@@ -6350,7 +7011,7 @@ function createPostCardElement(post) {
 
 
 
-    const photoHtml = post.image_url ? `<a href="${post.image_url}" target="_blank" rel="noopener noreferrer"><img src="${post.image_url}" class="post-img-thumb" alt="Post photo" loading="lazy"></a>` : '';
+    const photoHtml = renderPostMediaHtml(post);
     const cleanAuthor = (post.author || 'anonymous').toLowerCase().replace('@', '');
     const authorAvatar = usernameAvatarMap.get(cleanAuthor) || DEFAULT_AVATAR;
     const renderedBody = post.is_pinned && !post.poll_options ? post.content : renderFormattedContent(post.content || '');
@@ -6456,6 +7117,8 @@ function createPostCardElement(post) {
 
 
 
+
+    hydratePostMedia(item);
 
     item.querySelectorAll('.clickable-username, .post-author-avatar').forEach(clickable => {
         clickable.addEventListener('click', (e) => {
@@ -7139,7 +7802,7 @@ function escapeHTML(str) {
 
 
 
-function resetTelemetryConsole() {
+function resetTelemetryConsole({ keepContent = false } = {}) {
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = null;
     pageLoadTime = null;
@@ -7148,19 +7811,19 @@ function resetTelemetryConsole() {
     keystrokeGaps = [];
     mouseMovementsRecorded = 0;
     lastKeyTime = null;
-    if (textBox) textBox.value = '';
-    const titleInput = document.getElementById('post-title-input');
-    if (titleInput) titleInput.value = '';
-    selectedPostPhotoFile = null;
-    if (postImageFile) postImageFile.value = '';
-    if (postPhotoPreviewBar) postPhotoPreviewBar.classList.add('hidden');
+    if (!keepContent) {
+        if (textBox) textBox.value = '';
+        const titleInput = document.getElementById('post-title-input');
+        if (titleInput) titleInput.value = '';
+        clearPostMedia();
+    }
     if (statPaste) { statPaste.textContent = "FALSE"; statPaste.className = "badge badge-green"; }
     if (statTimer) statTimer.textContent = "0.0s"; 
     if (statKeys) statKeys.textContent = "0 keys";
     
     // Clear Poll Form
     const pollBuilder = document.getElementById('poll-builder-container');
-    if (pollBuilder) {
+    if (pollBuilder && !keepContent) {
         pollBuilder.classList.add('hidden');
         const list = document.getElementById('poll-options-list');
         if (list) {
@@ -7792,8 +8455,8 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
 
 
-    if (postContent.length < 2 && !selectedPostPhotoFile && !pollOptionsJSON && !postTitle) {
-        alert("Please enter a message, attach a photo, or create a poll.");
+    if (postContent.length < 2 && postMediaQueue.length === 0 && !pollOptionsJSON && !postTitle) {
+        alert("Please enter a message, attach a photo or video, or create a poll.");
         return;
     }
 
@@ -7875,20 +8538,13 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
 
     let postImageUrl = null;
+    let published = false;
     try {
-        if (selectedPostPhotoFile) {
-            const compressedPhoto = await compressImage(selectedPostPhotoFile, 1200, 0.75);
-            const fileExt = compressedPhoto.name.split('.').pop() || (compressedPhoto.type === 'image/gif' ? 'gif' : 'jpeg');
-            const filePath = `forum_posts/${currentUser.id}_${Date.now()}.${fileExt}`;
-            const { error: uploadError } = await db.storage.from('chat-images').upload(filePath, compressedPhoto);
-
-
-
-
-            if (!uploadError) {
-                const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
-                postImageUrl = publicUrlData.publicUrl;
-            }
+        if (postMediaQueue.length > 0) {
+            const entries = await uploadPostMedia(postMediaQueue, (done, total) => {
+                if (submitBtn) submitBtn.textContent = `Uploading ${done}/${total}...`;
+            });
+            postImageUrl = encodePostMedia(entries);
         }
 
 
@@ -7925,6 +8581,7 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
 
 
+        published = true;
         lastPostTimestamp = Date.now();
 
 
@@ -7953,8 +8610,9 @@ safeAddListener(forumForm, 'submit', async (event) => {
     } catch (err) {
         alert(`An error occurred while posting: ${err.message}`);
     } finally {
-        // ALWAYS reset telemetry flags so textWasPasted is reset to FALSE
-        resetTelemetryConsole();
+        // ALWAYS reset telemetry flags so textWasPasted is reset to FALSE. The draft (text, poll,
+        // attachments) is only cleared once the post is live, so a failed upload never loses it.
+        resetTelemetryConsole({ keepContent: !published });
 
 
 
@@ -11386,6 +12044,7 @@ safeAddListener(voiceStageMuteAllBtn, 'click', muteAllStageParticipants);
 safeAddListener(voiceStageSettingsBtn, 'click', () => {
     openSettingsModal();
     switchSettingsTab('audio');
+    loadAudioSettings();
 });
 
 
@@ -11713,7 +12372,8 @@ function initBioluminescentSea() {
     const resizeCanvas = () => {
         width = window.innerWidth;
         height = window.innerHeight;
-        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        // Phones don't need a retina-sized backing store for soft background art.
+        dpr = Math.min(window.devicePixelRatio || 1, width < 640 ? 1.5 : 2);
 
         canvas.width = Math.round(width * dpr);
         canvas.height = Math.round(height * dpr);
@@ -11721,13 +12381,130 @@ function initBioluminescentSea() {
     };
 
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas, { passive: true });
+
+    // ---------------------------------------------------------------------
+    // Koi varieties, shared sprites and colour helpers
+    // ---------------------------------------------------------------------
+    const RIPPLE_TAU = 1.7;
+
+    const KOI_VARIETIES = [
+        {   // Pearl-white with a red head cap and flame patches
+            name: 'kohaku',
+            base: ['#eaf7ff', '#cfe9fa', '#a9d3ec'],
+            patches: ['#ff5b40', '#ff7449'],
+            cap: '#ff4d38',
+            patchCount: [2, 3],
+            patchAlpha: 0.92,
+            ridge: 0.14,
+            scales: 'rgba(120, 170, 205, 0.20)',
+            shimmer: 0.09,
+            fin: '226, 243, 255',
+            rim: '190, 240, 255',
+            eye: '#d9a441'
+        },
+        {   // Pearl-white with red and sumi (black) markings
+            name: 'sanke',
+            base: ['#e6f4ff', '#c6e3f6', '#9cc8e4'],
+            patches: ['#f8472f', '#ff6040'],
+            dark: '#101c30',
+            patchCount: [2, 3],
+            patchAlpha: 0.90,
+            ridge: 0.12,
+            scales: 'rgba(110, 160, 200, 0.20)',
+            shimmer: 0.08,
+            fin: '220, 240, 255',
+            rim: '180, 236, 255',
+            eye: '#d9a441'
+        },
+        {   // Metallic gold
+            name: 'ogon',
+            base: ['#f9dc8b', '#e0ad43', '#a8741f'],
+            patches: ['#fff0bd'],
+            patchCount: [1, 2],
+            patchAlpha: 0.38,
+            ridge: 0.26,
+            scales: 'rgba(255, 244, 200, 0.28)',
+            shimmer: 0.20,
+            fin: '255, 226, 150',
+            rim: '255, 232, 160',
+            eye: '#8a5a12'
+        },
+        {   // Deep indigo with red and pearl markings
+            name: 'showa',
+            base: ['#22375a', '#16274a', '#0d1a33'],
+            patches: ['#ff5340', '#f2e8ea'],
+            cap: '#f6efef',
+            patchCount: [2, 3],
+            patchAlpha: 0.90,
+            ridge: 0.10,
+            scales: 'rgba(130, 175, 220, 0.20)',
+            shimmer: 0.11,
+            fin: '170, 205, 240',
+            rim: '150, 215, 255',
+            eye: '#e0b050'
+        },
+        {   // Blue-grey, reticulated, with orange cheeks and flanks
+            name: 'asagi',
+            base: ['#86abcc', '#5f88b0', '#436b92'],
+            patches: ['#f38d4c', '#f6a05a'],
+            patchCount: [2, 2],
+            patchAlpha: 0.70,
+            ridge: 0.16,
+            scales: 'rgba(20, 45, 80, 0.34)',
+            shimmer: 0.12,
+            fin: '190, 220, 245',
+            rim: '170, 228, 255',
+            eye: '#e0b050'
+        },
+        {   // The original bioluminescent look: dark body, cyan glow
+            name: 'ghost',
+            base: ['#0c3052', '#082440', '#041424'],
+            patches: ['#2fc6f0', '#38bdf8'],
+            patchCount: [3, 4],
+            patchAlpha: 0.30,
+            ridge: 0.10,
+            scales: 'rgba(90, 210, 255, 0.20)',
+            shimmer: 0.22,
+            fin: '0, 240, 255',
+            rim: '70, 215, 255',
+            eye: '#ff2a60'
+        }
+    ];
+
+    const makeSoftSprite = (r, g, b) => {
+        const sprite = document.createElement('canvas');
+        sprite.width = sprite.height = 64;
+
+        const sctx = sprite.getContext('2d');
+        const gradient = sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.85)`);
+        gradient.addColorStop(0.45, `rgba(${r}, ${g}, ${b}, 0.30)`);
+        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+
+        sctx.fillStyle = gradient;
+        sctx.fillRect(0, 0, 64, 64);
+
+        return sprite;
+    };
+
+    const slickSprite = makeSoftSprite(130, 215, 255);
+    const glowSprite = makeSoftSprite(90, 190, 255);
+
+    // Ripple colours are quantised so frames reuse the same strings.
+    const rippleColors = [];
+    const rippleColor = (alpha) => {
+        const q = clamp(Math.round(alpha * 60), 0, 60);
+        return rippleColors[q] ||
+            (rippleColors[q] = `rgba(150, 226, 255, ${(q / 60).toFixed(3)})`);
+    };
 
     class TrueKoi {
-        constructor(w, h, scale = 1.0) {
+        constructor(w, h, scale = 1.0, variety = KOI_VARIETIES[0], depth = 1) {
             this.w = w;
             this.h = h;
             this.scale = scale;
+            this.variety = variety;
+            this.depth = depth;
 
             this.x = Math.random() * w;
             this.y = Math.random() * h;
@@ -11784,8 +12561,8 @@ function initBioluminescentSea() {
             this.tailBaseIndex = this.numVertebrae - 2;
 
             this.bodyWidths = [
-                3.6 * scale,
-                5.3 * scale,
+                4.7 * scale,
+                6.2 * scale,
                 8.4 * scale,
                 10.4 * scale,
                 11.2 * scale,
@@ -11805,12 +12582,21 @@ function initBioluminescentSea() {
             this.spine = [];
             this.buildSpine();
 
-            // Flowing wake lanes. Five lanes read as a soft water trail,
-            // rather than three rigid glowing ropes.
-            this.wakeLanes = [-1.0, -0.5, 0, 0.5, 1.0];
-            this.wakeParticles = [];
-            this.wakeClock = 0;
-            this.maxWakeAge = 2.7;
+            // Surface ripples shed by the tail, tail root and snout.
+            this.ripples = [];
+            this.lastStroke = null;
+            this.microClock = Math.random() * 0.4;
+            this.bowClock = Math.random() * 0.9;
+
+            // Per-frame body frames (perpendicular vectors) and a scratch
+            // object so drawing does not allocate.
+            this.frames = [];
+            for (let i = 0; i < this.numVertebrae; i++) {
+                this.frames.push({ px: 0, py: 0 });
+            }
+            this.scratch = { x: 0, y: 0, px: 0, py: 0, w: 0 };
+
+            this.patches = this.makePatches();
         }
 
         buildSpine() {
@@ -12123,8 +12909,6 @@ function initBioluminescentSea() {
             if (wrapped) {
                 this.x += shiftX;
                 this.y += shiftY;
-
-                this.wakeParticles.length = 0;
             }
 
             this.buildSpine();
@@ -12150,376 +12934,398 @@ function initBioluminescentSea() {
             );
         }
 
-        spawnWakeParticle(lane) {
-            const tailIndex =
-                this.spine.length - 1;
+        // ---------------------------------------------------------------------
+        // Wake: a real swimming fish leaves (a) a vortex street shed at each
+        // tail stroke reversal, (b) small ripples from the tail root and
+        // snout, and (c) a faint bow-wave "V". In the water's own frame these
+        // are expanding, fading surface rings that stay where they were made
+        // and slowly drift away from the fish, so the trail reads as a string
+        // of ripples that grow and dissolve instead of glowing ropes.
+        // ---------------------------------------------------------------------
+        addRipple(x, y, opts) {
+            const gaps = [];
+            const arcs = 2 + ((Math.random() * 2) | 0);
+            for (let i = 0; i < arcs; i++) {
+                gaps.push({
+                    start: Math.random() * TAU,
+                    sweep: 1.5 + Math.random() * 2.7
+                });
+            }
 
-            const tail =
-                this.spine[tailIndex];
-
-            const previous =
-                this.spine[tailIndex - 1];
-
-            // The tail-to-body tangent is the water's forward reference.
-            // Wake advection below travels in the opposite direction, away
-            // from the fish rather than back toward its body.
-            const heading =
-                Math.atan2(
-                    previous.y - tail.y,
-                    previous.x - tail.x
-                );
-
-            const normalX =
-                -Math.sin(heading);
-
-            const normalY =
-                Math.cos(heading);
-
-            // A lane starts close to the tail, then the current evolves
-            // naturally in the water.
-            const initialSpread =
-                lane *
-                (3.2 +
-                Math.abs(lane) *
-                2.5) *
-                this.scale;
-
-            this.wakeParticles.push({
-                x:
-                    tail.x +
-                    normalX *
-                    initialSpread,
-
-                y:
-                    tail.y +
-                    normalY *
-                    initialSpread,
-
-                heading:
-                    heading +
-                    lane *
-                    0.025,
-
-                lane,
+            this.ripples.push({
+                x,
+                y,
                 age: 0,
-
-                // Each strand gets its own quiet phase so the wake never
-                // looks like five identical copies of one line.
-                phase:
-                    Math.random() * TAU,
-
-                energy:
-                    0.82 +
-                    Math.random() * 0.18
+                life: opts.life,
+                r0: opts.r0 * this.scale,
+                grow: opts.grow * this.scale,
+                strength: opts.strength,
+                rings: opts.rings,
+                spacing: opts.spacing * this.scale,
+                driftX: opts.driftX || 0,
+                driftY: opts.driftY || 0,
+                slick: Boolean(opts.slick),
+                spin: (Math.random() - 0.5) * 0.35,
+                gaps
             });
+
+            // Hard cap keeps worst-case cost bounded on slow devices.
+            if (this.ripples.length > 28) {
+                this.ripples.shift();
+            }
         }
 
         updateWake(dt) {
-            this.wakeClock += dt;
+            const last = this.numVertebrae - 1;
+            const tail = this.spine[last];
+            const beforeTail = this.spine[last - 1];
 
-            const wakeInterval = 0.048;
+            // Direction pointing away from the fish along the tail.
+            let backX = tail.x - beforeTail.x;
+            let backY = tail.y - beforeTail.y;
+            const backLen = Math.hypot(backX, backY) || 1;
+            backX /= backLen;
+            backY /= backLen;
 
-            while (this.wakeClock >= wakeInterval) {
-                this.wakeClock -= wakeInterval;
+            // Vortices are shed every time the caudal fin reverses direction.
+            const stroke = Math.floor(
+                (this.swimPhase - 2.25 - Math.PI * 0.5) / Math.PI
+            );
 
-                for (const lane of this.wakeLanes) {
-                    this.spawnWakeParticle(
-                        lane
-                    );
-                }
+            if (this.lastStroke === null) {
+                this.lastStroke = stroke;
+            } else if (stroke !== this.lastStroke) {
+                this.lastStroke = stroke;
+
+                const side = (stroke & 1) ? 1 : -1;
+                const geometry = this.getTailGeometry();
+                const tip = geometry.points[side > 0 ? 12 : 2];
+                const effort = 0.75 + 0.5 * this.burst;
+
+                this.addRipple(tip.x, tip.y, {
+                    life: 5.2,
+                    r0: 3.2,
+                    grow: 15 * effort,
+                    strength: 0.95 * effort,
+                    rings: 3,
+                    spacing: 5.4,
+                    slick: true,
+                    // The vortex pair throws a weak jet backwards and outward.
+                    driftX: backX * this.speed * 0.11 +
+                        geometry.sideX * side * 3.2 * this.scale,
+                    driftY: backY * this.speed * 0.11 +
+                        geometry.sideY * side * 3.2 * this.scale
+                });
             }
 
-            for (const particle of this.wakeParticles) {
-                particle.age += dt;
+            this.microClock += dt;
+            if (this.microClock >= 0.46) {
+                this.microClock = 0;
 
-                const t =
-                    clamp(
-                        particle.age /
-                        this.maxWakeAge,
-                        0,
-                        1
-                    );
-
-                const spread =
-                    Math.pow(t, 1.28);
-
-                // Wake drifts backward relative to the fish.
-                // It slows and disperses with age.
-                const reverseSpeed =
-                    this.speed *
-                    (0.19 +
-                    0.10 * (1 - t));
-
-                // Slowly curving flow field.
-                const curl =
-                    (
-                        0.15 +
-                        0.52 * spread
-                    ) *
-                    Math.sin(
-                        particle.phase +
-                        particle.age * 1.55 +
-                        particle.lane * 1.7
-                    );
-
-                const normalX =
-                    -Math.sin(
-                        particle.heading
-                    );
-
-                const normalY =
-                    Math.cos(
-                        particle.heading
-                    );
-
-                particle.heading +=
-                    curl *
-                    0.48 *
-                    dt;
-
-                const forwardX =
-                    Math.cos(
-                        particle.heading
-                    );
-
-                const forwardY =
-                    Math.sin(
-                        particle.heading
-                    );
-
-                // Persistent lane separation plus growing lateral diffusion.
-                const lateralFlow =
-                    (
-                        particle.lane *
-                        2.6 *
-                        this.scale +
-                        Math.sin(
-                            particle.phase +
-                            particle.age * 1.9
-                        ) *
-                        (1.0 +
-                        7.0 * spread) *
-                        this.scale
-                    );
-
-                particle.x +=
-                    -forwardX *
-                    reverseSpeed *
-                    dt +
-                    normalX *
-                    lateralFlow *
-                    0.42 *
-                    dt;
-
-                particle.y +=
-                    -forwardY *
-                    reverseSpeed *
-                    dt +
-                    normalY *
-                    lateralFlow *
-                    0.42 *
-                    dt;
-
-                particle.energy =
-                    (
-                        1 - t
-                    ) *
-                    (
-                        0.82 +
-                        0.18 *
-                        Math.cos(
-                            particle.age *
-                            1.8 +
-                            particle.phase
-                        )
-                    );
-            }
-
-            this.wakeParticles =
-                this.wakeParticles.filter(
-                    particle =>
-                        particle.age <
-                        this.maxWakeAge
+                this.addRipple(
+                    this.spine[this.tailBaseIndex].x,
+                    this.spine[this.tailBaseIndex].y,
+                    {
+                        life: 3.1,
+                        r0: 1.6,
+                        grow: 8.5,
+                        strength: 0.50,
+                        rings: 2,
+                        spacing: 3.8,
+                        driftX: backX * this.speed * 0.05,
+                        driftY: backY * this.speed * 0.05
+                    }
                 );
+            }
+
+            this.bowClock += dt;
+            if (this.bowClock >= 0.95) {
+                this.bowClock = 0;
+
+                this.addRipple(
+                    this.spine[0].x,
+                    this.spine[0].y,
+                    {
+                        life: 2.6,
+                        r0: 1.4,
+                        grow: 7.5,
+                        strength: 0.36,
+                        rings: 2,
+                        spacing: 3.4
+                    }
+                );
+            }
+
+            const slow = Math.exp(-0.75 * dt);
+            let kept = 0;
+
+            for (let i = 0; i < this.ripples.length; i++) {
+                const ripple = this.ripples[i];
+
+                ripple.age += dt;
+                if (ripple.age >= ripple.life) continue;
+
+                ripple.x += ripple.driftX * dt;
+                ripple.y += ripple.driftY * dt;
+                ripple.driftX *= slow;
+                ripple.driftY *= slow;
+
+                this.ripples[kept++] = ripple;
+            }
+
+            this.ripples.length = kept;
         }
 
         drawWake(ctx) {
-            if (this.wakeParticles.length < 8) {
-                return;
-            }
+            if (this.ripples.length === 0) return;
 
-            // One stream per lane. Particles are already maintained
-            // in insertion order, so no per-frame sorting is necessary.
-            for (const lane of this.wakeLanes) {
-                const stream =
-                    this.wakeParticles
-                        .filter(
-                            p =>
-                                p.lane === lane
-                        );
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
 
-                if (stream.length < 2) {
-                    continue;
-                }
-
-                // Older wake is farther away and more diffuse.
-                ctx.beginPath();
-
-                let started = false;
-
-                for (let i = 0; i < stream.length; i++) {
-                    const p = stream[i];
-
-                    const fade =
-                        clamp(
-                            1 -
-                            p.age /
-                            this.maxWakeAge,
-                            0,
-                            1
-                        );
-
-                    const x = p.x;
-                    const y = p.y;
-
-                    if (!started) {
-                        ctx.moveTo(x, y);
-                        started = true;
-                    } else {
-                        const previous =
-                            stream[i - 1];
-
-                        const midX =
-                            (previous.x + x) *
-                            0.5;
-
-                        const midY =
-                            (previous.y + y) *
-                            0.5;
-
-                        ctx.quadraticCurveTo(
-                            previous.x,
-                            previous.y,
-                            midX,
-                            midY
-                        );
-                    }
-
-                    // Stop wildly displaced numerical outliers.
-                    if (
-                        i > 0 &&
-                        Math.hypot(
-                            x - stream[i - 1].x,
-                            y - stream[i - 1].y
-                        ) > 38
-                    ) {
-                        break;
-                    }
-
-                    if (fade < 0.02) {
-                        break;
-                    }
-                }
-
-                const newest =
-                    stream[stream.length - 1];
-
-                const laneStrength =
-                    lane === 0
-                        ? 1
-                        : 0.55;
+            for (const ripple of this.ripples) {
+                const t = ripple.age / ripple.life;
 
                 const fade =
-                    newest
-                        ? clamp(
-                            1 -
-                            newest.age /
-                            this.maxWakeAge,
-                            0,
-                            1
-                        )
-                        : 0;
+                    Math.pow(1 - t, 1.7) *
+                    smoothstep(0, 0.10, t) *
+                    ripple.strength *
+                    this.depth;
 
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
+                if (fade < 0.004) continue;
 
-                // Broad diffuse wash.
-                ctx.strokeStyle =
-                    'rgba(0, 240, 255, ' +
-                    (
-                        0.065 *
-                        laneStrength *
-                        fade
-                    ) +
-                    ')';
+                // Fast initial expansion that settles as energy is lost.
+                const radius =
+                    ripple.r0 +
+                    ripple.grow *
+                    RIPPLE_TAU *
+                    (1 - Math.exp(-ripple.age / RIPPLE_TAU));
 
-                ctx.lineWidth =
-                    (
-                        5.0 +
-                        10.0 *
-                        (1 - fade)
-                    ) *
-                    this.scale *
-                    (lane === 0
-                        ? 0.95
-                        : 0.72);
+                if (ripple.slick) {
+                    // Turbulent, glassy patch where the vortex pair formed.
+                    const size = radius * 2.7;
 
-                ctx.stroke();
-
-                // Thin glowing core that disappears faster than the wash.
-                ctx.beginPath();
-
-                started = false;
-
-                for (let i = 0; i < stream.length; i++) {
-                    const p = stream[i];
-
-                    if (!started) {
-                        ctx.moveTo(
-                            p.x,
-                            p.y
-                        );
-                        started = true;
-                    } else {
-                        const previous =
-                            stream[i - 1];
-
-                        const midX =
-                            (previous.x + p.x) *
-                            0.5;
-
-                        const midY =
-                            (previous.y + p.y) *
-                            0.5;
-
-                        ctx.quadraticCurveTo(
-                            previous.x,
-                            previous.y,
-                            midX,
-                            midY
-                        );
-                    }
+                    ctx.globalAlpha = clamp(fade * 0.30, 0, 1);
+                    ctx.drawImage(
+                        slickSprite,
+                        ripple.x - size / 2,
+                        ripple.y - size / 2,
+                        size,
+                        size
+                    );
+                    ctx.globalAlpha = 1;
                 }
 
-                ctx.strokeStyle =
-                    'rgba(56, 189, 248, ' +
-                    (
-                        0.20 *
-                        laneStrength *
-                        fade *
-                        fade
-                    ) +
-                    ')';
+                for (let ring = 0; ring < ripple.rings; ring++) {
+                    // Rings spread apart as the packet disperses.
+                    const ringRadius =
+                        radius -
+                        ring *
+                        ripple.spacing *
+                        (0.65 + 0.35 * Math.min(1, ripple.age * 0.8));
 
-                ctx.lineWidth =
-                    0.82 *
-                    this.scale *
-                    (lane === 0
-                        ? 1
-                        : 0.75);
+                    if (ringRadius < 1.2) continue;
 
+                    const alpha = fade * (1 - ring * 0.30);
+
+                    ctx.strokeStyle = rippleColor(alpha * 0.34);
+                    ctx.lineWidth =
+                        Math.max(0.5, (1.25 - ring * 0.24) * this.scale);
+
+                    ctx.beginPath();
+
+                    for (const gap of ripple.gaps) {
+                        const start = gap.start + ripple.spin * ripple.age;
+
+                        ctx.moveTo(
+                            ripple.x + Math.cos(start) * ringRadius,
+                            ripple.y + Math.sin(start) * ringRadius
+                        );
+
+                        ctx.arc(
+                            ripple.x,
+                            ripple.y,
+                            ringRadius,
+                            start,
+                            start + gap.sweep * (1 - ring * 0.12)
+                        );
+                    }
+
+                    ctx.stroke();
+                }
+            }
+
+            // Bow wave: two short arms trailing from the head.
+            const head = this.spine[0];
+            const neck = this.spine[2];
+            const headAngle = Math.atan2(head.y - neck.y, head.x - neck.x);
+            const armLength = (14 + this.speed * 0.5) * this.scale;
+            const kelvin = 0.34;
+
+            ctx.lineWidth = Math.max(0.5, 0.9 * this.scale);
+
+            for (let side = -1; side <= 1; side += 2) {
+                const angle = headAngle + Math.PI + side * kelvin;
+                const endX = head.x + Math.cos(angle) * armLength;
+                const endY = head.y + Math.sin(angle) * armLength;
+
+                const gradient = ctx.createLinearGradient(
+                    head.x, head.y, endX, endY
+                );
+
+                gradient.addColorStop(0, rippleColor(0.20 * this.depth));
+                gradient.addColorStop(1, rippleColor(0));
+
+                ctx.strokeStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(head.x, head.y);
+                ctx.lineTo(endX, endY);
                 ctx.stroke();
             }
+
+            ctx.restore();
+        }
+
+        // ---------------------------------------------------------------------
+        // Rendering helpers
+        // ---------------------------------------------------------------------
+        makePatches() {
+            const variety = this.variety;
+            const patches = [];
+
+            const add = (u, v, rx, ry, color) => {
+                patches.push({
+                    u, v, rx, ry, color,
+                    phase: Math.random() * TAU,
+                    phase2: Math.random() * TAU
+                });
+            };
+
+            // Accent colour order matters: later patches draw on top.
+            if (variety.cap) {
+                // Cap on the head, like a kohaku's "tancho"/head marking.
+                add(0.07, 0, 1.9, 0.78, variety.cap);
+            }
+
+            const count =
+                variety.patchCount[0] +
+                Math.floor(Math.random() * (variety.patchCount[1] - variety.patchCount[0] + 1));
+
+            for (let i = 0; i < count; i++) {
+                const slot = (i + 0.5) / count;
+                add(
+                    0.26 + slot * 0.56 + (Math.random() - 0.5) * 0.07,
+                    (Math.random() - 0.5) * 0.62,
+                    1.5 + Math.random() * 1.9,
+                    0.42 + Math.random() * 0.45,
+                    variety.patches[i % variety.patches.length]
+                );
+            }
+
+            if (variety.dark) {
+                const darkCount = 2 + Math.floor(Math.random() * 2);
+                for (let i = 0; i < darkCount; i++) {
+                    add(
+                        0.30 + Math.random() * 0.5,
+                        (Math.random() - 0.5) * 0.9,
+                        0.9 + Math.random() * 1.2,
+                        0.22 + Math.random() * 0.25,
+                        variety.dark
+                    );
+                }
+            }
+
+            return patches;
+        }
+
+        computeBodyFrames() {
+            const last = this.numVertebrae - 1;
+
+            for (let i = 0; i <= last; i++) {
+                const a = this.spine[Math.max(0, i - 1)];
+                const b = this.spine[Math.min(last, i + 1)];
+
+                const tx = b.x - a.x;
+                const ty = b.y - a.y;
+                const len = Math.hypot(tx, ty) || 1;
+
+                this.frames[i].px = -ty / len;
+                this.frames[i].py = tx / len;
+            }
+        }
+
+        // Position on the body at a fractional spine station.
+        sampleBody(station) {
+            const last = this.numVertebrae - 1;
+            const s = clamp(station, 0, last);
+            const i0 = Math.min(last - 1, Math.floor(s));
+            const t = s - i0;
+
+            const a = this.spine[i0];
+            const b = this.spine[i0 + 1];
+            const fa = this.frames[i0];
+            const fb = this.frames[i0 + 1];
+
+            const out = this.scratch;
+            out.x = a.x + (b.x - a.x) * t;
+            out.y = a.y + (b.y - a.y) * t;
+            out.px = fa.px + (fb.px - fa.px) * t;
+            out.py = fa.py + (fb.py - fa.py) * t;
+            out.w = this.bodyWidths[i0] +
+                (this.bodyWidths[i0 + 1] - this.bodyWidths[i0]) * t;
+
+            return out;
+        }
+
+        fillPatch(ctx, patch, alpha) {
+            const steps = 11;
+            const pts = [];
+
+            for (let k = 0; k < steps; k++) {
+                const th = (k / steps) * TAU;
+
+                const wobble =
+                    1 +
+                    0.22 * Math.sin(3 * th + patch.phase) +
+                    0.14 * Math.sin(2 * th + patch.phase2);
+
+                const station =
+                    patch.u * (this.numVertebrae - 1) +
+                    Math.cos(th) * patch.rx * wobble;
+
+                const lateral =
+                    patch.v + Math.sin(th) * patch.ry * wobble;
+
+                const s = this.sampleBody(station);
+
+                pts.push({
+                    x: s.x + s.px * lateral * s.w,
+                    y: s.y + s.py * lateral * s.w
+                });
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(
+                (pts[0].x + pts[steps - 1].x) * 0.5,
+                (pts[0].y + pts[steps - 1].y) * 0.5
+            );
+
+            for (let k = 0; k < steps; k++) {
+                const p = pts[k];
+                const n = pts[(k + 1) % steps];
+
+                ctx.quadraticCurveTo(
+                    p.x,
+                    p.y,
+                    (p.x + n.x) * 0.5,
+                    (p.y + n.y) * 0.5
+                );
+            }
+
+            ctx.closePath();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = patch.color;
+            ctx.fill();
         }
 
         getTailGeometry() {
@@ -12684,831 +13490,612 @@ function initBioluminescentSea() {
             };
         }
 
+        // Fin membranes fade from an opaque root to a translucent free edge,
+        // with curved rays that follow the flex of the membrane.
         drawTail(ctx) {
-            const geometry =
-                this.getTailGeometry();
+            const geometry = this.getTailGeometry();
+            const root = geometry.root;
+            const points = geometry.points;
+            const variety = this.variety;
 
-            const root =
-                geometry.root;
-
-            const points =
-                geometry.points;
-
-            if (points.length < 3) {
-                return;
-            }
+            if (points.length < 3) return;
 
             ctx.beginPath();
-
-            ctx.moveTo(
-                root.x,
-                root.y
-            );
+            ctx.moveTo(root.x, root.y);
 
             for (let i = 0; i < points.length - 1; i++) {
                 const current = points[i];
                 const next = points[i + 1];
 
-                const midX =
-                    (current.x + next.x) * 0.5;
-
-                const midY =
-                    (current.y + next.y) * 0.5;
-
                 ctx.quadraticCurveTo(
                     current.x,
                     current.y,
-                    midX,
-                    midY
+                    (current.x + next.x) * 0.5,
+                    (current.y + next.y) * 0.5
                 );
             }
 
-            const finalPoint =
-                points[points.length - 1];
+            const finalPoint = points[points.length - 1];
+            ctx.lineTo(finalPoint.x, finalPoint.y);
 
-            ctx.lineTo(
-                finalPoint.x,
-                finalPoint.y
-            );
-
-            // Curved lower edge returns to the root.
-            const center =
-                points[7];
+            const center = points[7];
 
             ctx.quadraticCurveTo(
-                center.x * 0.48 +
-                root.x * 0.52,
-
-                center.y * 0.48 +
-                root.y * 0.52,
-
+                center.x * 0.48 + root.x * 0.52,
+                center.y * 0.48 + root.y * 0.52,
                 root.x,
                 root.y
             );
 
             ctx.closePath();
 
-            ctx.fillStyle =
-                'rgba(0, 240, 255, 0.18)';
+            const membrane = ctx.createLinearGradient(
+                root.x,
+                root.y,
+                center.x,
+                center.y
+            );
 
+            membrane.addColorStop(0, `rgba(${variety.fin}, 0.58)`);
+            membrane.addColorStop(0.55, `rgba(${variety.fin}, 0.30)`);
+            membrane.addColorStop(1, `rgba(${variety.fin}, 0.10)`);
+
+            ctx.fillStyle = membrane;
             ctx.fill();
 
-            ctx.strokeStyle =
-                'rgba(56, 189, 248, 0.68)';
-
-            ctx.lineWidth =
-                1.05 *
-                this.scale;
-
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.42)`;
+            ctx.lineWidth = 0.9 * this.scale;
             ctx.stroke();
 
-            // Fin rays now bow with the membrane instead of radiating
-            // as rigid straight spokes.
+            // Rays bow with the membrane instead of radiating as rigid spokes.
+            ctx.beginPath();
+
             for (let i = 0; i < points.length; i++) {
                 const p = points[i];
+                const t = 0.78 + 0.14 * p.edgeWeight;
 
-                const t =
-                    0.72 +
-                    0.12 *
-                    p.edgeWeight;
-
-                const endX =
-                    root.x +
-                    (p.x - root.x) *
-                    t;
-
-                const endY =
-                    root.y +
-                    (p.y - root.y) *
-                    t;
+                const endX = root.x + (p.x - root.x) * t;
+                const endY = root.y + (p.y - root.y) * t;
 
                 const bow =
-                    Math.sin(
-                        this.swimPhase -
-                        2.6 +
-                        i * 0.18
-                    ) *
-                    (0.8 +
-                    1.3 * p.edgeWeight) *
+                    Math.sin(this.swimPhase - 2.6 + i * 0.18) *
+                    (0.8 + 1.3 * p.edgeWeight) *
                     this.scale;
 
-                const controlX =
-                    root.x +
-                    (endX - root.x) *
-                    0.55 -
-                    geometry.sideX *
-                    bow;
-
-                const controlY =
-                    root.y +
-                    (endY - root.y) *
-                    0.55 -
-                    geometry.sideY *
-                    bow;
-
-                ctx.beginPath();
-
-                ctx.moveTo(
-                    root.x,
-                    root.y
-                );
-
+                ctx.moveTo(root.x, root.y);
                 ctx.quadraticCurveTo(
-                    controlX,
-                    controlY,
+                    root.x + (endX - root.x) * 0.55 - geometry.sideX * bow,
+                    root.y + (endY - root.y) * 0.55 - geometry.sideY * bow,
                     endX,
                     endY
                 );
-
-                ctx.strokeStyle =
-                    'rgba(0, 240, 255, 0.24)';
-
-                ctx.lineWidth =
-                    0.62 *
-                    this.scale;
-
-                ctx.stroke();
             }
 
-            // Fine central vane.
-            const centerPoint =
-                points[7];
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.20)`;
+            ctx.lineWidth = 0.6 * this.scale;
+            ctx.stroke();
+        }
+
+        drawPaddleFin(ctx, anchor, tipX, tipY, controlX, controlY, rearX, rearY, alpha, width) {
+            const variety = this.variety;
 
             ctx.beginPath();
+            ctx.moveTo(anchor.x, anchor.y);
+            ctx.quadraticCurveTo(controlX, controlY, tipX, tipY);
+            ctx.quadraticCurveTo(rearX, rearY, anchor.x, anchor.y);
+            ctx.closePath();
 
-            ctx.moveTo(
-                root.x,
-                root.y
-            );
+            const membrane = ctx.createLinearGradient(anchor.x, anchor.y, tipX, tipY);
+            membrane.addColorStop(0, `rgba(${variety.fin}, ${alpha})`);
+            membrane.addColorStop(1, `rgba(${variety.fin}, ${alpha * 0.30})`);
 
-            ctx.quadraticCurveTo(
-                root.x +
-                geometry.forwardX *
-                geometry.tailLength *
-                0.60,
+            ctx.fillStyle = membrane;
+            ctx.fill();
 
-                root.y +
-                geometry.forwardY *
-                geometry.tailLength *
-                0.60,
+            ctx.strokeStyle = `rgba(${variety.rim}, ${alpha + 0.12})`;
+            ctx.lineWidth = width * this.scale;
+            ctx.stroke();
 
-                centerPoint.x,
-                centerPoint.y
-            );
-
-            ctx.strokeStyle =
-                'rgba(56, 189, 248, 0.31)';
-
-            ctx.lineWidth =
-                0.65 *
-                this.scale;
-
+            // A few rays fanning across the membrane.
+            ctx.beginPath();
+            for (const s of [0.18, 0.42, 0.68]) {
+                const inv = 1 - s;
+                const ex = inv * inv * tipX + 2 * inv * s * rearX + s * s * anchor.x;
+                const ey = inv * inv * tipY + 2 * inv * s * rearY + s * s * anchor.y;
+                ctx.moveTo(anchor.x, anchor.y);
+                ctx.lineTo(
+                    anchor.x + (ex - anchor.x) * 0.92,
+                    anchor.y + (ey - anchor.y) * 0.92
+                );
+            }
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.18)`;
+            ctx.lineWidth = 0.5 * this.scale;
             ctx.stroke();
         }
 
         drawPectoralFins(ctx) {
             const anchorIndex = 3;
+            const anchor = this.spine[anchorIndex];
+            const bodyAngle = this.getBodyAngle(anchorIndex);
+            const finLength = 20.5 * this.scale;
 
-            const anchor =
-                this.spine[
-                    anchorIndex
-                ];
-
-            const bodyAngle =
-                this.getBodyAngle(
-                    anchorIndex
-                );
-
-            const finLength =
-                20.5 *
-                this.scale;
-
-            for (
-                let side = -1;
-                side <= 1;
-                side += 2
-            ) {
+            for (let side = -1; side <= 1; side += 2) {
                 // Fins stabilize the fish with small, slow counter-motion.
-                const phaseOffset =
-                    side < 0 ? 0.35 : 1.05;
+                const phaseOffset = side < 0 ? 0.35 : 1.05;
 
                 const stroke =
-                    0.105 *
-                    Math.sin(
-                        this.swimPhase *
-                        0.63 +
-                        phaseOffset
-                    ) +
-                    0.035 *
-                    Math.sin(
-                        this.swimPhase *
-                        1.18 +
-                        side * 0.5
-                    );
+                    0.105 * Math.sin(this.swimPhase * 0.63 + phaseOffset) +
+                    0.035 * Math.sin(this.swimPhase * 1.18 + side * 0.5);
 
                 const finAngle =
                     bodyAngle +
-                    side *
-                    (Math.PI * 0.51) +
+                    side * (Math.PI * 0.51) +
                     side * 0.12 +
                     stroke;
 
-                const tipX =
-                    anchor.x +
-                    Math.cos(finAngle) *
-                    finLength;
-
-                const tipY =
-                    anchor.y +
-                    Math.sin(finAngle) *
-                    finLength;
-
-                const controlX =
-                    anchor.x +
-                    Math.cos(
-                        finAngle -
-                        side * 0.32
-                    ) *
-                    (13 *
-                    this.scale);
-
-                const controlY =
-                    anchor.y +
-                    Math.sin(
-                        finAngle -
-                        side * 0.32
-                    ) *
-                    (13 *
-                    this.scale);
-
-                const rearX =
-                    anchor.x -
-                    Math.cos(bodyAngle) *
-                    (6.0 *
-                    this.scale);
-
-                const rearY =
-                    anchor.y -
-                    Math.sin(bodyAngle) *
-                    (6.0 *
-                    this.scale);
-
-                ctx.beginPath();
-                ctx.moveTo(
-                    anchor.x,
-                    anchor.y
+                this.drawPaddleFin(
+                    ctx,
+                    anchor,
+                    anchor.x + Math.cos(finAngle) * finLength,
+                    anchor.y + Math.sin(finAngle) * finLength,
+                    anchor.x + Math.cos(finAngle - side * 0.32) * 13 * this.scale,
+                    anchor.y + Math.sin(finAngle - side * 0.32) * 13 * this.scale,
+                    anchor.x - Math.cos(bodyAngle) * 6.0 * this.scale,
+                    anchor.y - Math.sin(bodyAngle) * 6.0 * this.scale,
+                    0.40,
+                    0.9
                 );
-
-                ctx.quadraticCurveTo(
-                    controlX,
-                    controlY,
-                    tipX,
-                    tipY
-                );
-
-                ctx.quadraticCurveTo(
-                    rearX,
-                    rearY,
-                    anchor.x,
-                    anchor.y
-                );
-
-                ctx.fillStyle =
-                    'rgba(0, 240, 255, 0.20)';
-
-                ctx.fill();
-
-                ctx.strokeStyle =
-                    'rgba(56, 189, 248, 0.63)';
-
-                ctx.lineWidth =
-                    1.0 *
-                    this.scale;
-
-                ctx.stroke();
             }
         }
 
         drawPelvicFins(ctx) {
             const anchorIndex = 7;
+            const anchor = this.spine[anchorIndex];
+            const bodyAngle = this.getBodyAngle(anchorIndex);
+            const finLength = 10.5 * this.scale;
 
-            const anchor =
-                this.spine[
-                    anchorIndex
-                ];
-
-            const bodyAngle =
-                this.getBodyAngle(
-                    anchorIndex
-                );
-
-            const finLength =
-                10.5 *
-                this.scale;
-
-            for (
-                let side = -1;
-                side <= 1;
-                side += 2
-            ) {
+            for (let side = -1; side <= 1; side += 2) {
                 const finAngle =
                     bodyAngle +
-                    side *
-                    (Math.PI * 0.72) +
-                    0.06 *
-                    Math.sin(
-                        this.swimPhase *
-                        0.58 +
-                        side
-                    );
+                    side * (Math.PI * 0.72) +
+                    0.06 * Math.sin(this.swimPhase * 0.58 + side);
 
-                const tipX =
-                    anchor.x +
-                    Math.cos(finAngle) *
-                    finLength;
-
-                const tipY =
-                    anchor.y +
-                    Math.sin(finAngle) *
-                    finLength;
-
-                ctx.beginPath();
-
-                ctx.moveTo(
-                    anchor.x,
-                    anchor.y
+                this.drawPaddleFin(
+                    ctx,
+                    anchor,
+                    anchor.x + Math.cos(finAngle) * finLength,
+                    anchor.y + Math.sin(finAngle) * finLength,
+                    anchor.x + Math.cos(finAngle - side * 0.24) * 6.5 * this.scale,
+                    anchor.y + Math.sin(finAngle - side * 0.24) * 6.5 * this.scale,
+                    anchor.x - Math.cos(bodyAngle) * 4.1 * this.scale,
+                    anchor.y - Math.sin(bodyAngle) * 4.1 * this.scale,
+                    0.30,
+                    0.7
                 );
-
-                ctx.quadraticCurveTo(
-                    anchor.x +
-                    Math.cos(
-                        finAngle -
-                        side * 0.24
-                    ) *
-                    (6.5 *
-                    this.scale),
-
-                    anchor.y +
-                    Math.sin(
-                        finAngle -
-                        side * 0.24
-                    ) *
-                    (6.5 *
-                    this.scale),
-
-                    tipX,
-                    tipY
-                );
-
-                ctx.lineTo(
-                    anchor.x -
-                    Math.cos(bodyAngle) *
-                    (4.1 *
-                    this.scale),
-
-                    anchor.y -
-                    Math.sin(bodyAngle) *
-                    (4.1 *
-                    this.scale)
-                );
-
-                ctx.closePath();
-
-                ctx.fillStyle =
-                    'rgba(0, 240, 255, 0.13)';
-
-                ctx.fill();
-
-                ctx.strokeStyle =
-                    'rgba(56, 189, 248, 0.44)';
-
-                ctx.lineWidth =
-                    0.80 *
-                    this.scale;
-
-                ctx.stroke();
             }
         }
 
-        drawBody(ctx) {
-            const leftSide = [];
-            const rightSide = [];
+        drawBody(ctx, time) {
+            this.computeBodyFrames();
 
-            const last =
-                this.numVertebrae - 1;
+            const last = this.numVertebrae - 1;
+            const variety = this.variety;
+            const left = [];
+            const right = [];
 
-            for (let i = 0; i < this.numVertebrae; i++) {
-                let tx;
-                let ty;
+            for (let i = 0; i <= last; i++) {
+                const width = this.bodyWidths[i];
+                const frame = this.frames[i];
 
-                if (i === 0) {
-                    tx =
-                        this.spine[1].x -
-                        this.spine[0].x;
+                left.push({
+                    x: this.spine[i].x + frame.px * width,
+                    y: this.spine[i].y + frame.py * width
+                });
 
-                    ty =
-                        this.spine[1].y -
-                        this.spine[0].y;
-                } else if (i === last) {
-                    tx =
-                        this.spine[last].x -
-                        this.spine[last - 1].x;
+                right.push({
+                    x: this.spine[i].x - frame.px * width,
+                    y: this.spine[i].y - frame.py * width
+                });
+            }
 
-                    ty =
-                        this.spine[last].y -
-                        this.spine[last - 1].y;
-                } else {
-                    tx =
-                        this.spine[i + 1].x -
-                        this.spine[i - 1].x;
+            const head = this.spine[0];
+            const neck = this.spine[1];
 
-                    ty =
-                        this.spine[i + 1].y -
-                        this.spine[i - 1].y;
+            let forwardX = head.x - neck.x;
+            let forwardY = head.y - neck.y;
+            const forwardLen = Math.hypot(forwardX, forwardY) || 1;
+            forwardX /= forwardLen;
+            forwardY /= forwardLen;
+
+            // Koi have blunt, rounded snouts.
+            const snout = {
+                x: head.x + forwardX * 3.4 * this.scale,
+                y: head.y + forwardY * 3.4 * this.scale
+            };
+
+            const tailAnchor = this.spine[last];
+            const path = new Path2D();
+            const headFrame = this.frames[0];
+            const headWidth = this.bodyWidths[0];
+
+            path.moveTo(snout.x, snout.y);
+
+            // Rounded cap: the curve leaves the snout sideways and wraps
+            // around to the widest point of the head.
+            path.bezierCurveTo(
+                snout.x + headFrame.px * headWidth * 0.95,
+                snout.y + headFrame.py * headWidth * 0.95,
+                left[0].x + forwardX * headWidth * 0.55,
+                left[0].y + forwardY * headWidth * 0.55,
+                left[0].x,
+                left[0].y
+            );
+
+            for (let i = 0; i < left.length - 1; i++) {
+                const a = left[i];
+                const b = left[i + 1];
+
+                path.quadraticCurveTo(a.x, a.y, (a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+            }
+
+            path.quadraticCurveTo(left[last].x, left[last].y, tailAnchor.x, tailAnchor.y);
+
+            for (let i = right.length - 1; i > 0; i--) {
+                const a = right[i];
+                const b = right[i - 1];
+
+                path.quadraticCurveTo(a.x, a.y, (a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+            }
+
+            path.bezierCurveTo(
+                right[0].x + forwardX * headWidth * 0.55,
+                right[0].y + forwardY * headWidth * 0.55,
+                snout.x - headFrame.px * headWidth * 0.95,
+                snout.y - headFrame.py * headWidth * 0.95,
+                snout.x,
+                snout.y
+            );
+            path.closePath();
+
+            const baseGradient = ctx.createLinearGradient(
+                head.x, head.y, tailAnchor.x, tailAnchor.y
+            );
+            baseGradient.addColorStop(0, variety.base[0]);
+            baseGradient.addColorStop(0.5, variety.base[1]);
+            baseGradient.addColorStop(1, variety.base[2]);
+
+            ctx.fillStyle = baseGradient;
+            ctx.fill(path);
+
+            ctx.save();
+            ctx.clip(path);
+
+            // Dorsal ridge catches more light than the flanks.
+            ctx.beginPath();
+            ctx.moveTo(this.spine[0].x, this.spine[0].y);
+            for (let i = 1; i <= last; i++) {
+                ctx.lineTo(this.spine[i].x, this.spine[i].y);
+            }
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = `rgba(255, 255, 255, ${variety.ridge})`;
+            ctx.lineWidth = 11 * this.scale;
+            ctx.stroke();
+
+            for (const patch of this.patches) {
+                this.fillPatch(ctx, patch, variety.patchAlpha);
+            }
+            ctx.globalAlpha = 1;
+
+            // Overlapping scales.
+            ctx.beginPath();
+            for (let i = 2; i <= 12; i++) {
+                const spine = this.spine[i];
+                const frame = this.frames[i];
+                const width = this.bodyWidths[i];
+                const toward = Math.atan2(-frame.px, frame.py);
+                const radius = Math.max(1.5, width * 0.30);
+                const offsets = (i & 1)
+                    ? [-0.58, -0.2, 0.2, 0.58]
+                    : [-0.40, 0, 0.40];
+
+                for (const o of offsets) {
+                    const cx = spine.x + frame.px * o * width - Math.cos(toward) * radius * 0.55;
+                    const cy = spine.y + frame.py * o * width - Math.sin(toward) * radius * 0.55;
+
+                    ctx.moveTo(
+                        cx + Math.cos(toward - 0.95) * radius,
+                        cy + Math.sin(toward - 0.95) * radius
+                    );
+                    ctx.arc(cx, cy, radius, toward - 0.95, toward + 0.95);
                 }
-
-                const length =
-                    Math.hypot(tx, ty) || 1;
-
-                const perpX =
-                    -ty / length;
-
-                const perpY =
-                    tx / length;
-
-                const width =
-                    this.bodyWidths[i];
-
-                leftSide.push({
-                    x:
-                        this.spine[i].x +
-                        perpX * width,
-
-                    y:
-                        this.spine[i].y +
-                        perpY * width
-                });
-
-                rightSide.push({
-                    x:
-                        this.spine[i].x -
-                        perpX * width,
-
-                    y:
-                        this.spine[i].y -
-                        perpY * width
-                });
             }
-
-            const snout =
-                this.spine[0];
-
-            const tailAnchor =
-                this.spine[last];
-
-            ctx.beginPath();
-
-            ctx.moveTo(
-                snout.x,
-                snout.y
-            );
-
-            for (let i = 0; i < leftSide.length - 1; i++) {
-                const a = leftSide[i];
-                const b = leftSide[i + 1];
-
-                const midX =
-                    (a.x + b.x) * 0.5;
-
-                const midY =
-                    (a.y + b.y) * 0.5;
-
-                ctx.quadraticCurveTo(
-                    a.x,
-                    a.y,
-                    midX,
-                    midY
-                );
-            }
-
-            ctx.quadraticCurveTo(
-                leftSide[last].x,
-                leftSide[last].y,
-                tailAnchor.x,
-                tailAnchor.y
-            );
-
-            for (let i = rightSide.length - 1; i > 0; i--) {
-                const a = rightSide[i];
-                const b = rightSide[i - 1];
-
-                const midX =
-                    (a.x + b.x) * 0.5;
-
-                const midY =
-                    (a.y + b.y) * 0.5;
-
-                ctx.quadraticCurveTo(
-                    a.x,
-                    a.y,
-                    midX,
-                    midY
-                );
-            }
-
-            ctx.quadraticCurveTo(
-                rightSide[0].x,
-                rightSide[0].y,
-                snout.x,
-                snout.y
-            );
-
-            ctx.closePath();
-
-            const gradient =
-                ctx.createLinearGradient(
-                    this.spine[0].x,
-                    this.spine[0].y,
-                    this.spine[last].x,
-                    this.spine[last].y
-                );
-
-            gradient.addColorStop(0, '#061a2e');
-            gradient.addColorStop(0.3, '#0c2e4e');
-            gradient.addColorStop(0.7, '#072038');
-            gradient.addColorStop(1, '#030f1c');
-
-            ctx.fillStyle =
-                gradient;
-
-            ctx.fill();
-
-            ctx.strokeStyle =
-                'rgba(0, 240, 255, 0.72)';
-
-            ctx.lineWidth =
-                1.30 *
-                this.scale;
-
+            ctx.strokeStyle = variety.scales;
+            ctx.lineWidth = 0.7 * this.scale;
             ctx.stroke();
+
+            // Gentle moving caustic highlight, as if lit through rippling water.
+            const shimmerAt = 0.5 + 0.5 * Math.sin(time * 0.7 + this.waveOffset);
+            const shimmer = ctx.createLinearGradient(
+                head.x, head.y, tailAnchor.x, tailAnchor.y
+            );
+            shimmer.addColorStop(clamp(shimmerAt - 0.24, 0, 1), 'rgba(190, 235, 255, 0)');
+            shimmer.addColorStop(shimmerAt, `rgba(190, 235, 255, ${variety.shimmer})`);
+            shimmer.addColorStop(clamp(shimmerAt + 0.24, 0, 1), 'rgba(190, 235, 255, 0)');
+
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = shimmer;
+            ctx.fill(path);
+            ctx.globalCompositeOperation = 'source-over';
+
+            // Darken the edges so the body reads as rounded.
+            ctx.strokeStyle = 'rgba(3, 10, 22, 0.42)';
+            ctx.lineWidth = 6 * this.scale;
+            ctx.stroke(path);
+
+            ctx.restore();
+
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.34)`;
+            ctx.lineWidth = 0.75 * this.scale;
+            ctx.stroke(path);
         }
 
-        drawMarkings(ctx) {
+        drawDorsalAndHead(ctx) {
+            const variety = this.variety;
+
+            // Dorsal fin seen from above: a thin ridge with a little sway.
             ctx.beginPath();
+            for (let i = 4; i <= 9; i++) {
+                const p = this.spine[i];
+                const frame = this.frames[i];
+                const sway =
+                    Math.sin(this.swimPhase * 0.9 - i * 0.45) *
+                    0.9 * this.scale * ((i - 3) / 6);
 
-            ctx.moveTo(
-                this.spine[1].x,
-                this.spine[1].y
-            );
+                const x = p.x + frame.px * sway;
+                const y = p.y + frame.py * sway;
 
-            for (let i = 2; i <= 10; i++) {
-                ctx.lineTo(
-                    this.spine[i].x,
-                    this.spine[i].y
-                );
+                if (i === 4) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
             }
-
-            ctx.strokeStyle =
-                'rgba(0, 240, 255, 0.40)';
-
-            ctx.lineWidth =
-                1.25 *
-                this.scale;
-
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = `rgba(${variety.fin}, 0.28)`;
+            ctx.lineWidth = 3.4 * this.scale;
+            ctx.stroke();
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.55)`;
+            ctx.lineWidth = 0.9 * this.scale;
             ctx.stroke();
 
-            const drawPatch =
-                (index, radius, alpha) => {
-                    const point =
-                        this.spine[index];
+            // Gill cover.
+            const gill = this.spine[3];
+            const gillFrame = this.frames[3];
+            const gillWidth = this.bodyWidths[3] * 0.88;
+            const toward = Math.atan2(-gillFrame.px, gillFrame.py);
 
-                    ctx.beginPath();
+            ctx.beginPath();
+            ctx.moveTo(
+                gill.x + gillFrame.px * gillWidth,
+                gill.y + gillFrame.py * gillWidth
+            );
+            ctx.quadraticCurveTo(
+                gill.x + Math.cos(toward) * 3.4 * this.scale,
+                gill.y + Math.sin(toward) * 3.4 * this.scale,
+                gill.x - gillFrame.px * gillWidth,
+                gill.y - gillFrame.py * gillWidth
+            );
+            ctx.strokeStyle = 'rgba(4, 12, 26, 0.34)';
+            ctx.lineWidth = 0.9 * this.scale;
+            ctx.stroke();
 
-                    ctx.arc(
-                        point.x,
-                        point.y,
-                        radius * this.scale,
-                        0,
-                        TAU
-                    );
+            // Barbels at the corners of the mouth.
+            const head = this.spine[0];
+            const neck = this.spine[1];
+            const fx = head.x - neck.x;
+            const fy = head.y - neck.y;
+            const fl = Math.hypot(fx, fy) || 1;
+            const dirX = fx / fl;
+            const dirY = fy / fl;
+            const perpX = -dirY;
+            const perpY = dirX;
+            const wiggle = Math.sin(this.swimPhase * 1.1) * 0.8 * this.scale;
 
-                    ctx.fillStyle =
-                        'rgba(56, 189, 248, ' +
-                        alpha +
-                        ')';
+            ctx.beginPath();
+            for (let side = -1; side <= 1; side += 2) {
+                const bx = head.x + dirX * 3.0 * this.scale + perpX * side * 2.6 * this.scale;
+                const by = head.y + dirY * 3.0 * this.scale + perpY * side * 2.6 * this.scale;
 
-                    ctx.fill();
-                };
-
-            drawPatch(3, 5.0, 0.27);
-            drawPatch(5, 6.3, 0.30);
-            drawPatch(8, 4.2, 0.23);
+                ctx.moveTo(bx, by);
+                ctx.quadraticCurveTo(
+                    bx + dirX * 3 * this.scale + perpX * side * (2.4 + wiggle) * this.scale,
+                    by + dirY * 3 * this.scale + perpY * side * (2.4 + wiggle) * this.scale,
+                    bx + dirX * 2 * this.scale + perpX * side * (5 + wiggle) * this.scale,
+                    by + dirY * 2 * this.scale + perpY * side * (5 + wiggle) * this.scale
+                );
+            }
+            ctx.strokeStyle = `rgba(${variety.rim}, 0.55)`;
+            ctx.lineWidth = 0.6 * this.scale;
+            ctx.stroke();
         }
 
         drawEyes(ctx) {
             const eyeIndex = 1;
+            const eyePoint = this.spine[eyeIndex];
 
-            const eyePoint =
-                this.spine[eyeIndex];
-
-            const dx =
-                this.spine[0].x -
-                this.spine[2].x;
-
-            const dy =
-                this.spine[0].y -
-                this.spine[2].y;
-
-            const len =
-                Math.hypot(dx, dy) || 1;
+            const dx = this.spine[0].x - this.spine[2].x;
+            const dy = this.spine[0].y - this.spine[2].y;
+            const len = Math.hypot(dx, dy) || 1;
 
             const forwardX = dx / len;
             const forwardY = dy / len;
+            const perpX = -forwardY;
+            const perpY = forwardX;
+            const distance = this.bodyWidths[eyeIndex] * 0.84;
 
-            const perpX =
-                -forwardY;
-
-            const perpY =
-                forwardX;
-
-            const distance =
-                this.bodyWidths[eyeIndex] *
-                0.84;
-
-            for (
-                let side = -1;
-                side <= 1;
-                side += 2
-            ) {
+            for (let side = -1; side <= 1; side += 2) {
                 const eyeX =
-                    eyePoint.x +
-                    perpX *
-                    side *
-                    distance +
-                    forwardX *
-                    (1.25 *
-                    this.scale);
-
+                    eyePoint.x + perpX * side * distance * 0.94 +
+                    forwardX * 1.25 * this.scale;
                 const eyeY =
-                    eyePoint.y +
-                    perpY *
-                    side *
-                    distance +
-                    forwardY *
-                    (1.25 *
-                    this.scale);
+                    eyePoint.y + perpY * side * distance * 0.94 +
+                    forwardY * 1.25 * this.scale;
 
                 ctx.beginPath();
-
-                ctx.arc(
-                    eyeX,
-                    eyeY,
-                    4.7 *
-                    this.scale,
-                    0,
-                    TAU
-                );
-
-                ctx.fillStyle =
-                    'rgba(255, 42, 95, 0.23)';
-
+                ctx.arc(eyeX, eyeY, 2.15 * this.scale, 0, TAU);
+                ctx.fillStyle = 'rgba(6, 12, 24, 0.92)';
                 ctx.fill();
 
                 ctx.beginPath();
-
-                ctx.arc(
-                    eyeX,
-                    eyeY,
-                    2.4 *
-                    this.scale,
-                    0,
-                    TAU
-                );
-
-                ctx.fillStyle =
-                    'rgba(255, 20, 75, 0.84)';
-
+                ctx.arc(eyeX, eyeY, 1.55 * this.scale, 0, TAU);
+                ctx.fillStyle = this.variety.eye;
                 ctx.fill();
 
                 ctx.beginPath();
-
-                ctx.arc(
-                    eyeX,
-                    eyeY,
-                    1.25 *
-                    this.scale,
-                    0,
-                    TAU
-                );
-
-                ctx.fillStyle =
-                    '#ff0055';
-
+                ctx.arc(eyeX, eyeY, 0.98 * this.scale, 0, TAU);
+                ctx.fillStyle = '#04070d';
                 ctx.fill();
 
                 ctx.beginPath();
-
                 ctx.arc(
-                    eyeX -
-                    0.4 *
-                    this.scale,
-
-                    eyeY -
-                    0.4 *
-                    this.scale,
-
-                    0.48 *
-                    this.scale,
-
+                    eyeX - 0.38 * this.scale,
+                    eyeY - 0.38 * this.scale,
+                    0.36 * this.scale,
                     0,
                     TAU
                 );
-
-                ctx.fillStyle =
-                    '#ffffff';
-
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
                 ctx.fill();
             }
         }
 
-        draw(ctx) {
+        drawFish(ctx, time) {
             ctx.save();
+            ctx.globalAlpha = this.depth * 0.94;
 
-            // Water disturbance sits behind the fish.
-            this.drawWake(ctx);
+            // Soft light the fish pushes into the surrounding water.
+            const mid = this.spine[6];
+            const glowSize = 92 * this.scale;
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = this.depth * 0.10;
+            ctx.drawImage(glowSprite, mid.x - glowSize / 2, mid.y - glowSize / 2, glowSize, glowSize);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = this.depth * 0.94;
 
-            // Flexible fins and body.
             this.drawTail(ctx);
-            this.drawPectoralFins(ctx);
             this.drawPelvicFins(ctx);
-            this.drawBody(ctx);
-            this.drawMarkings(ctx);
+            this.drawPectoralFins(ctx);
+            this.drawBody(ctx, time);
+            this.drawDorsalAndHead(ctx);
             this.drawEyes(ctx);
 
             ctx.restore();
         }
     }
 
-    const koiSchool = [
-        new TrueKoi(width, height, 1.30),
-        new TrueKoi(width, height, 1.15),
-        new TrueKoi(width, height, 1.00),
-        new TrueKoi(width, height, 0.90),
-        new TrueKoi(width, height, 0.80),
-        new TrueKoi(width, height, 1.05)
+    // Smaller screens get fewer, slightly smaller fish and a 30fps cap so the
+    // background never competes with scrolling for the GPU.
+    const isCompact = () => width < 640;
+    const sizeFactor = isCompact() ? 0.82 : 1;
+
+    const koiSpecs = [
+        [1.30, 'kohaku'],
+        [1.15, 'sanke'],
+        [1.00, 'ogon'],
+        [0.90, 'showa'],
+        [0.80, 'asagi'],
+        [1.05, 'ghost']
     ];
+
+    const koiSchool = koiSpecs
+        .slice(0, isCompact() ? 4 : koiSpecs.length)
+        .map(([scale, name]) => new TrueKoi(
+            width,
+            height,
+            scale * sizeFactor,
+            KOI_VARIETIES.find(v => v.name === name),
+            // Smaller koi are drawn deeper: dimmer and underneath.
+            0.68 + 0.32 * clamp((scale - 0.8) / 0.5, 0, 1)
+        ));
+
+    // Back-to-front draw order (deepest first).
+    const drawOrder = [...koiSchool].sort((a, b) => a.depth - b.depth);
+
+    // Start with trails already in the water instead of fish appearing bare.
+    for (let i = 0; i < 160; i++) {
+        for (const koi of koiSchool) koi.update(width, height, 1 / 30);
+    }
+
+    const reduceMotion = window.matchMedia
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : { matches: false };
 
     let isRunning = !document.hidden;
     let lastTime = performance.now();
+    let seaTime = 0;
+    let rafId = 0;
 
-    document.addEventListener(
-        'visibilitychange',
-        () => {
-            isRunning = !document.hidden;
-            lastTime = performance.now();
+    const drawScene = () => {
+        ctx.clearRect(0, 0, width, height);
 
-            if (isRunning) {
-                requestAnimationFrame(renderSea);
-            }
+        // Water disturbance sits behind every fish.
+        for (const koi of drawOrder) koi.drawWake(ctx);
+        for (const koi of drawOrder) koi.drawFish(ctx, seaTime);
+    };
+
+    const startLoop = () => {
+        cancelAnimationFrame(rafId);
+        lastTime = performance.now();
+        if (isRunning && !reduceMotion.matches) {
+            rafId = requestAnimationFrame(renderSea);
         }
-    );
+    };
+
+    document.addEventListener('visibilitychange', () => {
+        isRunning = !document.hidden;
+        startLoop();
+    });
 
     function renderSea(now) {
         if (!isRunning) return;
+        rafId = requestAnimationFrame(renderSea);
+
+        const elapsed = now - lastTime;
+        if (isCompact() && elapsed < 30) return;
 
         // Clamp giant gaps after sleeping / tab switching.
-        const dt =
-            Math.min(
-                Math.max(
-                    (now - lastTime) / 1000,
-                    0
-                ),
-                0.033
-            );
-
+        const dt = Math.min(Math.max(elapsed / 1000, 0), 0.05);
         lastTime = now;
+        seaTime += dt;
 
-        ctx.clearRect(
-            0,
-            0,
-            width,
-            height
-        );
-
-        for (const koi of koiSchool) {
-            koi.update(
-                width,
-                height,
-                dt
-            );
-
-            koi.draw(ctx);
-        }
-
-        requestAnimationFrame(renderSea);
+        for (const koi of koiSchool) koi.update(width, height, dt);
+        drawScene();
     }
 
-    requestAnimationFrame(renderSea);
+    // A resize (device rotation, window drag) needs a new backing store; the
+    // mobile URL bar showing/hiding only nudges the height, which must not.
+    let resizeTimer = 0;
+    let lastBackingWidth = width;
+    let lastBackingHeight = height;
+
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            const widthChanged = window.innerWidth !== lastBackingWidth;
+            const heightJump = Math.abs(window.innerHeight - lastBackingHeight) > 120;
+            if (!widthChanged && !heightJump) return;
+
+            resizeCanvas();
+            lastBackingWidth = width;
+            lastBackingHeight = height;
+            if (reduceMotion.matches) drawScene();
+        }, 150);
+    }, { passive: true });
+
+    if (reduceMotion.matches) {
+        drawScene();
+    } else {
+        startLoop();
+    }
 }
 
 if (document.readyState === 'loading') {
