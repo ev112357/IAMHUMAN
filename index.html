@@ -896,22 +896,34 @@ img, video, canvas, pre, code {
             border-color: #22c55e;
             transform: scale(1.05);
         }
-        .active-call-bar {
-            background: linear-gradient(90deg, #0f172a, #1e293b);
-            border: 1px solid #22c55e;
-            border-radius: 8px;
-            padding: 8px 12px;
-            margin-bottom: 10px;
+        /* --- FLOATING CALL WINDOW (PICTURE-IN-PICTURE) --- */
+        .active-call-window {
+            position: fixed;
+            bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+            right: 18px;
+            z-index: 28000;
+            background: rgba(15, 23, 42, 0.96);
+            border: 1.5px solid #22c55e;
+            border-radius: 12px;
+            padding: 10px 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);
-            flex-shrink: 0;
-            animation: fadeIn 0.2s ease;
+            gap: 14px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 20px rgba(34, 197, 94, 0.35);
+            backdrop-filter: blur(14px);
+            max-width: 380px;
+            min-width: 250px;
+            animation: call-window-slide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            pointer-events: auto;
         }
-        .active-call-bar.connecting {
+        .active-call-window.connecting {
             border-color: #eab308;
-            box-shadow: 0 4px 12px rgba(234, 179, 8, 0.15);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 20px rgba(234, 179, 8, 0.35);
+        }
+        @keyframes call-window-slide {
+            from { transform: translateY(16px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
         .call-info {
             display: flex;
@@ -928,15 +940,18 @@ img, video, canvas, pre, code {
             white-space: nowrap;
         }
         @media (max-width: 768px) {
-            .active-call-bar {
-                padding: 6px 10px !important;
-                gap: 6px !important;
+            .active-call-window {
+                bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+                left: 12px;
+                right: 12px;
+                max-width: calc(100% - 24px);
+                min-width: 0;
+                padding: 8px 12px;
             }
             #call-status-text {
                 font-size: 0.8rem !important;
             }
-        }
-        @media (max-height: 500px) and (orientation: landscape) {
+        }        @media (max-height: 500px) and (orientation: landscape) {
             #incoming-call-modal .modal-box {
                 padding: 12px 16px !important;
                 max-height: 92vh !important;
@@ -2417,17 +2432,7 @@ img, video, canvas, pre, code {
                         </div>
                     </div>
                     <!-- ACTIVE 1-ON-1 AUDIO CALL BAR -->
-                    <div id="active-call-bar" class="active-call-bar hidden">
-                        <div class="call-info">
-                            <span id="call-pulse-indicator" class="call-pulse-dot connecting"></span>
-                            <span id="call-status-text">Calling...</span>
-                            <span id="call-duration-text" class="call-timer hidden">00:00</span>
-                        </div>
-                        <div class="call-controls">
-                            <button type="button" id="call-mute-btn" class="call-ctrl-btn secondary" title="Mute/Unmute Mic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-                            <button type="button" id="call-hangup-btn" class="call-ctrl-btn danger" title="End Call"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 3px;"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>End</button>
-                        </div>
-                    </div>
+                    
                     <div id="chat-pending-banner" class="msg-pending-banner hidden">
                         ◈ Non-friend conversation: Messages remain hidden from recipient until accepted.
                     </div>
@@ -3153,6 +3158,27 @@ img, video, canvas, pre, code {
             </div>
         </div>
     </div>
+
+    <!-- FLOATING PERSISTENT AUDIO CALL WINDOW (VISIBLE ANYWHERE ON SITE) -->
+    <div id="active-call-bar" class="active-call-window hidden">
+        <div class="call-info" style="display: flex; align-items: center; gap: 10px; min-width: 0;">
+            <span id="call-pulse-indicator" class="call-pulse-dot connecting"></span>
+            <div style="display: flex; flex-direction: column; min-width: 0;">
+                <span id="call-status-text" style="font-weight: 700; font-size: 0.82rem; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Calling...</span>
+                <span id="call-duration-text" class="call-timer hidden" style="font-size: 0.72rem; color: #22c55e;">00:00</span>
+            </div>
+        </div>
+        <div class="call-controls" style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+            <button type="button" id="call-mute-btn" class="call-ctrl-btn secondary" title="Mute/Unmute Mic" style="width: 32px !important; height: 32px !important; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <button type="button" id="call-hangup-btn" class="call-ctrl-btn danger" title="End Call" style="height: 32px !important; padding: 0 10px !important; font-size: 0.78rem !important; border-radius: 6px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+                <span>End</span>
+            </button>
+        </div>
+    </div>
+    
     <!-- INCOMING AUDIO CALL POPOUT BANNER (NON-BLOCKING) -->
     <div id="incoming-call-popout" class="incoming-call-popout hidden">
         <span class="phone-buzz-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg></span>
@@ -3166,7 +3192,6 @@ img, video, canvas, pre, code {
         </div>
     </div>
     <audio id="remote-audio" autoplay playsinline style="position: fixed; top: -9999px; left: -9999px; opacity: 0.01; pointer-events: none; width: 1px; height: 1px;"></audio>
-    <!-- AMBIENT CALL GREEN GLOW & VIBRATION BACKDROP -->
     <div id="call-ambient-backdrop" class="call-ambient-backdrop hidden"></div>
 
     <!-- TECHNO TOAST NOTIFICATION CONTAINER -->
