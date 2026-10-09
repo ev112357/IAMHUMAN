@@ -716,6 +716,7 @@ let unreadCountsByConv = new Map();
 let userAvatarCache = new Map();
 let usernameAvatarMap = new Map();
 let notifPollInterval = null;
+let notifBlockedWarned = false;
 
 
 
@@ -1831,8 +1832,30 @@ async function sendNotification(targetUserId, type, entityId, message) {
 async function loadUserNotifications() {
     if (!currentUser || !db || !notificationsList) return;
 
+    // With the activity panel closed only the unread badge matters: ask for a count instead of
+    // downloading and re-rendering 40 rows.
+    const panelOpen = notificationsModal && !notificationsModal.classList.contains('hidden');
+    if (!panelOpen) {
+        try {
+            const { count, error } = await db
+                .from('user_notifications')
+                .select('id', { count: 'exact', head: true })
+                .eq('user_id', currentUser.id)
+                .eq('is_read', false);
+            if (error) throw error;
 
-
+            const unread = count || 0;
+            const text = unread > 99 ? '99+' : unread;
+            [activityNotifBadge, mobileActivityBadge].forEach(badge => {
+                if (!badge) return;
+                if (unread > 0) { badge.textContent = text; badge.classList.remove('hidden'); }
+                else badge.classList.add('hidden');
+            });
+        } catch (e) {
+            console.warn("Notification badge refresh notice:", e);
+        }
+        return;
+    }
 
     try {
         const { data: notifs, error } = await db
@@ -1845,10 +1868,20 @@ async function loadUserNotifications() {
 
 
 
-        // FIX: Expose hidden database blocks so notifications don't silently fail
+        // Surface database blocks (e.g. RLS) once, without a blocking alert on every refresh.
         if (error) {
             console.error("Notifications Blocked:", error.message);
-            alert(`Database blocked loading notifications: ${error.message}`);
+            if (!notifBlockedWarned) {
+                notifBlockedWarned = true;
+                showToast({
+                    title: "Notifications unavailable",
+                    message: error.message,
+                    type: "error",
+                    icon: "⚠",
+                    duration: 6000,
+                    force: true
+                });
+            }
             return;
         }
 
@@ -2358,6 +2391,31 @@ safeAddListener(cancelUnaddBtn, 'click', () => {
 
 
 
+// Realtime (postgres_changes on user_notifications + broadcast signaling) delivers new activity instantly.
+// Polling is only a safety net, so it runs slowly, never in a background tab, and catches up the moment the
+// tab becomes visible again. (It used to run 5 queries every 5 seconds, even while hidden.)
+const NOTIF_POLL_MS = 20000;
+
+function pollNotificationsOnce() {
+    if (!currentUser || document.hidden) return;
+    checkNotifications();
+    loadUserNotifications();
+}
+
+function startNotificationPolling() {
+    stopNotificationPolling();
+    notifPollInterval = setInterval(pollNotificationsOnce, NOTIF_POLL_MS);
+}
+
+function stopNotificationPolling() {
+    if (notifPollInterval) clearInterval(notifPollInterval);
+    notifPollInterval = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && notifPollInterval) pollNotificationsOnce();
+});
+
 async function syncUserState(user) {
     if (user) {
         currentUser = user;
@@ -2447,11 +2505,7 @@ async function syncUserState(user) {
         loadNotificationPreferences();
         initUserCallSignaling();
         initRealtimeActivityNotifications();
-        if (notifPollInterval) clearInterval(notifPollInterval);
-        notifPollInterval = setInterval(() => {
-            checkNotifications();
-            loadUserNotifications();
-        }, 5000);
+        startNotificationPolling();
     } else {
         currentUser = null;
         currentUsername = null;
@@ -2497,7 +2551,7 @@ async function syncUserState(user) {
             db.removeChannel(window.chatSubscription);
             window.chatSubscription = null;
         }
-        if (notifPollInterval) clearInterval(notifPollInterval);
+        stopNotificationPolling();
 
 
 
@@ -3131,28 +3185,22 @@ const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
 const sidebarActiveName = document.getElementById('sidebar-active-name');
 const singleColumnQuery = window.matchMedia ? window.matchMedia('(max-width: 860px)') : { matches: false };
 
-function setSidebarCollapsed(collapsed, remember = true) {
+function setSidebarCollapsed(collapsed) {
     const panel = document.querySelector('.threads-sidebar');
     if (!panel) return;
     panel.classList.toggle('collapsed', collapsed);
     if (sidebarCollapseBtn) sidebarCollapseBtn.setAttribute('aria-expanded', String(!collapsed));
-    if (remember) {
-        try { localStorage.setItem('forum_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
-    }
 }
 
-(function initSidebarCollapse() {
-    let saved = null;
-    try { saved = localStorage.getItem('forum_sidebar_collapsed'); } catch (e) {}
-    // On phones start collapsed (feed first) unless the user chose otherwise.
-    setSidebarCollapsed(saved === null ? singleColumnQuery.matches : saved === '1', false);
-    if (sidebarCollapseBtn) {
-        sidebarCollapseBtn.addEventListener('click', () => {
-            const panel = document.querySelector('.threads-sidebar');
-            setSidebarCollapsed(!(panel && panel.classList.contains('collapsed')));
-        });
-    }
-})();
+// On phones the feed comes first; the list is one tap away. (The class is ignored by the stylesheet on
+// wide screens, so rotating or resizing just works.)
+setSidebarCollapsed(singleColumnQuery.matches);
+if (sidebarCollapseBtn) {
+    sidebarCollapseBtn.addEventListener('click', () => {
+        const panel = document.querySelector('.threads-sidebar');
+        setSidebarCollapsed(!(panel && panel.classList.contains('collapsed')));
+    });
+}
 
 function renderJoinedThreadsSidebar() {
     if (!joinedThreadsContainer) return;
@@ -3242,7 +3290,7 @@ function renderJoinedThreadsSidebar() {
                 renderJoinedThreadsSidebar();
                 updateThreadControlsUI();
                 // Picking a thread on a phone: tuck the list away and show the feed.
-                if (singleColumnQuery.matches) setSidebarCollapsed(true, false);
+                if (singleColumnQuery.matches) setSidebarCollapsed(true);
 
 
 
@@ -6519,19 +6567,15 @@ async function checkNotifications() {
 
 
     try {
-        const { count: pendingReqs } = await db
-            .from('friendships')
-            .select('*', { count: 'exact', head: true })
-            .eq('friend_id', currentUser.id)
-            .eq('status', 'pending');
-
-
-
-
-        const { data: memberships } = await db
-            .from('conversation_members')
-            .select('conversation_id')
-            .eq('user_id', currentUser.id);
+        const [{ count: pendingReqs }, { data: memberships }] = await Promise.all([
+            db.from('friendships')
+                .select('*', { count: 'exact', head: true })
+                .eq('friend_id', currentUser.id)
+                .eq('status', 'pending'),
+            db.from('conversation_members')
+                .select('conversation_id')
+                .eq('user_id', currentUser.id)
+        ]);
 
 
 
@@ -6754,6 +6798,24 @@ function getPostScore(post) {
 
 
 
+// Update just this post's vote controls. Re-rendering the whole feed for one click threw away scroll
+// position, open comment threads, playing videos and carousel positions. The order is deliberately left
+// alone until the next sort/refresh, as on most feeds.
+function refreshPostVoteUI(post) {
+    const card = document.getElementById(`post-${post.id}`);
+    if (!card) return;
+
+    const vote = userVotes[post.id] || 0;
+    const score = card.querySelector('.vote-score');
+    if (score) score.textContent = getPostScore(post);
+
+    card.querySelectorAll('.vote-btn').forEach(btn => {
+        const dir = parseInt(btn.getAttribute('data-dir'), 10);
+        btn.classList.toggle('upvoted', vote === 1 && dir === 1);
+        btn.classList.toggle('downvoted', vote === -1 && dir === -1);
+    });
+}
+
 async function handleVote(postId, direction) {
     if (!currentUser) {
         alert("You must be logged in to like or dislike posts.");
@@ -6801,7 +6863,7 @@ async function handleVote(postId, direction) {
 
     post.likes = newLikes;
     post.dislikes = newDislikes;
-    renderCurrentFeed();
+    refreshPostVoteUI(post);
 
 
 
@@ -7244,11 +7306,33 @@ function createPostCardElement(post) {
 
 
 
+// Storage object paths for a post's uploads (photos, videos and video posters).
+function getPostMediaPaths(post) {
+    const marker = `/${MEDIA_BUCKET}/`;
+    const paths = [];
+    parsePostMedia(post && post.image_url).forEach((m) => {
+        [m.url, m.poster].forEach((url) => {
+            if (!url) return;
+            const at = url.indexOf(marker);
+            if (at >= 0) paths.push(decodeURIComponent(url.slice(at + marker.length).split(/[?#]/)[0]));
+        });
+    });
+    return paths;
+}
+
 async function deletePostById(postId) {
     if (!currentUser) return;
     if (db) {
+        const doomed = postCacheMap.get(Number(postId)) || cachedPosts.find(p => String(p.id) === String(postId));
+        const mediaPaths = getPostMediaPaths(doomed);
+
         await db.from('Posts').delete().eq('id', postId);
         await db.from('post_comments').delete().eq('post_id', postId);
+
+        // Best effort: don't leave orphaned uploads behind (storage policy may not allow it).
+        if (mediaPaths.length > 0) {
+            db.storage.from(MEDIA_BUCKET).remove(mediaPaths).then(null, () => {});
+        }
     }
     cachedPosts = cachedPosts.filter(p => String(p.id) !== String(postId));
     postCacheMap.delete(Number(postId));
@@ -7589,12 +7673,27 @@ async function loadForumPosts() {
             error = fallbackRes.error;
         }
     } else {
+        // Newest 300 posts: every sort mode works client-side, and downloading a thread's entire history
+        // (poll votes and all) on each visit does not scale.
         const res = await db
             .from('Posts')
             .select('*')
-            .eq('thread', requestedThread);
+            .eq('thread', requestedThread)
+            .order('id', { ascending: false })
+            .limit(300);
         posts = res.data;
         error = res.error;
+
+        // Pinned posts must survive even when they are older than the newest 300.
+        if (!error && posts && posts.length >= 300) {
+            const pinnedRes = await db
+                .from('Posts')
+                .select('*')
+                .eq('thread', requestedThread)
+                .eq('is_pinned', true);
+            const seen = new Set(posts.map(p => p.id));
+            (pinnedRes.data || []).forEach(p => { if (!seen.has(p.id)) posts.push(p); });
+        }
     }
 
 
