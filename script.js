@@ -9261,20 +9261,26 @@ async function submitPollVote(postId, optIdx) {
 
 
 
-// =========================================================================
-// --- 1-ON-1 WEBRTC AUDIO CALLING SYSTEM ---
-// =========================================================================
+// --- 1-ON-1 AUDIO CALL STATE ---
+let activeCall = null; // { peerConnection, localStream, conversationId, partnerId, partnerUsername, isCaller, callChannel, callTimerInterval, callStartTime }
+let isMicMuted = false;
+let incomingCallData = null; // { callerId, callerUsername, conversationId }
+let userCallSignalingChannel = null;
+const recentlyDeclinedCalls = new Map();
+let ringtoneAudioCtx = null;
+let ringtoneInterval = null;
+let queuedIceCandidates = [];
+let isAnsweringCall = false; 
+let answeringConversationId = null;
 
 
 function triggerIncomingCallUI(data) {
     if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-    if (activeCall) return;
-
+    if (activeCall || isAnsweringCall) return;
 
     if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
         return;
     }
-
 
     // Ignore if this call was explicitly declined within the last 45 seconds
     const lastDeclined = Math.max(
@@ -9284,7 +9290,6 @@ function triggerIncomingCallUI(data) {
     if (Date.now() - lastDeclined < 45000) {
         return;
     }
-
 
     incomingCallData = data;
     if (incomingCallerName) {
@@ -9306,7 +9311,6 @@ function triggerIncomingCallUI(data) {
     }
 }
 
-
 function playRingtoneSound() {
     stopRingtoneSound();
     // Mute ringtone sound if user turned off sounds in settings (visual popouts & aura remain active)
@@ -9317,7 +9321,6 @@ function playRingtoneSound() {
         const ctx = getSharedAudioContext();
         if (!ctx) return;
 
-
         const playTone = () => {
             if (!ctx || ctx.state === 'closed') return;
             const now = ctx.currentTime;
@@ -9325,29 +9328,24 @@ function playRingtoneSound() {
             const osc2 = ctx.createOscillator();
             const gain = ctx.createGain();
 
-
             osc1.type = 'sine';
             osc2.type = 'sine';
             osc1.frequency.setValueAtTime(440, now);
             osc2.frequency.setValueAtTime(480, now);
 
-
             // High-visibility audible ring volume (0.30)
             gain.gain.setValueAtTime(0.30, now);
             gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
 
-
             osc1.connect(gain);
             osc2.connect(gain);
             gain.connect(ctx.destination);
-
 
             osc1.start();
             osc2.start();
             osc1.stop(now + 1.2);
             osc2.stop(now + 1.2);
         };
-
 
         if (ctx.state === 'suspended') {
             ctx.resume().then(playTone).catch(playTone);
@@ -9363,7 +9361,6 @@ function playRingtoneSound() {
     }
 }
 
-
 function stopRingtoneSound() {
     if (ringtoneInterval) {
         clearInterval(ringtoneInterval);
@@ -9374,7 +9371,6 @@ function stopRingtoneSound() {
         ringtoneAudioCtx = null;
     }
 }
-
 
 function showActiveCallBar(status, isConnecting = true) {
     if (!activeCallBar) return;
@@ -9395,18 +9391,15 @@ function showActiveCallBar(status, isConnecting = true) {
     activeCallBar.classList.remove('hidden');
 }
 
-
 function setCallConnectedState() {
     if (!activeCall) return;
     stopRingtoneSound();
     showActiveCallBar(`In call with @${activeCall.partnerUsername}`, false);
 
-
     if (callDurationText) {
         callDurationText.classList.remove('hidden');
         callDurationText.textContent = "00:00";
     }
-
 
     if (activeCall.callTimerInterval) clearInterval(activeCall.callTimerInterval);
     activeCall.callStartTime = Date.now();
@@ -9419,14 +9412,12 @@ function setCallConnectedState() {
     }, 1000);
 }
 
-
 function cleanupCall(statusNotice = null) {
     stopRingtoneSound();
     if (callAmbientBackdrop) {
         callAmbientBackdrop.classList.add('hidden');
     }
     queuedIceCandidates = [];
-
 
     if (activeCall) {
         if (activeCall.dialingInterval) {
@@ -9454,18 +9445,15 @@ function cleanupCall(statusNotice = null) {
         activeCall = null;
     }
 
-
     if (remoteAudioEl) {
         remoteAudioEl.srcObject = null;
     }
-
 
     isMicMuted = false;
     if (callMuteBtn) {
         callMuteBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
         callMuteBtn.className = 'call-ctrl-btn secondary';
     }
-
 
     if (statusNotice && callStatusText) {
         callStatusText.textContent = statusNotice;
@@ -9476,7 +9464,6 @@ function cleanupCall(statusNotice = null) {
         activeCallBar.classList.add('hidden');
     }
 }
-
 
 function setupCallChannelListeners(callChan, pc) {
     callChan
@@ -9491,11 +9478,9 @@ function setupCallChannelListeners(callChan, pc) {
             const data = payload?.payload;
             if (!data || !data.offer || data.from === currentUser?.id) return;
 
-
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
 
                 // Process any queued ICE candidates
                 while (queuedIceCandidates.length > 0) {
@@ -9503,11 +9488,9 @@ function setupCallChannelListeners(callChan, pc) {
                     await pc.addIceCandidate(new RTCIceCandidate(c));
                 }
 
-
                 // Generate Answer
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-
 
                 callChan.send({
                     type: 'broadcast',
@@ -9522,11 +9505,9 @@ function setupCallChannelListeners(callChan, pc) {
             const data = payload?.payload;
             if (!data || !data.answer || data.from === currentUser?.id) return;
 
-
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-
 
                 // Process any queued ICE candidates
                 while (queuedIceCandidates.length > 0) {
@@ -9540,7 +9521,6 @@ function setupCallChannelListeners(callChan, pc) {
         .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.candidate || data.from === currentUser?.id) return;
-
 
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
@@ -9578,7 +9558,6 @@ function setupCallChannelListeners(callChan, pc) {
         });
 }
 
-
 async function startAudioCall() {
     if (!currentUser || !activeConversationId) {
         alert("Please select a conversation to start a call.");
@@ -9590,10 +9569,8 @@ async function startAudioCall() {
         return;
     }
 
-
     try {
         const stream = await getMicrophoneStream();
-
 
         const rtcConfig = {
             iceServers: [
@@ -9602,10 +9579,8 @@ async function startAudioCall() {
             ]
         };
 
-
         const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
 
         pc.ontrack = (event) => {
             if (remoteAudioEl && event.streams[0]) {
@@ -9614,14 +9589,11 @@ async function startAudioCall() {
             }
         };
 
-
         const targetConvId = activeConversationId;
         const targetPartnerId = activeConversationPartnerId;
         const targetPartnerUsername = activeConversationPartnerUsername || 'User';
 
-
         const callChan = db.channel(`call_room_${targetConvId}`);
-
 
         activeCall = {
             peerConnection: pc,
@@ -9635,7 +9607,6 @@ async function startAudioCall() {
             callTimerInterval: null
         };
 
-
         pc.onicecandidate = (event) => {
             if (event.candidate && callChan) {
                 callChan.send({
@@ -9646,7 +9617,6 @@ async function startAudioCall() {
             }
         };
 
-
         pc.onconnectionstatechange = () => {
             if (pc.connectionState === 'connected') {
                 setCallConnectedState();
@@ -9655,14 +9625,11 @@ async function startAudioCall() {
             }
         };
 
-
         setupCallChannelListeners(callChan, pc);
-
 
         // Pre-create offer before broadcasting so it is bundled directly in the invitation
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-
 
         const plainOffer = { type: offer.type, sdp: offer.sdp };
         const callPayload = {
@@ -9675,7 +9642,6 @@ async function startAudioCall() {
             offer: plainOffer
         };
 
-
         if (isGroupCall) {
             // Group Calling: Query all members of conversation
             const { data: members } = await db
@@ -9684,14 +9650,12 @@ async function startAudioCall() {
                 .eq('conversation_id', targetConvId)
                 .neq('user_id', currentUser.id);
 
-
             const sendGroupSignals = () => {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
                     callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
-
 
                 (members || []).forEach(m => {
                     try {
@@ -9705,7 +9669,6 @@ async function startAudioCall() {
                 });
             };
 
-
             await callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     sendGroupSignals();
@@ -9713,16 +9676,13 @@ async function startAudioCall() {
                 }
             });
 
-
             // Notify group members in database
             (members || []).forEach(m => {
                 sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
             });
 
-
             showActiveCallBar(`Group Call Active (Dialing members...)`, true);
             playRingtoneSound();
-
 
         } else {
             // 1-on-1 Calling
@@ -9730,20 +9690,17 @@ async function startAudioCall() {
                 config: { broadcast: { self: false } }
             });
 
-
             const sendCallSignals = () => {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
                     partnerSig.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
                 } catch (e) {}
 
-
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
                     callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
             };
-
 
             partnerSig.subscribe((sigStatus) => {
                 if (sigStatus === 'SUBSCRIBED') {
@@ -9753,13 +9710,11 @@ async function startAudioCall() {
                 }
             });
 
-
             await callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     sendCallSignals();
                 }
             });
-
 
             // Layer 2: Repeated Dialing Pulses (every 2.5s for up to 35s)
             let dialCount = 0;
@@ -9778,15 +9733,12 @@ async function startAudioCall() {
                 sendCallSignals();
             }, 2500);
 
-
             // Layer 3: Database Signal Dispatch via user_notifications fallback
             sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
-
 
             showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
             playRingtoneSound();
         }
-
 
     } catch (err) {
         console.error("Audio call error:", err);
@@ -9795,17 +9747,17 @@ async function startAudioCall() {
     }
 }
 
-
 async function answerAudioCall() {
-    if (!incomingCallData || !currentUser) return;
+    if (!incomingCallData || !currentUser || isAnsweringCall) return;
+    isAnsweringCall = true;
+    answeringConversationId = incomingCallData.conversationId;
+
     stopRingtoneSound();
     if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
 
-
     const data = incomingCallData;
     incomingCallData = null;
-
 
     if (db && currentUser) {
         db.from('user_notifications')
@@ -9815,10 +9767,8 @@ async function answerAudioCall() {
             .catch(() => {});
     }
 
-
     try {
         const stream = await getMicrophoneStream();
-
 
         const rtcConfig = {
             iceServers: [
@@ -9827,10 +9777,8 @@ async function answerAudioCall() {
             ]
         };
 
-
         const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
 
         pc.ontrack = (event) => {
             if (remoteAudioEl && event.streams[0]) {
@@ -9839,9 +9787,7 @@ async function answerAudioCall() {
             }
         };
 
-
         const callChan = db.channel(`call_room_${data.conversationId}`);
-
 
         activeCall = {
             peerConnection: pc,
@@ -9855,7 +9801,6 @@ async function answerAudioCall() {
             callTimerInterval: null
         };
 
-
         pc.onicecandidate = (event) => {
             if (event.candidate && callChan) {
                 callChan.send({
@@ -9866,7 +9811,6 @@ async function answerAudioCall() {
             }
         };
 
-
         pc.onconnectionstatechange = () => {
             if (pc.connectionState === 'connected') {
                 setCallConnectedState();
@@ -9875,14 +9819,11 @@ async function answerAudioCall() {
             }
         };
 
-
         setupCallChannelListeners(callChan, pc);
-
 
         // Robust offer processing
         const offerData = data && data.offer;
         const hasValidOffer = offerData && (offerData.sdp || typeof offerData === 'object');
-
 
         if (hasValidOffer) {
             try {
@@ -9895,7 +9836,6 @@ async function answerAudioCall() {
                 }
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-
 
                 await callChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -9924,13 +9864,11 @@ async function answerAudioCall() {
             });
         }
 
-
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
         } else {
             showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
         }
-
 
         // Open direct messages modal and select active conversation
         if (dmModal && dmModal.classList.contains('hidden')) {
@@ -9942,7 +9880,6 @@ async function answerAudioCall() {
             selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
         }
 
-
     } catch (err) {
         console.error("Answer call error:", err);
         showToast({
@@ -9953,24 +9890,23 @@ async function answerAudioCall() {
             force: true
         });
         cleanupCall();
+    } finally {
+        isAnsweringCall = false;
+        answeringConversationId = null;
     }
 }
-
 
 function declineAudioCall() {
     stopRingtoneSound();
     if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
     if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
 
-
     if (incomingCallData) {
         const convId = incomingCallData.conversationId;
         const callerId = incomingCallData.callerId;
 
-
         if (convId) recentlyDeclinedCalls.set(convId, Date.now());
         if (callerId) recentlyDeclinedCalls.set(callerId, Date.now());
-
 
         if (db) {
             try {
@@ -9985,7 +9921,6 @@ function declineAudioCall() {
                     }
                 });
             } catch (e) {}
-
 
             if (callerId) {
                 try {
@@ -10004,7 +9939,6 @@ function declineAudioCall() {
         }
     }
 
-
     if (db && currentUser) {
         db.from('user_notifications')
             .delete()
@@ -10013,20 +9947,16 @@ function declineAudioCall() {
             .catch(() => {});
     }
 
-
     incomingCallData = null;
 }
-
 
 function toggleCallMute() {
     if (!activeCall || !activeCall.localStream) return;
     const tracks = activeCall.localStream.getAudioTracks();
     if (tracks.length === 0) return;
 
-
     isMicMuted = !isMicMuted;
     tracks[0].enabled = !isMicMuted;
-
 
     if (callMuteBtn) {
         callMuteBtn.innerHTML = isMicMuted ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>';
@@ -10035,7 +9965,6 @@ function toggleCallMute() {
         else callMuteBtn.className = 'call-ctrl-btn secondary';
     }
 }
-
 
 function endCurrentAudioCall() {
     if (activeCall) {
@@ -10066,21 +9995,25 @@ function endCurrentAudioCall() {
     cleanupCall("Call Ended");
 }
 
-
 function initUserCallSignaling() {
     if (!db || !currentUser) return;
     if (userCallSignalingChannel) {
         try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
     }
 
-
     userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`)
         .on('broadcast', { event: 'incoming_call' }, (payload) => {
             const data = payload?.payload;
             if (!data || !data.callerId) return;
 
-
-            if (activeCall) {
+            if (activeCall || isAnsweringCall) {
+                // If we are already answering THIS specific call or actively in it, ignore the duplicate dialer pulse
+                if ((activeCall && activeCall.conversationId === data.conversationId) || 
+                    (isAnsweringCall && answeringConversationId === data.conversationId)) {
+                    return; 
+                }
+                
+                // Otherwise, bounce with a busy signal
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -10094,7 +10027,6 @@ function initUserCallSignaling() {
                 return;
             }
 
-
             if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
                 // If user has disabled call notifications, auto decline/busy
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
@@ -10105,7 +10037,6 @@ function initUserCallSignaling() {
                 });
                 return;
             }
-
 
             triggerIncomingCallUI(data);
         })
@@ -10143,14 +10074,12 @@ function initUserCallSignaling() {
         .subscribe();
 }
 
-
 // Call button click listeners
 safeAddListener(startCallBtn, 'click', startAudioCall);
 safeAddListener(acceptCallBtn, 'click', answerAudioCall);
 safeAddListener(declineCallBtn, 'click', declineAudioCall);
 safeAddListener(callMuteBtn, 'click', toggleCallMute);
 safeAddListener(callHangupBtn, 'click', endCurrentAudioCall);
-
 
 
 
