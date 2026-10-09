@@ -745,6 +745,12 @@ const VOTE_STORE_PREFIX = 'user_forum_votes_';
 let userVotes = {};
 let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
+// People the signed-in user has blocked (see the SAFETY section): id -> { id, username }, plus a lowercase-name index.
+const blockedById = new Map();
+const blockedNames = new Set();
+const userCardSafety = document.getElementById('user-card-safety');
+const userCardBlockBtn = document.getElementById('user-card-block-btn');
+const userCardReportBtn = document.getElementById('user-card-report-btn');
 let cachedUpdates = [];
 let postCacheMap = new Map();
 let threadFlairMap = new Map();
@@ -1868,7 +1874,7 @@ async function loadUserNotifications() {
     }
 
     try {
-        const { data: notifs, error } = await db
+        let { data: notifs, error } = await db
             .from('user_notifications')
             .select('*')
             .eq('user_id', currentUser.id)
@@ -1897,6 +1903,8 @@ async function loadUserNotifications() {
 
 
 
+
+        notifs = (notifs || []).filter(n => !isBlockedUsername(n.actor_username));
 
         if (!notifs || notifs.length === 0) {
             notificationsList.innerHTML = '<div class="no-posts">No notifications yet.</div>';
@@ -2064,6 +2072,16 @@ async function updateProfileFriendButtonUI() {
     if (isOwnProfile) {
         if (userCardAddFriendBtn) userCardAddFriendBtn.classList.add('hidden');
         if (userCardMsgBtn) userCardMsgBtn.classList.add('hidden');
+        if (userCardSafety) userCardSafety.classList.add('hidden');
+        return;
+    }
+
+    // Report / Block are always available on someone else's card. A blocked member can't be messaged or befriended.
+    if (userCardSafety) userCardSafety.classList.remove('hidden');
+    refreshProfileSafetyUI();
+    if (isBlockedUsername(targetProfileUsername) || isBlockedId(targetProfileId)) {
+        if (userCardAddFriendBtn) userCardAddFriendBtn.classList.add('hidden');
+        if (userCardMsgBtn) userCardMsgBtn.classList.add('hidden');
         return;
     }
 
@@ -2170,6 +2188,9 @@ window.openUserProfileCard = async function(username) {
 
 
     await updateProfileFriendButtonUI();
+    // The live chat overlay sits at z-index 20000; lift the card above it when opened from there.
+    const stageOpen = Boolean(voiceForumModal && !voiceForumModal.classList.contains('hidden'));
+    userProfileModal.style.setProperty('z-index', stageOpen ? '21000' : '105', 'important');
     userProfileModal.classList.remove('hidden');
 
 
@@ -2510,6 +2531,7 @@ async function syncUserState(user) {
 
 
         renderUserAvatar(currentAvatarUrl);
+        await Promise.race([loadBlocks(), new Promise(r => setTimeout(r, 5000))]); // never let a slow query stall sign-in
         await syncCloudThreads();
         checkNotifications();
         loadUserNotifications();
@@ -2585,6 +2607,7 @@ async function syncUserState(user) {
         if (captchaSuspensionModal) captchaSuspensionModal.classList.add('hidden');
         if (authPanelWrapper) authPanelWrapper.classList.remove('hidden');
         if (typeof triggerGuestDisclaimer === 'function') triggerGuestDisclaimer();
+        clearBlocks();
 
 
 
@@ -2695,6 +2718,8 @@ if (db) {
 
 safeAddListener(authToggleBtn, 'click', () => {
     isSignUpMode = !isSignUpMode;
+    const termsGroup = document.getElementById('auth-terms-group');
+    if (termsGroup) termsGroup.classList.toggle('hidden', !isSignUpMode);
     if (isSignUpMode) {
         authHeader.textContent = "Create Human Account";
         authUsernameGroup.classList.remove('hidden');
@@ -2740,6 +2765,13 @@ safeAddListener(authForm, 'submit', async (e) => {
 
 
     if (isSignUpMode) {
+        const termsChk = document.getElementById('auth-terms-chk');
+        if (termsChk && !termsChk.checked) {
+            alert("Please confirm you are 13 or older and agree to the Terms of Use and Privacy Policy to create an account.");
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = "Sign Up";
+            return;
+        }
         const username = authUsernameInput.value.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
         if (username.length < 3) {
             alert("Username must be at least 3 characters.");
@@ -3064,9 +3096,359 @@ safeAddListener(finalDeleteBtn, 'click', async () => {
 
 
 
-    await db.from('profiles').delete().eq('id', currentUser.id);
-    await db.auth.signOut();
-    alert("Your account has been deleted.");
+    // Real deletion: delete_my_account() (see safety.sql) removes the person's data AND their login. Apple
+    // requires that in-app deletion actually deletes the account, not just a profile row.
+    const doomedId = currentUser.id;
+    let viaLegacyPath = false;
+    try {
+        const { error: rpcErr } = await db.rpc('delete_my_account');
+        if (rpcErr) {
+            if (!isMissingFunctionError(rpcErr)) throw rpcErr;
+            // The SQL hasn't been installed yet: fall back to removing the profile only.
+            viaLegacyPath = true;
+            const { error: profErr } = await db.from('profiles').delete().eq('id', doomedId);
+            if (profErr) throw profErr;
+        }
+    } catch (err) {
+        finalDeleteBtn.disabled = false;
+        finalDeleteBtn.textContent = 'Confirm Delete';
+        showToast({ title: "Account not deleted", message: `We couldn't delete your account (${err?.message || err}). Please try again, or email ${SUPPORT_EMAIL} and we'll delete it for you.`, type: "error", icon: "▵", duration: 10000, force: true });
+        return;
+    }
+
+    try {
+        Object.keys(localStorage).filter(k => k.includes(doomedId)).forEach(k => localStorage.removeItem(k));
+    } catch (e) { /* storage unavailable */ }
+    await db.auth.signOut({ scope: 'local' }).then(null, () => {});
+    finalDeleteBtn.disabled = false;
+    finalDeleteBtn.textContent = 'Confirm Delete';
+    if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
+    showToast({
+        title: viaLegacyPath ? "Profile removed" : "Account deleted",
+        message: viaLegacyPath
+            ? `Your profile has been removed. To erase your login email as well, email ${SUPPORT_EMAIL}.`
+            : "Your account and personal data have been deleted.",
+        type: viaLegacyPath ? "info" : "success", icon: "✓", duration: 10000, force: true
+    });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// SAFETY: reporting and blocking. Required for apps with user-generated content (App Store guideline 1.2):
+// people can report posts, replies, messages and members, and block anyone they don't want to see.
+// Reports land in the `reports` table (moderators review them in the Supabase dashboard); blocks are stored
+// in `user_blocks` (falling back to this device if that table isn't installed yet). Both come from safety.sql.
+// ---------------------------------------------------------------------------------------------------------
+const SUPPORT_EMAIL = 'support@turingsgate.com';
+const BLOCK_STORE_PREFIX = 'tg_blocks_';
+let blocksServerBacked = true;
+
+const isOwnUsername = (name) =>
+    Boolean(currentUsername) && String(name || '').toLowerCase().replace('@', '') === currentUsername.toLowerCase().replace('@', '');
+
+function isBlockedUsername(name) {
+    return blockedNames.size > 0 && blockedNames.has(String(name || '').toLowerCase().replace('@', ''));
+}
+function isBlockedId(id) {
+    return Boolean(id) && blockedById.has(id);
+}
+function isBlockedMessage(msg) {
+    return Boolean(msg) && (isBlockedId(msg.sender_id) || isBlockedUsername(msg.sender_username));
+}
+
+function rebuildBlockIndex() {
+    blockedNames.clear();
+    blockedById.forEach(b => { if (b.username) blockedNames.add(String(b.username).toLowerCase()); });
+}
+
+function readLocalBlocks() {
+    try {
+        const raw = JSON.parse(localStorage.getItem(BLOCK_STORE_PREFIX + (currentUser ? currentUser.id : 'guest')) || '[]');
+        return Array.isArray(raw) ? raw.filter(b => b && b.id) : [];
+    } catch (e) { return []; }
+}
+function writeLocalBlocks() {
+    try {
+        const key = BLOCK_STORE_PREFIX + (currentUser ? currentUser.id : 'guest');
+        if (blocksServerBacked) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify([...blockedById.values()]));
+    } catch (e) { /* storage unavailable */ }
+}
+
+function clearBlocks() {
+    blockedById.clear();
+    blockedNames.clear();
+    renderBlockedList();
+}
+
+async function loadBlocks() {
+    blockedById.clear();
+    if (!db || !currentUser) { rebuildBlockIndex(); renderBlockedList(); return; }
+    const uid = currentUser.id;
+    const local = readLocalBlocks();
+    let serverRows = null;
+    try {
+        const { data, error } = await db.from('user_blocks').select('blocked_id, blocked_username');
+        if (error) throw error;
+        serverRows = data || [];
+        blocksServerBacked = true;
+    } catch (e) {
+        if (isMissingRelationError(e)) blocksServerBacked = false;
+        else console.warn("Block list load notice:", e);
+    }
+    if (!currentUser || currentUser.id !== uid) return; // signed out or switched account while loading
+
+    (serverRows || []).forEach(r => blockedById.set(r.blocked_id, { id: r.blocked_id, username: r.blocked_username || '' }));
+    const localOnly = local.filter(b => !blockedById.has(b.id));
+    localOnly.forEach(b => blockedById.set(b.id, { id: b.id, username: b.username || '' }));
+    rebuildBlockIndex();
+    renderBlockedList();
+    if (blockedById.size && cachedPosts.length) renderCurrentFeed(); // hide anything already on screen
+
+    // Blocks made on this device before the table existed move to the account now.
+    if (serverRows && localOnly.length) {
+        db.from('user_blocks')
+            .insert(localOnly.map(b => ({ blocker_id: uid, blocked_id: b.id, blocked_username: b.username || null })))
+            .then(({ error }) => { if (!error) writeLocalBlocks(); }, () => {});
+    }
+}
+
+// Re-draw everything that could be showing a blocked member's content.
+function refreshAfterBlockChange() {
+    renderBlockedList();
+    if (typeof renderCurrentFeed === 'function') renderCurrentFeed();
+    document.querySelectorAll('.comments-section:not(.hidden)').forEach(sec => {
+        const pid = sec.id.replace('comments-section-', '');
+        if (pid) loadCommentsForPost(pid);
+    });
+    if (dmModal && !dmModal.classList.contains('hidden')) {
+        refreshMessagingHub();
+        if (activeConversationId) loadMessages(true);
+    }
+    loadUserNotifications();
+    checkNotifications();
+}
+
+async function blockUser(id, username) {
+    if (!currentUser || !db || !id || id === currentUser.id) return false;
+    const clean = String(username || '').toLowerCase().replace('@', '');
+    if (blocksServerBacked) {
+        const { error } = await db.from('user_blocks').insert({ blocker_id: currentUser.id, blocked_id: id, blocked_username: clean });
+        if (error && error.code !== '23505') { // 23505 = already blocked
+            if (isMissingRelationError(error)) {
+                blocksServerBacked = false;
+            } else {
+                alert(`Could not block this member: ${error.message}`);
+                return false;
+            }
+        }
+    }
+    blockedById.set(id, { id, username: clean });
+    rebuildBlockIndex();
+    writeLocalBlocks();
+
+    // Best effort: drop any friendship either way. Messages and replies from them are hidden by the filters.
+    db.from('friendships').delete()
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${id}),and(user_id.eq.${id},friend_id.eq.${currentUser.id})`)
+        .then(() => refreshMessagingHub(), () => {});
+
+    refreshAfterBlockChange();
+    showToast({ title: "Member blocked", message: `@${clean} can no longer appear in your feed, chats or notifications.`, type: "success", icon: "⊘", duration: 4000, force: true });
+    return true;
+}
+
+async function unblockUser(id) {
+    if (!currentUser || !db || !id) return false;
+    const entry = blockedById.get(id);
+    if (blocksServerBacked) {
+        const { error } = await db.from('user_blocks').delete().eq('blocker_id', currentUser.id).eq('blocked_id', id);
+        if (error && !isMissingRelationError(error)) {
+            alert(`Could not unblock this member: ${error.message}`);
+            return false;
+        }
+    }
+    blockedById.delete(id);
+    rebuildBlockIndex();
+    writeLocalBlocks();
+    refreshAfterBlockChange();
+    if (entry && entry.username) {
+        showToast({ title: "Member unblocked", message: `@${entry.username} can appear for you again.`, type: "info", icon: "◈", duration: 3500, force: true });
+    }
+    return true;
+}
+
+async function resolveProfileId(username) {
+    const clean = String(username || '').toLowerCase().replace('@', '');
+    if (!clean || !db) return null;
+    const { data } = await db.from('profiles').select('id').ilike('username', clean).maybeSingle();
+    return data ? data.id : null;
+}
+
+function renderBlockedList() {
+    const box = document.getElementById('blocked-users-list');
+    if (!box) return;
+    if (blockedById.size === 0) {
+        box.innerHTML = '<div class="no-posts" style="font-size: 0.8rem;">You haven\'t blocked anyone.</div>';
+        return;
+    }
+    box.innerHTML = '';
+    [...blockedById.values()]
+        .sort((a, b) => String(a.username).localeCompare(String(b.username)))
+        .forEach(b => {
+            const row = document.createElement('div');
+            row.className = 'blocked-row';
+            row.innerHTML = `<span>@${escapeHTML(b.username || 'unknown')}</span><button type="button" class="secondary">Unblock</button>`;
+            row.querySelector('button').addEventListener('click', async (e) => {
+                e.currentTarget.disabled = true;
+                const ok = await unblockUser(b.id);
+                if (!ok) e.currentTarget.disabled = false;
+            });
+            box.appendChild(row);
+        });
+}
+
+function refreshProfileSafetyUI() {
+    if (!userCardBlockBtn) return;
+    const blocked = isBlockedUsername(targetProfileUsername) || isBlockedId(targetProfileId);
+    userCardBlockBtn.textContent = blocked ? 'Unblock' : 'Block';
+}
+
+safeAddListener(userCardBlockBtn, 'click', async () => {
+    if (!currentUser) { alert("Please log in to block members."); return; }
+    if (!targetProfileId) { alert("Could not find this member."); return; }
+    userCardBlockBtn.disabled = true;
+    try {
+        if (isBlockedId(targetProfileId)) {
+            await unblockUser(targetProfileId);
+        } else if (confirm(`Block @${targetProfileUsername}?\n\nTheir posts, replies, messages and notifications will be hidden from you, and they won't be able to ring you. You can unblock them any time in Settings > Privacy.`)) {
+            await blockUser(targetProfileId, targetProfileUsername);
+        }
+    } finally {
+        userCardBlockBtn.disabled = false;
+    }
+    await updateProfileFriendButtonUI();
+});
+
+safeAddListener(userCardReportBtn, 'click', () => {
+    openReportModal({ type: 'user', id: targetProfileId || targetProfileUsername, username: targetProfileUsername, context: '' });
+});
+
+// --- Report dialog ---
+const reportModal = document.getElementById('report-modal');
+const reportDetailsInput = document.getElementById('report-details');
+const reportStatusEl = document.getElementById('report-status');
+const reportSubmitBtn = document.getElementById('submit-report-btn');
+const REPORT_NOUN = { post: 'post', comment: 'reply', message: 'message', user: 'member' };
+let reportTarget = null;
+let reportSending = false;
+
+function setReportStatus(text, ok = false, mailto = false) {
+    if (!reportStatusEl) return;
+    reportStatusEl.classList.toggle('ok', ok);
+    reportStatusEl.textContent = text;
+    if (mailto) {
+        reportStatusEl.appendChild(document.createTextNode(' '));
+        const a = document.createElement('a');
+        a.href = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent("Report from Turing's Gate")}`;
+        a.textContent = SUPPORT_EMAIL;
+        a.style.color = '#7dd3fc';
+        reportStatusEl.appendChild(a);
+    }
+}
+
+function openReportModal(target) {
+    if (!reportModal || !target) return;
+    if (!currentUser) { alert("Please log in to report content."); return; }
+    if (isOwnUsername(target.username)) return;
+    reportTarget = target;
+    reportSending = false;
+
+    const noun = REPORT_NOUN[target.type] || 'content';
+    const who = target.username ? ` by @${target.username}` : '';
+    document.getElementById('report-modal-title').textContent = `⚑ Report ${noun}`;
+    document.getElementById('report-modal-intro').textContent =
+        target.type === 'user'
+            ? `What's wrong with @${target.username}? Your report is private.`
+            : `What's wrong with this ${noun}${who}? Your report is private.`;
+    const ctx = document.getElementById('report-context');
+    const ctxText = String(target.context || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    ctx.textContent = ctxText;
+    ctx.classList.toggle('hidden', !ctxText);
+
+    reportModal.querySelectorAll('input[name="report-reason"]').forEach(r => { r.checked = false; });
+    if (reportDetailsInput) reportDetailsInput.value = '';
+    setReportStatus('');
+    if (reportSubmitBtn) { reportSubmitBtn.disabled = false; reportSubmitBtn.textContent = 'Send Report'; }
+    reportModal.classList.remove('hidden');
+    const first = reportModal.querySelector('input[name="report-reason"]');
+    if (first) first.focus({ preventScroll: true });
+}
+
+function closeReportModal() {
+    if (reportModal) reportModal.classList.add('hidden');
+    reportTarget = null;
+}
+
+async function submitReport() {
+    if (reportSending || !reportTarget || !currentUser || !db) return;
+    const picked = reportModal.querySelector('input[name="report-reason"]:checked');
+    if (!picked) { setReportStatus('Please choose a reason.'); return; }
+
+    const target = reportTarget;
+    const row = {
+        reporter_id: currentUser.id,
+        target_type: target.type,
+        target_id: String(target.id == null ? '' : target.id),
+        target_username: target.username ? String(target.username).toLowerCase().replace('@', '') : null,
+        reason: picked.value,
+        details: (reportDetailsInput ? reportDetailsInput.value.trim() : '').slice(0, 500) || null,
+        context: String(target.context || '').replace(/\s+/g, ' ').trim().slice(0, 300) || null
+    };
+
+    reportSending = true;
+    reportSubmitBtn.disabled = true;
+    reportSubmitBtn.textContent = 'Sending...';
+    setReportStatus('');
+
+    let done = false;
+    try {
+        const { error } = await db.from('reports').insert(row);
+        if (!error || error.code === '23505') {
+            done = true; // 23505: this exact item was already reported by this person
+        } else if (isMissingRelationError(error)) {
+            setReportStatus("Reports can't be filed from here right now. Please email", false, true);
+        } else {
+            setReportStatus(`Could not send the report: ${error.message}`);
+        }
+    } catch (e) {
+        setReportStatus('Could not send the report. Check your connection and try again.');
+    }
+    reportSending = false;
+    if (!done) {
+        reportSubmitBtn.disabled = false;
+        reportSubmitBtn.textContent = 'Send Report';
+        return;
+    }
+
+    closeReportModal();
+    showToast({ title: "Report received", message: "Thank you. Our moderators will review it.", type: "success", icon: "⚑", duration: 4500, force: true });
+
+    // Offer to block as well, for anything that isn't a profile report (the card has its own Block button).
+    if (target.type !== 'user' && target.username && !isBlockedUsername(target.username)) {
+        setTimeout(async () => {
+            if (!confirm(`Also block @${target.username}? You won't see their posts, replies or messages any more.`)) return;
+            const id = await resolveProfileId(target.username);
+            if (id) await blockUser(id, target.username);
+            else alert("Could not find that member to block.");
+        }, 150);
+    }
+}
+
+safeAddListener(reportSubmitBtn, 'click', submitReport);
+safeAddListener(document.getElementById('cancel-report-btn'), 'click', closeReportModal);
+safeAddListener(document.getElementById('close-report-modal-btn'), 'click', closeReportModal);
+safeAddListener(reportModal, 'click', (e) => { if (e.target === reportModal) closeReportModal(); });
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && reportModal && !reportModal.classList.contains('hidden')) closeReportModal();
 });
 
 
@@ -5149,7 +5531,7 @@ async function loadMessageRequests() {
 
 
 
-        const nonFriendMembers = otherMembers.filter(m => !acceptedFriendIds.has(m.user_id));
+        const nonFriendMembers = otherMembers.filter(m => !acceptedFriendIds.has(m.user_id) && !isBlockedId(m.user_id));
 
 
 
@@ -5258,11 +5640,12 @@ async function loadFriendRequests() {
 
 
 
-    const { data: requests, error } = await db
+    let { data: requests, error } = await db
         .from('friendships')
         .select('id, user_id')
         .eq('friend_id', currentUser.id)
         .eq('status', 'pending');
+    if (requests) requests = requests.filter(r => !isBlockedId(r.user_id));
 
 
 
@@ -5383,7 +5766,7 @@ async function loadFriends() {
 
 
 
-    const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id);
+    const friendIds = friendships.map(f => f.user_id === currentUser.id ? f.friend_id : f.user_id).filter(id => !isBlockedId(id));
 
 
 
@@ -5946,9 +6329,12 @@ function createMessageElement(msg) {
             : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">Chat Request</span>`;
     }
     const cardClasses = sharedLink ? ` has-share-card${!sharedLink.note && isMine ? ' card-only' : ''}` : '';
+    const reportHtml = (!isMine && !isOptimistic && msg.id != null)
+        ? `<div style="text-align:right; line-height:1;"><button type="button" class="msg-report-btn" aria-label="Report this message">Report</button></div>`
+        : '';
     const bubbleHtml = `
         <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}${cardClasses}">
-            ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
+            ${authorHtml}${textHtml}${imgHtml}${pendingBadge}${reportHtml}
         </div>
     `;
 
@@ -5968,6 +6354,14 @@ function createMessageElement(msg) {
     row.querySelectorAll('.share-card').forEach((card) => {
         hydrateShareCard(card).then(() => scrollToBottom(false), () => {});
     });
+
+    const reportMsgBtn = row.querySelector('.msg-report-btn');
+    if (reportMsgBtn) {
+        reportMsgBtn.addEventListener('click', () => openReportModal({
+            type: 'message', id: msg.id, username: msg.sender_username,
+            context: msg.content || (msg.image_url ? '[photo]' : '')
+        }));
+    }
 
 
 
@@ -6004,6 +6398,8 @@ function appendChatMessage(msg, forceScroll = true) {
     // Check if element with this ID already exists
     const existing = document.getElementById(`msg-${msg.id}`);
     if (existing) return;
+
+    if (isBlockedMessage(msg)) return;
 
 
 
@@ -6054,7 +6450,7 @@ async function loadMessages(forceScroll = false) {
 
 
 
-    const visibleMessages = (messages || []).reverse();
+    const visibleMessages = (messages || []).reverse().filter(m => !isBlockedMessage(m));
 
 
 
@@ -6514,7 +6910,7 @@ async function checkNotifications() {
             const convIds = memberships.map(m => m.conversation_id);
             const { data: unreadMsgs } = await db
                 .from('chat_messages')
-                .select('conversation_id, sender_username, content')
+                .select('conversation_id, sender_id, sender_username, content')
                 .in('conversation_id', convIds)
                 .neq('sender_id', currentUser.id)
                 .eq('is_read', false)
@@ -6526,6 +6922,7 @@ async function checkNotifications() {
             if (unreadMsgs) {
                 unreadTotal = 0;
                 unreadMsgs.forEach(m => {
+                    if (isBlockedMessage(m)) return;
                     // Do not count messages as unread if the chat modal is open and active on this conversation
                     if (dmModal && !dmModal.classList.contains('hidden') && activeConversationId === m.conversation_id) {
                         return;
@@ -7073,6 +7470,11 @@ function createPostCardElement(post) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
                 <span>Share <span id="share-count-${post.id}" style="margin-left:4px; opacity:0.8;">${post.shares || 0}</span></span>
             </button>
+            ${!userCanEdit && !post.is_pinned && post.id !== 'welcome-seed' ? `
+            <button type="button" class="btn-post-action danger-text btn-report-post" data-post-id="${post.id}" aria-label="Report this post">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                <span>Report</span>
+            </button>` : ''}
             ${userCanEdit ? `
             <button type="button" class="btn-post-action btn-edit-post" data-post-id="${post.id}">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -7249,6 +7651,14 @@ function createPostCardElement(post) {
 
 
 
+    const reportPostBtn = item.querySelector('.btn-report-post');
+    if (reportPostBtn) {
+        reportPostBtn.addEventListener('click', () => openReportModal({
+            type: 'post', id: post.id, username: cleanAuthor,
+            context: [post.title, post.content].filter(Boolean).join(' - ')
+        }));
+    }
+
     const shareBtn = item.querySelector('.btn-share-post');
     if (shareBtn) {
         shareBtn.addEventListener('click', () => {
@@ -7281,13 +7691,13 @@ function createPostCardElement(post) {
                     if (!error && count !== null) {
                         const countSpan = item.querySelector(`#comment-count-${post.id}`);
                         if (countSpan) {
-                            countSpan.textContent = count === 1 ? '1 Comment' : `${count} Comments`;
+                            countSpan.textContent = String(count);
                         }
                     }
                 });
         } else if (post.id === 'welcome-seed') {
             const countSpan = item.querySelector(`#comment-count-${post.id}`);
-            if (countSpan) countSpan.textContent = '0 Comments';
+            if (countSpan) countSpan.textContent = '0';
         }
     const editBtn = item.querySelector('.btn-edit-post');
         if (editBtn) {
@@ -7370,7 +7780,7 @@ async function loadCommentsForPost(postId) {
     
     listEl.innerHTML = '<span style="font-size:0.8rem; color:#64748b;">Loading replies...</span>';
     
-    const { data: comments, error } = await db
+    let { data: comments, error } = await db
         .from('post_comments')
         .select('*')
         .eq('post_id', postId)
@@ -7378,6 +7788,17 @@ async function loadCommentsForPost(postId) {
 
 
 
+
+    // Replies from people you've blocked are hidden (their children disappear with them).
+    if (!error && comments && blockedNames.size) {
+        const hiddenIds = new Set(comments.filter(c => isBlockedUsername(c.author)).map(c => c.id));
+        let grew = hiddenIds.size > 0;
+        while (grew) {
+            grew = false;
+            comments.forEach(c => { if (c.parent_id && hiddenIds.has(c.parent_id) && !hiddenIds.has(c.id)) { hiddenIds.add(c.id); grew = true; } });
+        }
+        comments = comments.filter(c => !hiddenIds.has(c.id));
+    }
 
     if (error || !comments || comments.length === 0) {
         listEl.innerHTML = '<span style="font-size:0.8rem; color:#64748b; font-style:italic;">No replies yet.</span>';
@@ -7427,8 +7848,9 @@ async function loadCommentsForPost(postId) {
             <div style="flex: 1;">
                 <div style="color: #38bdf8; font-weight: 600; margin-bottom: 2px;" class="clickable-username" data-username="${escapeHTML(cleanAuthor)}">@${escapeHTML(cleanAuthor)}</div>
                 <div style="color: #e2e8f0; line-height: 1.3;">${escapeHTML(c.content)}</div>
-                <div style="margin-top: 4px;">
+                <div style="margin-top: 4px; display: flex; gap: 14px; align-items: center;">
                     <button type="button" class="btn-reply-toggle" style="background:none; border:none; color:#64748b; font-size:0.75rem; cursor:pointer; padding:0; width:auto; text-decoration:underline;">Reply</button>
+                    ${isOwnUsername(cleanAuthor) ? '' : '<button type="button" class="btn-report-link btn-report-comment">Report</button>'}
                 </div>
                 <div class="reply-input-wrap hidden" style="display: flex; gap: 6px; margin-top: 6px;">
                     <input type="text" class="sub-reply-input" placeholder="Reply to @${escapeHTML(cleanAuthor)}..." style="margin-bottom: 0; padding: 6px; font-size: 0.8rem; flex: 1; background: #1e293b; color: #f8fafc; border: 1px solid #475569; border-radius: 6px;" autocomplete="off">
@@ -7454,6 +7876,11 @@ async function loadCommentsForPost(postId) {
 
 
 
+
+        const reportCommentBtn = commentBody.querySelector('.btn-report-comment');
+        if (reportCommentBtn) {
+            reportCommentBtn.addEventListener('click', () => openReportModal({ type: 'comment', id: c.id, username: cleanAuthor, context: c.content }));
+        }
 
         const replyToggle = commentBody.querySelector('.btn-reply-toggle');
         const replyWrap = commentBody.querySelector('.reply-input-wrap');
@@ -7557,7 +7984,7 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
     if (countSpan) {
         const currentCount = parseInt(countSpan.textContent) || 0;
         const newCount = currentCount + 1;
-        countSpan.textContent = newCount === 1 ? '1 Comment' : `${newCount} Comments`;
+        countSpan.textContent = String(newCount);
     }
 
 
@@ -7605,7 +8032,7 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
 }
 function renderCurrentFeed() {
     if (!forumFeed) return;
-    const sorted = sortPosts(cachedPosts);
+    const sorted = sortPosts(cachedPosts).filter(p => !isBlockedUsername(p.author));
     if (!sorted || sorted.length === 0) {
         forumFeed.innerHTML = `<div class="no-posts">No posts found for "${escapeHTML(activeThread)}".</div>`;
         return;
@@ -9885,6 +10312,7 @@ function scrollToBottomLiveChat() {
 
 function renderLiveChatBubble(username, avatarUrl, message) {
     if (!liveChatHistory) return;
+    if (isBlockedUsername(username)) return;
     const isMine = username === currentUsername;
     const div = document.createElement('div');
     div.style.cssText = `display: flex; gap: 8px; margin-bottom: 6px; align-items: flex-start; justify-content: ${isMine ? 'flex-end' : 'flex-start'};`;
@@ -9892,7 +10320,7 @@ function renderLiveChatBubble(username, avatarUrl, message) {
     const avatarHtml = `<img src="${attrUrl(avatarUrl, DEFAULT_AVATAR)}" style="width:24px; height:24px; border-radius:50%; object-fit:cover;">`;
     const bubbleHtml = `
         <div style="background: ${isMine ? '#10b981' : '#1e293b'}; color: ${isMine ? '#0f172a' : '#e2e8f0'}; padding: 6px 10px; border-radius: 8px; font-size: 0.85rem; max-width: 85%; word-wrap: break-word;">
-            ${!isMine ? `<div style="font-size:0.7rem; font-weight:bold; color:#38bdf8; margin-bottom:2px;">@${escapeHTML(username)}</div>` : ''}
+            ${!isMine ? `<div class="live-chat-author" data-username="${escapeHTML(username)}" style="font-size:0.7rem; font-weight:bold; color:#38bdf8; margin-bottom:2px; cursor:pointer;">@${escapeHTML(username)}</div>` : ''}
             ${escapeHTML(message)}
         </div>
     `;
@@ -9901,6 +10329,8 @@ function renderLiveChatBubble(username, avatarUrl, message) {
 
 
     div.innerHTML = isMine ? bubbleHtml + avatarHtml : avatarHtml + bubbleHtml;
+    const liveAuthor = div.querySelector('.live-chat-author');
+    if (liveAuthor) liveAuthor.addEventListener('click', () => window.openUserProfileCard(liveAuthor.getAttribute('data-username')));
     liveChatHistory.appendChild(div);
     scrollToBottomLiveChat();
 }
@@ -11821,6 +12251,7 @@ async function initUserCallSignaling() {
                 const data = payload?.payload;
                 if (!data || !data.callerId) return;
                 if (callSetupInProgress) return; // mid-dial (e.g. the mic prompt is open): ignore pulses
+                if (isBlockedId(data.callerId)) return; // never ring for someone you blocked
 
                 // Already answering, or already in this conversation's call: ignore repeat pulses.
                 if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
@@ -11954,6 +12385,7 @@ async function initRealtimeActivityNotifications() {
 
                 // Suppress redundant popup toast for incoming calls (Accept/Decline popout is already visible)
                 if (notif.type === 'incoming_call') return;
+                if (isBlockedUsername(notif.actor_username)) return;
 
                 // 2. Map notification icons & vibes
                 let icon = '🔔';
