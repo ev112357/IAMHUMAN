@@ -150,6 +150,36 @@ function playTechChirp(type = 'info') {
 }
 
 
+// --- NATIVE POLISH (only active inside the iOS/Android app; harmless in a browser) ---
+// Light haptic feedback through the Capacitor Haptics plugin when it is installed in the native shell.
+function hapticTap(kind = 'light') {
+    try {
+        const h = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+        if (!h) return;
+        if (kind === 'success' && h.notification) h.notification({ type: 'SUCCESS' });
+        else if (h.impact) h.impact({ style: kind === 'medium' ? 'MEDIUM' : 'LIGHT' });
+    } catch (e) { /* plugin unavailable */ }
+}
+
+// Slim banner while the device has no connection, so a dropped network never looks like a frozen app.
+(function initOfflineBanner() {
+    let banner = null;
+    const show = () => {
+        if (banner) return;
+        banner = document.createElement('div');
+        banner.id = 'offline-banner';
+        banner.setAttribute('role', 'status');
+        banner.textContent = "You're offline. Reconnecting when your connection returns...";
+        document.body.appendChild(banner);
+    };
+    const hide = () => { if (banner) { banner.remove(); banner = null; } };
+    window.addEventListener('offline', show);
+    window.addEventListener('online', hide);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        if (document.body) show(); else document.addEventListener('DOMContentLoaded', show, { once: true });
+    }
+})();
+
 function showToast({ title = 'Notification', message = '', type = 'info', icon = '◈', onClick = null, duration = 4000, force = false }) {
     if (!force && typeof userNotifPrefs !== 'undefined' && userNotifPrefs && !userNotifPrefs.allEnabled) return;
 
@@ -3252,6 +3282,7 @@ async function blockUser(id, username) {
         .then(() => refreshMessagingHub(), () => {});
 
     refreshAfterBlockChange();
+    hapticTap('success');
     showToast({ title: "Member blocked", message: `@${clean} can no longer appear in your feed, chats or notifications.`, type: "success", icon: "⊘", duration: 4000, force: true });
     return true;
 }
@@ -3430,6 +3461,7 @@ async function submitReport() {
     }
 
     closeReportModal();
+    hapticTap('success');
     showToast({ title: "Report received", message: "Thank you. Our moderators will review it.", type: "success", icon: "⚑", duration: 4500, force: true });
 
     // Offer to block as well, for anything that isn't a profile report (the card has its own Block button).
@@ -7241,6 +7273,7 @@ async function handleVote(postId, direction) {
         triggerSuspensionGate();
         return;
     }
+    hapticTap('light');
 
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
@@ -11094,6 +11127,7 @@ function setCallConnectedState() {
 
     if (activeCall.callTimerInterval) clearInterval(activeCall.callTimerInterval);
     activeCall.callStartTime = Date.now();
+    hapticTap('success');
     updateCallUI(activeCall);
     activeCall.callTimerInterval = setInterval(() => {
         if (!activeCall || !activeCall.callStartTime) return;
