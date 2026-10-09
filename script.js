@@ -9464,19 +9464,32 @@ function cleanupCall(statusNotice = null) {
 
 function setupCallChannelListeners(callChan, pc) {
     callChan
-        .on('broadcast', { event: 'incoming_call' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-            if (!activeCall || activeCall.conversationId !== data.conversationId) {
-                triggerIncomingCallUI(data);
+        .on('broadcast', { event: 'call_accepted' }, async () => {
+            // Recipient accepted and joined the room - caller initiates offer
+            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
+                if (activeCall.dialingInterval) {
+                    clearInterval(activeCall.dialingInterval);
+                    activeCall.dialingInterval = null;
+                }
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_offer',
+                        payload: { offer: { type: offer.type, sdp: offer.sdp }, from: currentUser.id }
+                    });
+                } catch (err) {
+                    console.error("Error creating caller offer on room join:", err);
+                }
             }
         })
         .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.offer || data.from === currentUser?.id) return;
+            if (!activeCall || !activeCall.peerConnection) return;
 
             try {
-                if (!activeCall || !activeCall.peerConnection) return;
                 if (pc.signalingState !== 'stable') {
                     await Promise.all([
                         pc.setLocalDescription({ type: 'rollback' }).catch(() => {}),
@@ -9494,40 +9507,26 @@ function setupCallChannelListeners(callChan, pc) {
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
-                const answerPayload = { answer: { type: answer.type, sdp: answer.sdp }, from: currentUser.id };
                 callChan.send({
                     type: 'broadcast',
                     event: 'webrtc_answer',
-                    payload: answerPayload
+                    payload: { answer: { type: answer.type, sdp: answer.sdp }, from: currentUser.id }
                 });
-
-                if (activeCall.partnerId) {
-                    const partnerSig = db.channel(`user_call_sig_${activeCall.partnerId}`);
-                    partnerSig.subscribe((status) => {
-                        if (status === 'SUBSCRIBED') {
-                            partnerSig.send({
-                                type: 'broadcast',
-                                event: 'webrtc_answer',
-                                payload: answerPayload
-                            });
-                        }
-                    });
-                }
             } catch (err) {
-                console.error("Error handling webrtc_offer:", err);
+                console.error("Error handling webrtc_offer in room:", err);
             }
         })
         .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.answer || data.from === currentUser?.id) return;
+            if (!activeCall || !activeCall.peerConnection) return;
 
-            if (activeCall && activeCall.dialingInterval) {
+            if (activeCall.dialingInterval) {
                 clearInterval(activeCall.dialingInterval);
                 activeCall.dialingInterval = null;
             }
 
             try {
-                if (!activeCall || !activeCall.peerConnection) return;
                 if (pc.signalingState === 'have-local-offer') {
                     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
                     while (queuedIceCandidates.length > 0) {
@@ -9536,34 +9535,22 @@ function setupCallChannelListeners(callChan, pc) {
                     }
                 }
             } catch (err) {
-                console.error("Error handling webrtc_answer:", err);
+                console.error("Error handling webrtc_answer in room:", err);
             }
         })
         .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
             const data = payload?.payload;
             if (!data || !data.candidate || data.from === currentUser?.id) return;
+            if (!activeCall || !activeCall.peerConnection) return;
 
             try {
-                if (!activeCall || !activeCall.peerConnection) return;
                 if (pc.remoteDescription && pc.remoteDescription.type) {
                     await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
                 } else {
                     queuedIceCandidates.push(data.candidate);
                 }
             } catch (err) {
-                console.warn("Notice adding ICE candidate:", err);
-            }
-        })
-        .on('broadcast', { event: 'receiver_ready' }, async (payload) => {
-            const data = payload?.payload;
-            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
-                if (activeCall.peerConnection.localDescription) {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'webrtc_offer',
-                        payload: { offer: activeCall.peerConnection.localDescription, from: currentUser.id }
-                    });
-                }
+                console.warn("Notice handling room ICE candidate:", err);
             }
         })
         .on('broadcast', { event: 'call_declined' }, () => {
@@ -9578,7 +9565,6 @@ function setupCallChannelListeners(callChan, pc) {
             cleanupCall("Call Ended");
         });
 }
-
 
 async function startAudioCall() {
     if (!currentUser || !activeConversationId) {
@@ -9632,14 +9618,12 @@ async function startAudioCall() {
         };
 
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                const icePayload = { candidate: event.candidate, from: currentUser.id };
-                if (callChan) {
-                    callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload });
-                }
-                if (partnerSig) {
-                    partnerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload });
-                }
+            if (event.candidate && callChan) {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: { candidate: event.candidate, from: currentUser.id }
+                });
             }
         };
 
@@ -9660,18 +9644,13 @@ async function startAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        const plainOffer = { type: offer.type, sdp: offer.sdp };
         const callPayload = {
             isGroup: isGroupCall,
             groupName: isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null,
             callerId: currentUser.id,
             callerUsername: currentUsername,
             callerAvatar: currentAvatarUrl,
-            conversationId: targetConvId,
-            offer: plainOffer
+            conversationId: targetConvId
         };
 
         if (isGroupCall) {
@@ -9685,7 +9664,6 @@ async function startAudioCall() {
                 if (!activeCall || !activeCall.isCaller) return;
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
 
                 (members || []).forEach(m => {
@@ -9723,7 +9701,6 @@ async function startAudioCall() {
 
                 try {
                     callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ type: 'broadcast', event: 'webrtc_offer', payload: { offer: plainOffer, from: currentUser.id } });
                 } catch (e) {}
             };
 
@@ -9778,6 +9755,10 @@ async function answerAudioCall() {
     const data = incomingCallData;
     incomingCallData = null;
 
+    // Immediately mark call as accepted in recent map to suppress ghost popups
+    recentlyDeclinedCalls.set(data.conversationId, Date.now());
+    recentlyDeclinedCalls.set(data.callerId, Date.now());
+
     if (db && currentUser) {
         db.from('user_notifications')
             .update({ is_read: true })
@@ -9807,7 +9788,6 @@ async function answerAudioCall() {
         };
 
         const callChan = db.channel(`call_room_${data.conversationId}`);
-        const callerSig = data.callerId ? db.channel(`user_call_sig_${data.callerId}`) : null;
 
         activeCall = {
             peerConnection: pc,
@@ -9823,14 +9803,12 @@ async function answerAudioCall() {
         };
 
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                const icePayload = { candidate: event.candidate, from: currentUser.id };
-                if (callChan) {
-                    callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload });
-                }
-                if (callerSig) {
-                    callerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload });
-                }
+            if (event.candidate && callChan) {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: { candidate: event.candidate, from: currentUser.id }
+                });
             }
         };
 
@@ -9847,68 +9825,16 @@ async function answerAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        const offerData = data && data.offer;
-        const hasValidOffer = offerData && (offerData.sdp || typeof offerData === 'object');
-
-        if (hasValidOffer) {
-            try {
-                const sdpInit = offerData.sdp ? { type: offerData.type || 'offer', sdp: offerData.sdp } : offerData;
-                await pc.setRemoteDescription(new RTCSessionDescription(sdpInit));
-
-                while (queuedIceCandidates.length > 0) {
-                    const c = queuedIceCandidates.shift();
-                    await pc.addIceCandidate(new RTCIceCandidate(c));
-                }
-
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                const answerPayload = {
-                    answer: { type: answer.type, sdp: answer.sdp },
-                    from: currentUser.id
-                };
-
-                const sendAnswer = () => {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'webrtc_answer',
-                        payload: answerPayload
-                    });
-                    if (callerSig) {
-                        callerSig.send({
-                            type: 'broadcast',
-                            event: 'webrtc_answer',
-                            payload: answerPayload
-                        });
-                    }
-                };
-
-                callChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        sendAnswer();
-                    }
+        // Subscribe to the room channel and signal acceptance to the waiting caller
+        callChan.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'call_accepted',
+                    payload: { from: currentUser.id }
                 });
-                if (callerSig) {
-                    callerSig.subscribe((status) => {
-                        if (status === 'SUBSCRIBED') {
-                            sendAnswer();
-                        }
-                    });
-                }
-            } catch (err) {
-                console.error("Error setting up bundled offer:", err);
             }
-        } else {
-            callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'receiver_ready',
-                        payload: { from: currentUser.id }
-                    });
-                }
-            });
-        }
+        });
 
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
@@ -9937,7 +9863,6 @@ async function answerAudioCall() {
         cleanupCall();
     }
 }
-
 
 function declineAudioCall() {
     stopRingtoneSound();
@@ -10054,12 +9979,11 @@ function initUserCallSignaling() {
             const data = payload?.payload;
             if (!data || !data.callerId) return;
 
-            // If we are already on this call, ignore repeated dialing pulses
+            // If we are already in this call or answered it, ignore repeat dialing pulses
             if (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId)) {
                 return;
             }
 
-            // Only report busy if in an active call with another user
             if (activeCall) {
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
@@ -10085,45 +10009,6 @@ function initUserCallSignaling() {
             }
 
             triggerIncomingCallUI(data);
-        })
-        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.answer || data.from === currentUser?.id) return;
-            if (!activeCall || !activeCall.isCaller || !activeCall.peerConnection) return;
-
-            if (activeCall.dialingInterval) {
-                clearInterval(activeCall.dialingInterval);
-                activeCall.dialingInterval = null;
-            }
-
-            const pc = activeCall.peerConnection;
-            if (pc.signalingState === 'have-local-offer') {
-                try {
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    while (queuedIceCandidates.length > 0) {
-                        const c = queuedIceCandidates.shift();
-                        await pc.addIceCandidate(new RTCIceCandidate(c));
-                    }
-                } catch (err) {
-                    console.error("Error setting answer on user signaling channel:", err);
-                }
-            }
-        })
-        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.candidate || data.from === currentUser?.id) return;
-            if (!activeCall || !activeCall.peerConnection) return;
-
-            try {
-                const pc = activeCall.peerConnection;
-                if (pc.remoteDescription && pc.remoteDescription.type) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } else {
-                    queuedIceCandidates.push(data.candidate);
-                }
-            } catch (err) {
-                console.warn("Notice adding direct ICE candidate:", err);
-            }
         })
         .on('broadcast', { event: 'cancel_call' }, (payload) => {
             const data = payload?.payload;
