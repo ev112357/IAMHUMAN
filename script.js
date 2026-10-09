@@ -5920,7 +5920,7 @@ async function checkNotifications() {
 
 
         // Check for incoming call notification in database fallback
-        if (!activeCall) {
+        if (!activeCall && !isAnsweringCall) {
             const { data: callNotifs } = await db
                 .from('user_notifications')
                 .select('*')
@@ -5930,14 +5930,12 @@ async function checkNotifications() {
                 .order('id', { ascending: false })
                 .limit(5);
 
-
             if (callNotifs && callNotifs.length > 0) {
                 callNotifs.forEach(notif => {
                     const notifAge = Date.now() - new Date(notif.created_at || Date.now()).getTime();
                     if (notifAge > 35000) {
-                        // Purge old incoming_call records so they never trigger ghost notifications
                         db.from('user_notifications').delete().eq('id', notif.id).catch(() => {});
-                    } else if (!activeCall) {
+                    } else if (!activeCall && !isAnsweringCall) {
                         triggerIncomingCallUI({
                             callerId: notif.actor_id || null,
                             callerUsername: notif.actor_username,
@@ -9465,7 +9463,7 @@ function cleanupCall(statusNotice = null) {
 function setupCallChannelListeners(callChan, pc) {
     callChan
         .on('broadcast', { event: 'call_accepted' }, async () => {
-            // Recipient accepted and joined the room - caller initiates offer
+            // Recipient accepted and joined the room - caller initiates offer (Voice Forum pattern)
             if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
                 if (activeCall.dialingInterval) {
                     clearInterval(activeCall.dialingInterval);
@@ -9755,13 +9753,17 @@ async function answerAudioCall() {
     const data = incomingCallData;
     incomingCallData = null;
 
-    // Immediately mark call as accepted in recent map to suppress ghost popups
+    isAnsweringCall = true;
+    answeringConversationId = data.conversationId;
+
+    // Immediately mark in map to block any ghost popouts
     recentlyDeclinedCalls.set(data.conversationId, Date.now());
     recentlyDeclinedCalls.set(data.callerId, Date.now());
 
+    // Purge the database notification immediately so polling never re-triggers the modal
     if (db && currentUser) {
         db.from('user_notifications')
-            .update({ is_read: true })
+            .delete()
             .eq('user_id', currentUser.id)
             .eq('type', 'incoming_call')
             .catch(() => {});
@@ -9814,8 +9816,10 @@ async function answerAudioCall() {
 
         const checkConnected = () => {
             if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed' || pc.connectionState === 'connected') {
+                isAnsweringCall = false;
                 setCallConnectedState();
             } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
+                isAnsweringCall = false;
                 cleanupCall("Connection Failed");
             }
         };
@@ -9825,7 +9829,7 @@ async function answerAudioCall() {
 
         setupCallChannelListeners(callChan, pc);
 
-        // Subscribe to the room channel and signal acceptance to the waiting caller
+        // Join room and signal acceptance to caller
         callChan.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 callChan.send({
@@ -9852,6 +9856,7 @@ async function answerAudioCall() {
         }
 
     } catch (err) {
+        isAnsweringCall = false;
         console.error("Answer call error:", err);
         showToast({
             title: "Microphone Access Required",
@@ -9979,11 +9984,12 @@ function initUserCallSignaling() {
             const data = payload?.payload;
             if (!data || !data.callerId) return;
 
-            // If we are already in this call or answered it, ignore repeat dialing pulses
-            if (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId)) {
+            // If we are currently answering or on this call, ignore repeat dialing pulses
+            if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
                 return;
             }
 
+            // Only report busy if in a call with another conversation
             if (activeCall) {
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
