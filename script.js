@@ -9464,477 +9464,369 @@ function cleanupCall(statusNotice = null) {
 
 function setupCallChannelListeners(callChan, pc) {
     callChan
-        .on('broadcast', { event: 'incoming_call' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.callerId || data.callerId === currentUser?.id) return;
-            if (!activeCall || activeCall.conversationId !== data.conversationId) {
-                triggerIncomingCallUI(data);
-            }
-        })
-        .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.offer || data.from === currentUser?.id) return;
+        .on('broadcast', { event: 'webrtc_offer' }, async ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data || !activeCall || activeCall.role !== 'receiver') return;
 
-            try {
-                if (!activeCall || !activeCall.peerConnection) return;
-                // Ignore duplicate offers if an answer has already been produced
-                if (pc.localDescription) return;
-
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-                if (data.candidates && Array.isArray(data.candidates)) {
-                    for (const c of data.candidates) {
-                        try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
+            if (!pc.localDescription && data.sdp) {
+                try {
+                    if (pc.signalingState !== 'stable') {
+                        await Promise.all([
+                            pc.setLocalDescription({ type: 'rollback' }).catch(() => {}),
+                            pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }))
+                        ]);
+                    } else {
+                        await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
                     }
-                }
 
-                while (queuedIceCandidates.length > 0) {
-                    const c = queuedIceCandidates.shift();
-                    try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-                }
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
 
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                const plainAnswer = { type: answer.type, sdp: answer.sdp };
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_answer',
-                    payload: { answer: plainAnswer, from: currentUser.id }
-                });
-            } catch (err) {
-                console.error("Error handling webrtc_offer:", err);
-            }
-        })
-        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.answer || data.from === currentUser?.id) return;
-
-            try {
-                if (!activeCall || !activeCall.peerConnection) return;
-
-                // Stop caller's redial interval immediately
-                if (activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
-                }
-                stopRingtoneSound();
-                showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
-
-                if (pc.currentRemoteDescription || pc.signalingState === 'stable') return;
-
-                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-
-                while (queuedIceCandidates.length > 0) {
-                    const c = queuedIceCandidates.shift();
-                    try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-                }
-            } catch (err) {
-                console.error("Error handling webrtc_answer:", err);
-            }
-        })
-        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.candidate || data.from === currentUser?.id) return;
-
-            try {
-                if (!activeCall || !activeCall.peerConnection) return;
-                if (pc.remoteDescription && pc.remoteDescription.type) {
-                    await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                } else {
-                    queuedIceCandidates.push(data.candidate);
-                }
-            } catch (err) {
-                console.warn("Notice adding ICE candidate:", err);
-            }
-        })
-        .on('broadcast', { event: 'receiver_ready' }, async () => {
-            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
-                if (activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
-                }
-                stopRingtoneSound();
-
-                if (activeCall.peerConnection.localDescription) {
-                    const plainOffer = {
-                        type: activeCall.peerConnection.localDescription.type,
-                        sdp: activeCall.peerConnection.localDescription.sdp
+                    const answerPayload = {
+                        sdp: answer.sdp,
+                        candidates: activeCall.localIceCandidates || []
                     };
+
                     callChan.send({
                         type: 'broadcast',
-                        event: 'webrtc_offer',
-                        payload: { 
-                            offer: plainOffer, 
-                            candidates: activeCall.localIceCandidates || [], 
-                            from: currentUser.id 
-                        }
+                        event: 'webrtc_answer',
+                        payload: answerPayload
                     });
+
+                    if (activeCall.partnerId) {
+                        const directChan = db.channel(`user_call_sig_${activeCall.partnerId}`);
+                        directChan.subscribe((status) => {
+                            if (status === 'SUBSCRIBED') {
+                                directChan.send({
+                                    type: 'broadcast',
+                                    event: 'webrtc_answer',
+                                    payload: answerPayload
+                                });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    console.error('Error processing offer:', e);
+                }
+            }
+
+            if (data.candidates && Array.isArray(data.candidates)) {
+                for (const c of data.candidates) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(c));
+                    } catch (e) {
+                        console.error('Error adding bundled ICE candidate:', e);
+                    }
                 }
             }
         })
-        .on('broadcast', { event: 'call_declined' }, () => {
-            stopRingtoneSound();
-            cleanupCall("Call Declined");
+        .on('broadcast', { event: 'webrtc_answer' }, async ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data || !activeCall || activeCall.role !== 'caller') return;
+
+            if (activeCall.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+
+            if (pc.signalingState === 'have-local-offer' && data.sdp) {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+                } catch (e) {
+                    console.error('Error setting remote description from answer:', e);
+                }
+            }
+
+            if (data.candidates && Array.isArray(data.candidates)) {
+                for (const c of data.candidates) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(c));
+                    } catch (e) {
+                        console.error('Error adding bundled answer candidate:', e);
+                    }
+                }
+            }
+        })
+        .on('broadcast', { event: 'webrtc_ice' }, async ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data || !data.candidate) return;
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } catch (e) {
+                console.error('Error adding ICE candidate:', e);
+            }
         })
         .on('broadcast', { event: 'call_busy' }, () => {
-            stopRingtoneSound();
             cleanupCall("User is Busy");
+        })
+        .on('broadcast', { event: 'call_declined' }, () => {
+            cleanupCall("Call Declined");
         })
         .on('broadcast', { event: 'call_ended' }, () => {
             cleanupCall("Call Ended");
+        })
+        .on('broadcast', { event: 'call_cancelled' }, () => {
+            cleanupCall("Call Cancelled");
         });
 }
 
 async function startAudioCall() {
-    if (!currentUser || !activeConversationId) {
-        alert("Please select a conversation to start a call.");
+    if (!currentConversation || !currentUser) {
+        showToast('Please select a conversation to call.');
         return;
     }
-    const isGroupCall = !activeConversationPartnerId;
-    if (activeCall) {
-        alert("You are already on an audio call.");
+
+    const partner = getConversationPartner(currentConversation);
+    if (!partner || !partner.id) {
+        showToast('Unable to determine call recipient.');
         return;
     }
 
     try {
-        const stream = await getMicrophoneStream();
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
-        const rtcConfig = {
+        const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
             ]
-        };
+        });
 
-        const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-        pc.ontrack = (event) => {
-            if (remoteAudioEl && event.streams[0]) {
-                remoteAudioEl.srcObject = event.streams[0];
-                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
-            }
-        };
-
-        const targetConvId = activeConversationId;
-        const targetPartnerId = activeConversationPartnerId;
-        const targetPartnerUsername = activeConversationPartnerUsername || 'User';
-
-        const callChan = db.channel(`call_room_${targetConvId}`);
+        const callChan = db.channel(`call_room_${currentConversation.id}`);
+        const partnerSig = db.channel(`user_call_sig_${partner.id}`);
 
         activeCall = {
-            peerConnection: pc,
-            localStream: stream,
-            conversationId: targetConvId,
-            partnerId: targetPartnerId,
-            partnerUsername: targetPartnerUsername,
-            isCaller: true,
-            callChannel: callChan,
-            callStartTime: null,
-            callTimerInterval: null,
-            localIceCandidates: []
+            conversationId: currentConversation.id,
+            partnerId: partner.id,
+            partnerName: partner.displayName || 'Call',
+            partnerAvatar: partner.avatarUrl || '',
+            role: 'caller',
+            stream: stream,
+            pc: pc,
+            channel: callChan,
+            partnerChannel: partnerSig,
+            localIceCandidates: [],
+            dialingInterval: null,
+            timerInterval: null,
+            startTime: null
         };
+
+        const partnerSigPromise = new Promise(resolve => {
+            partnerSig.subscribe(status => {
+                if (status === 'SUBSCRIBED') resolve();
+            });
+        });
+
+        const callChanPromise = new Promise(resolve => {
+            callChan.subscribe(status => {
+                if (status === 'SUBSCRIBED') resolve();
+            });
+        });
+
+        await Promise.all([partnerSigPromise, callChanPromise]);
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                const candData = event.candidate.toJSON ? event.candidate.toJSON() : {
-                    candidate: event.candidate.candidate,
-                    sdpMid: event.candidate.sdpMid,
-                    sdpMLineIndex: event.candidate.sdpMLineIndex
-                };
-                if (activeCall && activeCall.localIceCandidates) {
-                    activeCall.localIceCandidates.push(candData);
-                }
-                const icePayload = { candidate: candData, from: currentUser.id };
-                if (callChan) {
-                    try { callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
-                }
-                if (partnerSig) {
-                    try { partnerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
-                }
+                activeCall.localIceCandidates.push(event.candidate.toJSON());
+                const icePayload = { candidate: event.candidate.toJSON() };
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: icePayload
+                });
+                partnerSig.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: icePayload
+                });
             }
         };
-        
+
+        pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+                attachRemoteAudioStream(event.streams[0]);
+            }
+        };
+
         const checkConnected = () => {
-            if (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-                setCallConnectedState();
-            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.iceConnectionState === 'failed') {
-                cleanupCall("Call Disconnected");
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed' || pc.connectionState === 'connected') {
+                if (activeCall && activeCall.dialingInterval) {
+                    clearInterval(activeCall.dialingInterval);
+                    activeCall.dialingInterval = null;
+                }
+                onCallConnected();
+            } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
+                cleanupCall("Connection Failed");
             }
         };
-        pc.onconnectionstatechange = checkConnected;
+
         pc.oniceconnectionstatechange = checkConnected;
+        pc.onconnectionstatechange = checkConnected;
 
         setupCallChannelListeners(callChan, pc);
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
-        const plainOffer = { type: offer.type, sdp: offer.sdp };
+        showActiveCallBar(partner.displayName || 'User', partner.avatarUrl || '', 'Dialing...');
+
         const callPayload = {
-            isGroup: isGroupCall,
-            groupName: isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null,
+            conversationId: currentConversation.id,
             callerId: currentUser.id,
-            callerUsername: currentUsername,
-            callerAvatar: currentAvatarUrl,
-            conversationId: targetConvId,
-            offer: plainOffer
+            callerName: currentUser.displayName || 'User',
+            sdp: offer.sdp,
+            candidates: activeCall.localIceCandidates
         };
 
-        if (isGroupCall) {
-            const { data: members } = await db
-                .from('conversation_members')
-                .select('user_id')
-                .eq('conversation_id', targetConvId)
-                .neq('user_id', currentUser.id);
+        const sendCallSignals = () => {
+            if (!activeCall || activeCall.role !== 'caller') return;
+            callPayload.candidates = activeCall.localIceCandidates;
 
-            const sendGroupSignals = () => {
-                if (!activeCall || !activeCall.isCaller) return;
-                try {
-                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ 
-                        type: 'broadcast', 
-                        event: 'webrtc_offer', 
-                        payload: { offer: plainOffer, candidates: activeCall.localIceCandidates || [], from: currentUser.id } 
-                    });
-                } catch (e) {}
-
-                (members || []).forEach(m => {
-                    try {
-                        const mChan = db.channel(`user_call_sig_${m.user_id}`);
-                        mChan.subscribe((st) => {
-                            if (st === 'SUBSCRIBED') {
-                                mChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                            }
-                        });
-                    } catch (e) {}
-                });
-            };
-
-            await callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    sendGroupSignals();
-                    setTimeout(sendGroupSignals, 400);
-                }
+            partnerSig.send({
+                type: 'broadcast',
+                event: 'incoming_call',
+                payload: callPayload
             });
 
-            (members || []).forEach(m => {
-                sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
+            callChan.send({
+                type: 'broadcast',
+                event: 'webrtc_offer',
+                payload: callPayload
             });
+        };
 
-            showActiveCallBar(`Group Call Active (Dialing...)`, true);
-            playRingtoneSound();
-
-        } else {
-            const partnerSig = db.channel(`user_call_sig_${targetPartnerId}`, {
-                config: { broadcast: { self: false } }
-            });
-
-            const sendCallSignals = () => {
-                if (!activeCall || !activeCall.isCaller) return;
-                try {
-                    partnerSig.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                } catch (e) {}
-
-                try {
-                    callChan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload });
-                    callChan.send({ 
-                        type: 'broadcast', 
-                        event: 'webrtc_offer', 
-                        payload: { offer: plainOffer, candidates: activeCall.localIceCandidates || [], from: currentUser.id } 
-                    });
-                } catch (e) {}
-            };
-
-            partnerSig.subscribe((sigStatus) => {
-                if (sigStatus === 'SUBSCRIBED') {
-                    sendCallSignals();
-                    setTimeout(sendCallSignals, 350);
-                    setTimeout(sendCallSignals, 1000);
-                }
-            });
-
-            await callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    sendCallSignals();
-                }
-            });
-
-            let dialCount = 0;
-            activeCall.dialingInterval = setInterval(() => {
-                if (!activeCall || !activeCall.isCaller || dialCount > 14) {
-                    if (activeCall && activeCall.dialingInterval) {
-                        clearInterval(activeCall.dialingInterval);
-                        activeCall.dialingInterval = null;
-                    }
-                    if (dialCount > 14 && (!pc.connectionState || pc.connectionState !== 'connected')) {
-                        cleanupCall("No Answer");
-                    }
-                    return;
-                }
-                dialCount++;
-                sendCallSignals();
-            }, 2500);
-
-            sendNotification(targetPartnerId, 'incoming_call', targetConvId, 'is calling you...');
-
-            showActiveCallBar(`Calling @${targetPartnerUsername}...`, true);
-            playRingtoneSound();
-        }
+        sendCallSignals();
+        activeCall.dialingInterval = setInterval(sendCallSignals, 2500);
 
     } catch (err) {
-        console.error("Audio call error:", err);
-        alert("Could not access microphone: " + (err.message || err.name));
+        console.error('Call initialization failed:', err);
+        showToast('Could not access microphone or initiate call.');
         cleanupCall();
     }
 }
 
 async function answerAudioCall() {
-    if (!incomingCallData || !currentUser || isAnsweringCall) return;
-    isAnsweringCall = true;
-    answeringConversationId = incomingCallData.conversationId;
-
-    stopRingtoneSound();
-    if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
-    if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-
+    stopRingtone();
     const data = incomingCallData;
-    incomingCallData = null;
+    dismissIncomingCallModal();
 
-    // 1. Immediately show floating call window with pulsing connecting dot
-    if (data.isGroup) {
-        showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
-    } else {
-        showActiveCallBar(`Connecting to @${data.callerUsername || 'User'}...`, true);
-    }
+    if (!data) return;
 
-    if (db && currentUser) {
-        db.from('user_notifications')
-            .update({ is_read: true })
-            .eq('user_id', currentUser.id)
-            .eq('type', 'incoming_call')
-            .catch(() => {});
-    }
+    // Immediately display the active call bar with Connecting state
+    showActiveCallBar(data.callerName || 'Caller', '', 'Connecting...');
 
     try {
-        const stream = await getMicrophoneStream();
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
 
-        const rtcConfig = {
+        const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
             ]
-        };
+        });
 
-        const pc = new RTCPeerConnection(rtcConfig);
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-        pc.ontrack = (event) => {
-            if (remoteAudioEl && event.streams[0]) {
-                remoteAudioEl.srcObject = event.streams[0];
-                remoteAudioEl.muted = Boolean(userAudioSettings.deafen);
-                remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
-            }
-        };
-
         const callChan = db.channel(`call_room_${data.conversationId}`);
-        const callerSig = data.callerId ? db.channel(`user_call_sig_${data.callerId}`) : null;
-        if (callerSig) callerSig.subscribe();
+        const partnerSig = db.channel(`user_call_sig_${data.callerId}`);
 
         activeCall = {
-            peerConnection: pc,
-            localStream: stream,
             conversationId: data.conversationId,
             partnerId: data.callerId,
-            partnerUsername: data.callerUsername || 'User',
-            isCaller: false,
-            callChannel: callChan,
-            callerSig: callerSig,
-            callStartTime: null,
-            callTimerInterval: null
+            partnerName: data.callerName || 'Caller',
+            partnerAvatar: '',
+            role: 'receiver',
+            stream: stream,
+            pc: pc,
+            channel: callChan,
+            partnerChannel: partnerSig,
+            localIceCandidates: [],
+            dialingInterval: null,
+            timerInterval: null,
+            startTime: null
         };
+
+        await new Promise(resolve => {
+            callChan.subscribe(status => {
+                if (status === 'SUBSCRIBED') resolve();
+            });
+        });
 
         pc.onicecandidate = (event) => {
             if (event.candidate) {
-                const candData = event.candidate.toJSON ? event.candidate.toJSON() : {
-                    candidate: event.candidate.candidate,
-                    sdpMid: event.candidate.sdpMid,
-                    sdpMLineIndex: event.candidate.sdpMLineIndex
-                };
-                const icePayload = { candidate: candData, from: currentUser.id };
-                try { callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
-                if (callerSig) {
-                    try { callerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
-                }
+                activeCall.localIceCandidates.push(event.candidate.toJSON());
+                const icePayload = { candidate: event.candidate.toJSON() };
+                callChan.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: icePayload
+                });
+                partnerSig.send({
+                    type: 'broadcast',
+                    event: 'webrtc_ice',
+                    payload: icePayload
+                });
+            }
+        };
+
+        pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+                attachRemoteAudioStream(event.streams[0]);
             }
         };
 
         const checkConnected = () => {
-            if (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-                setCallConnectedState();
-            } else if (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed') {
-                cleanupCall("Call Disconnected");
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed' || pc.connectionState === 'connected') {
+                onCallConnected();
+            } else if (pc.iceConnectionState === 'failed' || pc.connectionState === 'failed') {
+                cleanupCall("Connection Failed");
             }
         };
-        pc.onconnectionstatechange = checkConnected;
+
         pc.oniceconnectionstatechange = checkConnected;
+        pc.onconnectionstatechange = checkConnected;
 
         setupCallChannelListeners(callChan, pc);
 
-        const sendAnswerToCaller = (plainAnswer) => {
-            const ansPayload = { answer: plainAnswer, from: currentUser.id };
-            try { callChan.send({ type: 'broadcast', event: 'webrtc_answer', payload: ansPayload }); } catch (e) {}
-            if (callerSig) {
-                try { callerSig.send({ type: 'broadcast', event: 'webrtc_answer', payload: ansPayload }); } catch (e) {}
-            }
-        };
-
-        if (data.offer) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-            while (queuedIceCandidates.length > 0) {
-                const c = queuedIceCandidates.shift();
-                try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-            }
-
+        if (data.sdp) {
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: data.sdp }));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            const plainAnswer = { type: answer.type, sdp: answer.sdp };
 
-            sendAnswerToCaller(plainAnswer);
+            const answerPayload = {
+                sdp: answer.sdp,
+                candidates: activeCall.localIceCandidates
+            };
 
-            callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    sendAnswerToCaller(plainAnswer);
-                    setTimeout(() => sendAnswerToCaller(plainAnswer), 350);
-                }
+            callChan.send({
+                type: 'broadcast',
+                event: 'webrtc_answer',
+                payload: answerPayload
             });
-        } else {
-            callChan.subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'receiver_ready',
-                        payload: { from: currentUser.id }
-                    });
-                }
+
+            partnerSig.send({
+                type: 'broadcast',
+                event: 'webrtc_answer',
+                payload: answerPayload
             });
         }
 
+        if (data.candidates && Array.isArray(data.candidates)) {
+            for (const c of data.candidates) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                } catch (e) {
+                    console.error('Error adding initial caller ICE candidate:', e);
+                }
+            }
+        }
+
     } catch (err) {
-        console.error("Answer call error:", err);
-        showToast({
-            title: "Microphone Access Required",
-            message: "Please allow microphone access to answer the voice call.",
-            type: "error",
-            icon: "🎤",
-            force: true
-        });
+        console.error('Failed to answer call:', err);
+        showToast('Microphone access denied or error answering call.');
         cleanupCall();
-    } finally {
-        isAnsweringCall = false;
-        answeringConversationId = null;
     }
 }
 
@@ -10043,23 +9935,23 @@ function endCurrentAudioCall() {
 }
 
 function initUserCallSignaling() {
-    if (!db || !currentUser) return;
-    if (userCallSignalingChannel) {
-        try { db.removeChannel(userCallSignalingChannel); } catch (e) {}
-    }
+    if (userCallSignalingChannel) return;
+    if (!currentUser || !currentUser.id) return;
 
-    userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`)
-        .on('broadcast', { event: 'incoming_call' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.callerId) return;
+    userCallSignalingChannel = db.channel(`user_call_sig_${currentUser.id}`);
 
-            // Safely ignore repeated dialing pulses from the same active caller
-            if (activeCall || isAnsweringCall) {
-                const isSameCall = (activeCall && String(activeCall.conversationId) === String(data.conversationId)) ||
-                                   (isAnsweringCall && String(answeringConversationId) === String(data.conversationId)) ||
-                                   (activeCall && activeCall.partnerId && String(activeCall.partnerId) === String(data.callerId));
-                if (isSameCall) return;
+    userCallSignalingChannel
+        .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data) return;
 
+            // If we are already on this call, ignore repeated dialing pulses
+            if (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId)) {
+                return;
+            }
+
+            // Only report busy if in a call with someone else
+            if (activeCall) {
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
@@ -10073,87 +9965,60 @@ function initUserCallSignaling() {
                 return;
             }
 
-            if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
-                const returnChan = db.channel(`call_room_${data.conversationId}`);
-                returnChan.subscribe((status) => {
-                    if (status === 'SUBSCRIBED') {
-                        returnChan.send({ type: 'broadcast', event: 'call_declined', payload: { from: currentUser?.id } });
-                    }
-                });
-                return;
+            incomingCallData = data;
+            const callerName = data.callerName || 'Someone';
+            const modalCallerName = document.getElementById('incoming-caller-name');
+            if (modalCallerName) modalCallerName.textContent = callerName;
+
+            const modal = document.getElementById('incoming-call-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
             }
 
-            triggerIncomingCallUI(data);
+            playRingtone();
         })
-        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.answer || data.from === currentUser?.id) return;
-            if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
-                if (activeCall.dialingInterval) {
-                    clearInterval(activeCall.dialingInterval);
-                    activeCall.dialingInterval = null;
+        .on('broadcast', { event: 'webrtc_answer' }, async ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data || !activeCall || !activeCall.pc) return;
+            if (activeCall.role !== 'caller') return;
+
+            if (activeCall.dialingInterval) {
+                clearInterval(activeCall.dialingInterval);
+                activeCall.dialingInterval = null;
+            }
+
+            const pc = activeCall.pc;
+            if (pc.signalingState === 'have-local-offer' && data.sdp) {
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: data.sdp }));
+                } catch (e) {
+                    console.error('Error setting remote answer via user channel:', e);
                 }
-                stopRingtoneSound();
-                showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
-                const pc = activeCall.peerConnection;
-                if (!pc.currentRemoteDescription && pc.signalingState !== 'stable') {
+            }
+            if (data.candidates && Array.isArray(data.candidates)) {
+                for (const c of data.candidates) {
                     try {
-                        await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                        while (queuedIceCandidates.length > 0) {
-                            const c = queuedIceCandidates.shift();
-                            try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
-                        }
-                    } catch (err) {
-                        console.error("Error setting answer from signaling channel:", err);
+                        await pc.addIceCandidate(new RTCIceCandidate(c));
+                    } catch (e) {
+                        console.error('Error adding bundled ICE candidate:', e);
                     }
                 }
             }
         })
-        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.candidate || data.from === currentUser?.id) return;
-            if (activeCall && activeCall.peerConnection) {
-                const pc = activeCall.peerConnection;
-                if (pc.remoteDescription && pc.remoteDescription.type) {
-                    try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
-                } else {
-                    queuedIceCandidates.push(data.candidate);
+        .on('broadcast', { event: 'webrtc_ice' }, async ({ payload }) => {
+            const data = payload && payload.payload ? payload.payload : payload;
+            if (!data || !activeCall || !activeCall.pc) return;
+            if (data.candidate) {
+                try {
+                    await activeCall.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+                } catch (e) {
+                    console.error('Error adding direct ICE candidate:', e);
                 }
             }
         })
-        .on('broadcast', { event: 'cancel_call' }, (payload) => {
-            const data = payload?.payload;
-            if (incomingCallData && incomingCallData.callerId === data?.callerId) {
-                stopRingtoneSound();
-                incomingCallData = null;
-                if (callAmbientBackdrop) callAmbientBackdrop.classList.add('hidden');
-                if (incomingCallPopout) incomingCallPopout.classList.add('hidden');
-            }
-        })
-        .on('broadcast', { event: 'call_declined' }, () => {
-            if (activeCall && activeCall.isCaller) {
-                stopRingtoneSound();
-                cleanupCall("Call Declined");
-            }
-        })
-        .on('broadcast', { event: 'call_ended' }, () => {
-            cleanupCall("Call Ended");
-        })
-        .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.threadName) return;
-            playTechChirp();
-            showToast({
-                title: "🎙️ Voice Stage Invite",
-                message: `@${data.inviterUsername || 'Moderator'} invited you to join the Voice Stage in "${data.threadName}"!`,
-                type: "info",
-                icon: "🎙️",
-                duration: 9000,
-                onClick: () => {
-                    navigateToThread(data.threadName);
-                    setTimeout(() => openVoiceForumModal(data.threadName), 350);
-                }
-            });
+        .on('broadcast', { event: 'call_cancelled' }, () => {
+            dismissIncomingCallModal();
         })
         .subscribe();
 }
