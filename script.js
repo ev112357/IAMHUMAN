@@ -9371,10 +9371,10 @@ function showActiveCallBar(status, isConnecting = true) {
     if (callPulseIndicator) {
         if (isConnecting) {
             callPulseIndicator.className = 'call-pulse-dot connecting';
-            activeCallBar.className = 'active-call-bar connecting';
+            activeCallBar.className = 'active-call-window connecting';
         } else {
             callPulseIndicator.className = 'call-pulse-dot';
-            activeCallBar.className = 'active-call-bar';
+            activeCallBar.className = 'active-call-window';
         }
     }
     if (callDurationText) {
@@ -9477,25 +9477,22 @@ function setupCallChannelListeners(callChan, pc) {
 
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
-                // Ignore repeated offers if answer is already generated/local description is set
+                // Ignore duplicate offers if an answer has already been produced
                 if (pc.localDescription) return;
 
                 await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
-                // Process bundled candidates
                 if (data.candidates && Array.isArray(data.candidates)) {
                     for (const c of data.candidates) {
                         try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
                     }
                 }
 
-                // Process queued ICE candidates
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
                 }
 
-                // Generate Answer
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
@@ -9516,7 +9513,7 @@ function setupCallChannelListeners(callChan, pc) {
             try {
                 if (!activeCall || !activeCall.peerConnection) return;
 
-                // Stop dialing interval and ringtone immediately
+                // Stop caller's redial interval immediately
                 if (activeCall.dialingInterval) {
                     clearInterval(activeCall.dialingInterval);
                     activeCall.dialingInterval = null;
@@ -9524,12 +9521,10 @@ function setupCallChannelListeners(callChan, pc) {
                 stopRingtoneSound();
                 showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
 
-                // Prevent collision if remote answer is already applied
                 if (pc.currentRemoteDescription || pc.signalingState === 'stable') return;
 
                 await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
 
-                // Process queued ICE candidates
                 while (queuedIceCandidates.length > 0) {
                     const c = queuedIceCandidates.shift();
                     try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch (e) {}
@@ -9553,7 +9548,7 @@ function setupCallChannelListeners(callChan, pc) {
                 console.warn("Notice adding ICE candidate:", err);
             }
         })
-        .on('broadcast', { event: 'receiver_ready' }, async (payload) => {
+        .on('broadcast', { event: 'receiver_ready' }, async () => {
             if (activeCall && activeCall.isCaller && activeCall.peerConnection) {
                 if (activeCall.dialingInterval) {
                     clearInterval(activeCall.dialingInterval);
@@ -9728,7 +9723,7 @@ async function startAudioCall() {
                 sendNotification(m.user_id, 'incoming_call', targetConvId, 'started a group call in ' + (callPayload.groupName || 'Chat'));
             });
 
-            showActiveCallBar(`Group Call Active (Dialing members...)`, true);
+            showActiveCallBar(`Group Call Active (Dialing...)`, true);
             playRingtoneSound();
 
         } else {
@@ -9850,17 +9845,33 @@ async function answerAudioCall() {
         };
 
         pc.onicecandidate = (event) => {
-            if (event.candidate && callChan) {
+            if (event.candidate) {
                 const candData = event.candidate.toJSON ? event.candidate.toJSON() : {
                     candidate: event.candidate.candidate,
                     sdpMid: event.candidate.sdpMid,
                     sdpMLineIndex: event.candidate.sdpMLineIndex
                 };
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_ice',
-                    payload: { candidate: candData, from: currentUser.id }
-                });
+                if (callChan) {
+                    callChan.send({
+                        type: 'broadcast',
+                        event: 'webrtc_ice',
+                        payload: { candidate: candData, from: currentUser.id }
+                    });
+                }
+                if (data.callerId) {
+                    try {
+                        const callerSig = db.channel(`user_call_sig_${data.callerId}`);
+                        callerSig.subscribe((st) => {
+                            if (st === 'SUBSCRIBED') {
+                                callerSig.send({
+                                    type: 'broadcast',
+                                    event: 'webrtc_ice',
+                                    payload: { candidate: candData, from: currentUser.id }
+                                });
+                            }
+                        });
+                    } catch (e) {}
+                }
             }
         };
 
@@ -9885,7 +9896,6 @@ async function answerAudioCall() {
                 });
             } catch (e) {}
 
-            // Send answer via direct user signaling channel as secondary route
             if (data.callerId) {
                 try {
                     const callerSig = db.channel(`user_call_sig_${data.callerId}`);
@@ -9902,8 +9912,8 @@ async function answerAudioCall() {
             }
         };
 
-        // If offer is already present from incoming_call, process it immediately!
-        if (data.offer) {
+        // Immediately consume offer already available in incomingCallData
+        if (data.offer && pc.signalingState === 'stable') {
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
             if (data.candidates && Array.isArray(data.candidates)) {
@@ -9928,7 +9938,7 @@ async function answerAudioCall() {
                 }
             });
         } else {
-            // Fallback: request fresh offer from caller
+            // Fallback for notification-based calls with missing offer payload
             callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     callChan.send({
@@ -9940,19 +9950,11 @@ async function answerAudioCall() {
             });
         }
 
+        // Show the persistent floating call window while keeping the user on their current page
         if (data.isGroup) {
             showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
         } else {
             showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
-        }
-
-        if (dmModal && dmModal.classList.contains('hidden')) {
-            openMessagesModal();
-        }
-        if (data.isGroup) {
-            selectConversation(data.conversationId, data.groupName || 'Group Chat', null, null, true);
-        } else {
-            selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
         }
 
     } catch (err) {
@@ -10132,6 +10134,18 @@ function initUserCallSignaling() {
                     } catch (err) {
                         console.error("Error setting answer from signaling channel:", err);
                     }
+                }
+            }
+        })
+        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
+            const data = payload?.payload;
+            if (!data || !data.candidate || data.from === currentUser?.id) return;
+            if (activeCall && activeCall.peerConnection) {
+                const pc = activeCall.peerConnection;
+                if (pc.remoteDescription && pc.remoteDescription.type) {
+                    try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch (e) {}
+                } else {
+                    queuedIceCandidates.push(data.candidate);
                 }
             }
         })
