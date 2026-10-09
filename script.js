@@ -9802,6 +9802,13 @@ async function answerAudioCall() {
     const data = incomingCallData;
     incomingCallData = null;
 
+    // 1. Immediately show floating call window with pulsing connecting dot
+    if (data.isGroup) {
+        showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
+    } else {
+        showActiveCallBar(`Connecting to @${data.callerUsername || 'User'}...`, true);
+    }
+
     if (db && currentUser) {
         db.from('user_notifications')
             .update({ is_read: true })
@@ -9832,6 +9839,8 @@ async function answerAudioCall() {
         };
 
         const callChan = db.channel(`call_room_${data.conversationId}`);
+        const callerSig = data.callerId ? db.channel(`user_call_sig_${data.callerId}`) : null;
+        if (callerSig) callerSig.subscribe();
 
         activeCall = {
             peerConnection: pc,
@@ -9841,6 +9850,7 @@ async function answerAudioCall() {
             partnerUsername: data.callerUsername || 'User',
             isCaller: false,
             callChannel: callChan,
+            callerSig: callerSig,
             callStartTime: null,
             callTimerInterval: null
         };
@@ -9852,26 +9862,10 @@ async function answerAudioCall() {
                     sdpMid: event.candidate.sdpMid,
                     sdpMLineIndex: event.candidate.sdpMLineIndex
                 };
-                if (callChan) {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'webrtc_ice',
-                        payload: { candidate: candData, from: currentUser.id }
-                    });
-                }
-                if (data.callerId) {
-                    try {
-                        const callerSig = db.channel(`user_call_sig_${data.callerId}`);
-                        callerSig.subscribe((st) => {
-                            if (st === 'SUBSCRIBED') {
-                                callerSig.send({
-                                    type: 'broadcast',
-                                    event: 'webrtc_ice',
-                                    payload: { candidate: candData, from: currentUser.id }
-                                });
-                            }
-                        });
-                    } catch (e) {}
+                const icePayload = { candidate: candData, from: currentUser.id };
+                try { callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
+                if (callerSig) {
+                    try { callerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
                 }
             }
         };
@@ -9879,7 +9873,7 @@ async function answerAudioCall() {
         const checkConnected = () => {
             if (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
                 setCallConnectedState();
-            } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.iceConnectionState === 'failed') {
+            } else if (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed') {
                 cleanupCall("Call Disconnected");
             }
         };
@@ -9889,31 +9883,13 @@ async function answerAudioCall() {
         setupCallChannelListeners(callChan, pc);
 
         const sendAnswerToCaller = (plainAnswer) => {
-            try {
-                callChan.send({
-                    type: 'broadcast',
-                    event: 'webrtc_answer',
-                    payload: { answer: plainAnswer, from: currentUser.id }
-                });
-            } catch (e) {}
-
-            if (data.callerId) {
-                try {
-                    const callerSig = db.channel(`user_call_sig_${data.callerId}`);
-                    callerSig.subscribe((st) => {
-                        if (st === 'SUBSCRIBED') {
-                            callerSig.send({
-                                type: 'broadcast',
-                                event: 'webrtc_answer',
-                                payload: { answer: plainAnswer, from: currentUser.id }
-                            });
-                        }
-                    });
-                } catch (e) {}
+            const ansPayload = { answer: plainAnswer, from: currentUser.id };
+            try { callChan.send({ type: 'broadcast', event: 'webrtc_answer', payload: ansPayload }); } catch (e) {}
+            if (callerSig) {
+                try { callerSig.send({ type: 'broadcast', event: 'webrtc_answer', payload: ansPayload }); } catch (e) {}
             }
         };
 
-        // Immediately consume offer from incoming_call payload
         if (data.offer) {
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
@@ -9935,7 +9911,6 @@ async function answerAudioCall() {
                 }
             });
         } else {
-            // Fallback for notification-based triggers
             callChan.subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
                     callChan.send({
@@ -9945,13 +9920,6 @@ async function answerAudioCall() {
                     });
                 }
             });
-        }
-
-        // Show floating PiP call window without navigating away from the current page
-        if (data.isGroup) {
-            showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
-        } else {
-            showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
         }
 
     } catch (err) {
@@ -10085,12 +10053,13 @@ function initUserCallSignaling() {
             const data = payload?.payload;
             if (!data || !data.callerId) return;
 
+            // Safely ignore repeated dialing pulses from the same active caller
             if (activeCall || isAnsweringCall) {
-                if ((activeCall && activeCall.conversationId === data.conversationId) || 
-                    (isAnsweringCall && answeringConversationId === data.conversationId)) {
-                    return; 
-                }
-                
+                const isSameCall = (activeCall && String(activeCall.conversationId) === String(data.conversationId)) ||
+                                   (isAnsweringCall && String(answeringConversationId) === String(data.conversationId)) ||
+                                   (activeCall && activeCall.partnerId && String(activeCall.partnerId) === String(data.callerId));
+                if (isSameCall) return;
+
                 const returnChan = db.channel(`call_room_${data.conversationId}`);
                 returnChan.subscribe((status) => {
                     if (status === 'SUBSCRIBED') {
