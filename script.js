@@ -740,7 +740,10 @@ if (!threadMetaMap["Trending"]) threadMetaMap["Trending"] = { owner: SITE_ADMIN_
 
 
 // Voting Cache
-let userVotes = JSON.parse(localStorage.getItem('user_forum_votes') || '{}');
+// Votes are remembered per account. (They used to share one key per browser, so a second account on the
+// same device inherited the first one's highlighted votes.)
+const VOTE_STORE_PREFIX = 'user_forum_votes_';
+let userVotes = {};
 let userCommentVotes = JSON.parse(localStorage.getItem('user_forum_comment_votes') || '{}');
 let cachedPosts = [];
 let cachedUpdates = [];
@@ -2417,6 +2420,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function syncUserState(user) {
+    switchVoteStore(user ? user.id : null);
     if (user) {
         currentUser = user;
         currentUsername = user.user_metadata?.username || user.email?.split('@')[0] || "human";
@@ -6816,6 +6820,99 @@ function refreshPostVoteUI(post) {
     });
 }
 
+function switchVoteStore(userId) {
+    try {
+        if (!userId) { userVotes = {}; return; }
+        const key = VOTE_STORE_PREFIX + userId;
+        let saved = localStorage.getItem(key);
+        if (saved === null) {
+            // First sign-in on this browser since per-account storage: adopt the old shared votes once.
+            const legacy = localStorage.getItem('user_forum_votes');
+            if (legacy) {
+                saved = legacy;
+                localStorage.setItem(key, legacy);
+                localStorage.removeItem('user_forum_votes');
+            }
+        }
+        userVotes = JSON.parse(saved || '{}') || {};
+    } catch (e) {
+        userVotes = {};
+    }
+}
+
+function persistUserVotes() {
+    if (!currentUser) return;
+    try { localStorage.setItem(VOTE_STORE_PREFIX + currentUser.id, JSON.stringify(userVotes)); } catch (e) {}
+}
+
+// The server's record of this account's votes wins over whatever this browser remembers.
+let postVotesTableMissing = false;
+async function syncServerVotes(posts) {
+    if (!currentUser || !db || postVotesTableMissing) return;
+    const ids = (posts || []).map(p => p.id).filter(id => /^\d+$/.test(String(id)));
+    if (ids.length === 0) return;
+
+    const { data, error } = await db
+        .from('post_votes')
+        .select('post_id, value')
+        .eq('user_id', currentUser.id)
+        .in('post_id', ids);
+
+    if (error) {
+        // Table not installed yet (see the SQL setup): keep using the local record.
+        if (isMissingRelationError(error)) postVotesTableMissing = true;
+        return;
+    }
+    (data || []).forEach(row => { userVotes[row.post_id] = row.value; });
+    persistUserVotes();
+}
+
+function isMissingRelationError(error) {
+    return Boolean(error) && (error.code === 'PGRST205' || error.code === '42P01' ||
+        /schema cache|does not exist|Could not find the table/i.test(error.message || ''));
+}
+
+function isMissingFunctionError(error) {
+    return Boolean(error) && (error.code === 'PGRST202' || error.code === '42883' ||
+        /Could not find the function|function .* does not exist/i.test(error.message || ''));
+}
+
+// Sends one vote to the server and returns the post's authoritative counts.
+// Preferred path: the cast_vote() database function, which locks the row, records the user's vote and
+// adjusts the counts in a single transaction. Fallback (until that SQL is installed): re-read the counts
+// right before writing, which narrows but cannot close the race.
+let voteRpcAvailable = null;
+async function submitVote(post, previousVote, newVote, baseline) {
+    if (voteRpcAvailable !== false) {
+        const { data, error } = await db.rpc('cast_vote', { p_post_id: Number(post.id), p_value: newVote });
+        if (!error) {
+            voteRpcAvailable = true;
+            const row = Array.isArray(data) ? data[0] : data;
+            return { likes: Number(row.like_count), dislikes: Number(row.dislike_count) };
+        }
+        if (!isMissingFunctionError(error)) throw error;
+        voteRpcAvailable = false;
+    }
+
+    const { data: fresh } = await db.from('Posts').select('likes, dislikes').eq('id', post.id).maybeSingle();
+    // `baseline` is the count from before this click's optimistic update (post.likes already includes it).
+    let likes = Number((fresh && fresh.likes) ?? baseline.likes);
+    let dislikes = Number((fresh && fresh.dislikes) ?? baseline.dislikes);
+
+    if (previousVote === 1) likes = Math.max(0, likes - 1);
+    if (previousVote === -1) dislikes = Math.max(0, dislikes - 1);
+    if (newVote === 1) likes += 1;
+    if (newVote === -1) dislikes += 1;
+
+    const { error } = await db.from('Posts').update({ likes, dislikes }).eq('id', post.id);
+    if (error) throw error;
+    return { likes, dislikes };
+}
+
+// Clicks on the same post are sent one at a time, in order, so the last click always wins.
+const voteQueues = new Map();
+const votesInFlight = new Map();
+
 async function handleVote(postId, direction) {
     if (!currentUser) {
         alert("You must be logged in to like or dislike posts.");
@@ -6828,70 +6925,74 @@ async function handleVote(postId, direction) {
         return;
     }
 
-
-
-
     const post = postCacheMap.get(Number(postId));
     if (!post) return;
-    
-    const currentVote = userVotes[postId] || 0;
-    let newVote = currentVote === direction ? 0 : direction;
 
+    const previousVote = userVotes[postId] || 0;
+    const newVote = previousVote === direction ? 0 : direction;
+    const before = { likes: Number(post.likes || 0), dislikes: Number(post.dislikes || 0) };
 
-
-
+    // Optimistic UI: the click feels instant, the server then confirms the real counts.
     userVotes[postId] = newVote;
-    localStorage.setItem('user_forum_votes', JSON.stringify(userVotes));
+    persistUserVotes();
 
-
-
-
-    let newLikes = Number(post.likes || 0);
-    let newDislikes = Number(post.dislikes || 0);
-
-
-
-
-    if (currentVote === 1) newLikes = Math.max(0, newLikes - 1);
-    if (currentVote === -1) newDislikes = Math.max(0, newDislikes - 1);
-    
-    if (newVote === 1) newLikes += 1;
-    if (newVote === -1) newDislikes += 1;
-
-
-
-
-    post.likes = newLikes;
-    post.dislikes = newDislikes;
+    if (previousVote === 1) post.likes = Math.max(0, Number(post.likes || 0) - 1);
+    if (previousVote === -1) post.dislikes = Math.max(0, Number(post.dislikes || 0) - 1);
+    if (newVote === 1) post.likes = Number(post.likes || 0) + 1;
+    if (newVote === -1) post.dislikes = Number(post.dislikes || 0) + 1;
     refreshPostVoteUI(post);
 
+    const key = String(postId);
+    votesInFlight.set(key, (votesInFlight.get(key) || 0) + 1);
 
+    const run = (voteQueues.get(key) || Promise.resolve()).then(async () => {
+        try {
+            const counts = await submitVote(post, previousVote, newVote, before);
+            if (votesInFlight.get(key) === 1) {
+                // Last pending click for this post: show the server's numbers.
+                post.likes = counts.likes;
+                post.dislikes = counts.dislikes;
+                refreshPostVoteUI(post);
+            }
 
-
-    const { error } = await db
-        .from('Posts')
-        .update({ likes: newLikes, dislikes: newDislikes })
-        .eq('id', postId);
-
-
-    if (error) {
-        console.error("Failed to save vote to database:", error);
-    } else if (newVote === 1 && post.author) {
-        const cleanAuthor = post.author.toLowerCase().replace('@', '');
-        if (currentUser && currentUsername && cleanAuthor !== currentUsername.toLowerCase().replace('@', '')) {
-            db.from('profiles').select('id').ilike('username', cleanAuthor).maybeSingle()
-                .then(({ data: authorProfile }) => {
-                    if (authorProfile && authorProfile.id) {
-                        sendNotification(
-                            authorProfile.id,
-                            'upvote_post',
-                            String(postId),
-                            'liked your post in #' + (post.thread || 'forum') + '.'
-                        );
-                    }
-                }).catch(() => {});
+            if (newVote === 1 && previousVote !== 1 && post.author) {
+                const cleanAuthor = post.author.toLowerCase().replace('@', '');
+                if (currentUsername && cleanAuthor !== currentUsername.toLowerCase().replace('@', '')) {
+                    db.from('profiles').select('id').ilike('username', cleanAuthor).maybeSingle()
+                        .then(({ data: authorProfile }) => {
+                            if (authorProfile && authorProfile.id) {
+                                sendNotification(
+                                    authorProfile.id,
+                                    'upvote_post',
+                                    String(postId),
+                                    'liked your post in #' + (post.thread || 'forum') + '.'
+                                );
+                            }
+                        }).catch(() => {});
+                }
+            }
+        } catch (err) {
+            console.error("Failed to save vote:", err);
+            if (votesInFlight.get(key) === 1) {
+                userVotes[postId] = previousVote;
+                persistUserVotes();
+                post.likes = before.likes;
+                post.dislikes = before.dislikes;
+                refreshPostVoteUI(post);
+            }
+            showToast({
+                title: "Vote not saved",
+                message: "Your vote could not be recorded. Please try again.",
+                type: "error",
+                icon: "⚠",
+                force: true
+            });
+        } finally {
+            votesInFlight.set(key, (votesInFlight.get(key) || 1) - 1);
         }
-    }
+    });
+    voteQueues.set(key, run);
+    return run;
 }
 
 
@@ -7735,6 +7836,8 @@ async function loadForumPosts() {
 
 
     cachedPosts.forEach(p => postCacheMap.set(p.id, p));
+
+    await syncServerVotes(cachedPosts);
 
 
 
