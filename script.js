@@ -9646,16 +9646,16 @@ async function startAudioCall() {
                 if (activeCall && activeCall.localIceCandidates) {
                     activeCall.localIceCandidates.push(candData);
                 }
+                const icePayload = { candidate: candData, from: currentUser.id };
                 if (callChan) {
-                    callChan.send({
-                        type: 'broadcast',
-                        event: 'webrtc_ice',
-                        payload: { candidate: candData, from: currentUser.id }
-                    });
+                    try { callChan.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
+                }
+                if (partnerSig) {
+                    try { partnerSig.send({ type: 'broadcast', event: 'webrtc_ice', payload: icePayload }); } catch (e) {}
                 }
             }
         };
-
+        
         const checkConnected = () => {
             if (pc.connectionState === 'connected' || pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
                 setCallConnectedState();
