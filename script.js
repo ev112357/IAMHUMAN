@@ -267,7 +267,6 @@ const shareThreadBtn = document.getElementById('share-thread-btn');
 const closeShareModalBtn = document.getElementById('close-share-modal-btn');
 const nativeShareBtn = document.getElementById('native-share-btn');
 const copyLinkBtn = document.getElementById('copy-link-btn');
-const shareDmSelect = document.getElementById('share-dm-select');
 const internalShareBtn = document.getElementById('internal-share-btn');
 
 
@@ -661,7 +660,7 @@ const callAmbientBackdrop = document.getElementById('call-ambient-backdrop');
 
 
 // --- 1-ON-1 AUDIO CALL STATE ---
-let activeCall = null; // { peerConnection, localStream, conversationId, partnerId, partnerUsername, isCaller, callChannel, callTimerInterval, callStartTime }
+let activeCall = null; // see createCallState(): a call room with one RTCPeerConnection per other participant
 let isMicMuted = false;
 let incomingCallData = null; // { callerId, callerUsername, conversationId }
 let userCallSignalingChannel = null;
@@ -938,6 +937,9 @@ function applyAudioSettingsLive() {
 
 function applyDeafenLive() {
     if (remoteAudioEl) remoteAudioEl.muted = userAudioSettings.deafen;
+    if (typeof activeCall !== 'undefined' && activeCall && activeCall.peers) {
+        activeCall.peers.forEach(peer => { peer.audioEl.muted = Boolean(userAudioSettings.deafen); });
+    }
     if (typeof voiceStagePeers !== 'undefined') {
         voiceStagePeers.forEach(peer => {
             if (peer.audioEl) peer.audioEl.muted = Boolean(voiceStageIsDeafened || userAudioSettings.deafen);
@@ -5650,105 +5652,9 @@ async function loadConversations() {
 async function startOrOpenDirectChat(friend) {
     if (!db || !currentUser || !friend?.id) return;
 
-
-
-
     try {
-        // Check if accepted friends
-        const { data: friendship } = await db
-            .from('friendships')
-            .select('status')
-            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
-            .maybeSingle();
-
-
-
-
-        const isFriend = friendship && friendship.status === 'accepted';
-
-
-
-
-        // Check for an existing 1-on-1 conversation
-        const { data: myMemberships } = await db
-            .from('conversation_members')
-            .select('conversation_id')
-            .eq('user_id', currentUser.id);
-
-
-
-
-        const myConvIds = (myMemberships || []).map(m => m.conversation_id);
-        let existingConvId = null;
-
-
-
-
-        if (myConvIds.length > 0) {
-            const { data: sharedMemberships } = await db
-                .from('conversation_members')
-                .select('conversation_id')
-                .in('conversation_id', myConvIds)
-                .eq('user_id', friend.id);
-
-
-
-
-            if (sharedMemberships && sharedMemberships.length > 0) {
-                const sharedIds = sharedMemberships.map(s => s.conversation_id);
-                const { data: conv } = await db
-                    .from('conversations')
-                    .select('id')
-                    .in('id', sharedIds)
-                    .eq('is_group', false)
-                    .limit(1)
-                    .maybeSingle();
-
-
-
-
-                if (conv) existingConvId = conv.id;
-            }
-        }
-
-
-
-
-        if (existingConvId) {
-            selectConversation(existingConvId, `@${friend.username}`, friend.id, friend.username, isFriend);
-            return;
-        }
-
-
-
-
-        // Create new conversation
-        const { data: newConv, error: convErr } = await db
-            .from('conversations')
-            .insert([{ is_group: false, created_by: currentUser.id }])
-            .select()
-            .single();
-
-
-
-
-        if (convErr) {
-            alert(`Error creating chat: ${convErr.message}`);
-            return;
-        }
-
-
-
-
-        await db.from('conversation_members').insert([
-            { conversation_id: newConv.id, user_id: currentUser.id },
-            { conversation_id: newConv.id, user_id: friend.id }
-        ]);
-
-
-
-
-        selectConversation(newConv.id, `@${friend.username}`, friend.id, friend.username, isFriend);
+        const { convId, isFriend } = await ensureDirectConversation(friend);
+        selectConversation(convId, `@${friend.username}`, friend.id, friend.username, isFriend);
     } catch (err) {
         console.error("startOrOpenDirectChat error:", err);
         alert(`Could not start chat: ${err.message}`);
@@ -6019,7 +5925,10 @@ function createMessageElement(msg) {
 
     const avatarImgHtml = `<img src="${senderAvatar}" class="msg-avatar clickable-avatar" data-username="${escapeHTML(msg.sender_username)}" alt="pfp" title="@${escapeHTML(msg.sender_username)}">`;
     const authorHtml = !isMine ? `<div class="msg-author clickable-username" data-username="${escapeHTML(msg.sender_username)}">@${escapeHTML(msg.sender_username)}</div>` : '';
-    const textHtml = msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '';
+    const sharedLink = extractSharedLink(msg.content);
+    const textHtml = sharedLink
+        ? ((sharedLink.note ? `<div>${renderFormattedContent(sharedLink.note)}</div>` : '') + shareCardPlaceholder(sharedLink))
+        : (msg.content ? `<div>${renderFormattedContent(msg.content)}</div>` : '');
     const imgHtml = msg.image_url ? `<a href="${msg.image_url}" target="_blank"><img src="${msg.image_url}" class="chat-img-thumb" alt="Uploaded photo" loading="lazy"></a>` : '';
     
     let pendingBadge = '';
@@ -6030,8 +5939,9 @@ function createMessageElement(msg) {
             ? `<span class="pending-tag">Pending Approval</span>` 
             : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">Chat Request</span>`;
     }
+    const cardClasses = sharedLink ? ` has-share-card${!sharedLink.note && isMine ? ' card-only' : ''}` : '';
     const bubbleHtml = `
-        <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}">
+        <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}${cardClasses}">
             ${authorHtml}${textHtml}${imgHtml}${pendingBadge}
         </div>
     `;
@@ -6048,6 +5958,10 @@ function createMessageElement(msg) {
     if (attachedImg) {
         attachedImg.onload = () => scrollToBottom(false);
     }
+
+    row.querySelectorAll('.share-card').forEach((card) => {
+        hydrateShareCard(card).then(() => scrollToBottom(false), () => {});
+    });
 
 
 
@@ -8197,70 +8111,6 @@ safeAddListener(shareModal, 'click', (e) => { if (e.target === shareModal) share
 
 
 
-async function populateShareConversations() {
-    if (!shareDmSelect) return;
-    shareDmSelect.innerHTML = '<option value="">Select a friend or group...</option>';
-    if (internalShareBtn) internalShareBtn.disabled = true;
-
-
-
-
-    if (currentUser && db) {
-        const { data: memberships } = await db.from('conversation_members')
-            .select('conversation_id')
-            .eq('user_id', currentUser.id);
-
-
-
-
-        if (memberships && memberships.length > 0) {
-            const convIds = memberships.map(m => m.conversation_id);
-            const { data: convs } = await db.from('conversations').select('id, name, is_group').in('id', convIds);
-            const { data: allMembers } = await db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id);
-
-
-
-
-            const partnerIds = Array.from(new Set((allMembers || []).map(m => m.user_id)));
-            const { data: profiles } = partnerIds.length > 0 
-                ? await db.from('profiles').select('id, username').in('id', partnerIds) 
-                : { data: [] };
-
-
-
-
-            (convs || []).forEach(conv => {
-                let displayName = '';
-                if (conv.is_group) {
-                    displayName = `Group: ${conv.name}`;
-                } else {
-                    const partnerMem = (allMembers || []).find(m => m.conversation_id === conv.id);
-                    const pProfile = partnerMem ? (profiles || []).find(p => p.id === partnerMem.user_id) : null;
-                    displayName = pProfile ? `@${pProfile.username}` : 'Direct Message';
-                }
-
-
-
-
-                const option = document.createElement('option');
-                option.value = conv.id;
-                option.textContent = displayName;
-                shareDmSelect.appendChild(option);
-            });
-            shareDmSelect.disabled = false;
-        }
-    } else {
-        const option = document.createElement('option');
-        option.value = "";
-        option.textContent = "Log in to share via DM";
-        shareDmSelect.appendChild(option);
-        shareDmSelect.disabled = true;
-    }
-}
-
-
-
-
 // Opens modal to share an individual post
 async function openShareModal(postId) {
     currentShareType = 'post';
@@ -8358,73 +8208,424 @@ safeAddListener(copyLinkBtn, 'click', async () => {
 
 
 
-safeAddListener(shareDmSelect, 'change', () => {
-    if (internalShareBtn) internalShareBtn.disabled = !shareDmSelect.value;
+// --- SHARE TO DIRECT MESSAGES ---
+// Pick any number of chats or people, add an optional note, and send. The message is an ordinary chat
+// message whose last line is a link ("[View Post](...)" / "[Open Thread](...)"); chat bubbles turn that
+// link into a preview card, and older clients simply show the link.
+const MAX_SHARE_RECIPIENTS = 10;
+const shareRecipientSearch = document.getElementById('share-recipient-search');
+const shareRecipientList = document.getElementById('share-recipient-list');
+const shareSelectedChips = document.getElementById('share-selected-chips');
+const shareNote = document.getElementById('share-note');
+
+let shareChats = [];                 // existing conversations: { key, kind: 'conv', convId, label, sub, isGroup, partnerId, partnerUsername }
+let sharePeople = [];                // search hits not already covered by a chat: { key, kind: 'user', userId, username, label, sub }
+const shareSelected = new Map();     // key -> recipient
+let sharePeopleTimer = null;
+let sharePeopleSeq = 0;
+
+function resetShareRecipients() {
+    shareChats = [];
+    sharePeople = [];
+    shareSelected.clear();
+    if (shareRecipientSearch) shareRecipientSearch.value = '';
+    if (shareNote) shareNote.value = '';
+    renderShareRecipients();
+}
+
+function renderShareRecipients() {
+    if (!shareRecipientList) return;
+    const query = (shareRecipientSearch ? shareRecipientSearch.value : '').trim().replace(/^@/, '').toLowerCase();
+
+    const matches = (r) => !query || r.label.toLowerCase().replace(/^@|^group:\s*/, '').includes(query) || r.label.toLowerCase().includes(query);
+    const rows = [...shareChats.filter(matches), ...sharePeople];
+
+    if (!currentUser) {
+        shareRecipientList.innerHTML = '<div class="share-empty">Log in to share via direct message.</div>';
+    } else if (rows.length === 0) {
+        shareRecipientList.innerHTML = `<div class="share-empty">${query.length >= 2 ? 'No matches. Try another username.' : (shareChats.length === 0 ? 'No chats yet. Search for a username to start one.' : 'No matches.')}</div>`;
+    } else {
+        shareRecipientList.innerHTML = rows.map((r) => {
+            const selected = shareSelected.has(r.key);
+            const initial = escapeHTML((r.label.replace(/^@|^Group:\s*/i, '')[0] || '?').toUpperCase());
+            return `<button type="button" class="share-recipient${selected ? ' selected' : ''}" role="option" aria-selected="${selected}" data-key="${escapeHTML(r.key)}">
+                <span class="share-recipient-avatar${r.isGroup ? ' is-group' : ''}">${initial}</span>
+                <span class="share-recipient-text"><span class="share-recipient-name">${escapeHTML(r.label)}</span><span class="share-recipient-sub">${escapeHTML(r.sub)}</span></span>
+                <span class="share-check" aria-hidden="true">${selected ? '✓' : ''}</span>
+            </button>`;
+        }).join('');
+    }
+
+    if (shareSelectedChips) {
+        shareSelectedChips.innerHTML = Array.from(shareSelected.values()).map(r =>
+            `<button type="button" class="share-chip" data-key="${escapeHTML(r.key)}" aria-label="Remove ${escapeHTML(r.label)}">${escapeHTML(r.label)} <span aria-hidden="true">✕</span></button>`
+        ).join('');
+    }
+
+    if (internalShareBtn) {
+        const n = shareSelected.size;
+        internalShareBtn.disabled = n === 0;
+        internalShareBtn.textContent = n === 0 ? 'Send' : `Send to ${n} ${n === 1 ? 'chat' : 'chats'}`;
+    }
+}
+
+async function populateShareConversations() {
+    resetShareRecipients();
+    if (!currentUser || !db) return;
+
+    const { data: memberships } = await db.from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+    if (!memberships || memberships.length === 0) { renderShareRecipients(); return; }
+
+    const convIds = memberships.map(m => m.conversation_id);
+    const [{ data: convs }, { data: others }] = await Promise.all([
+        db.from('conversations').select('id, name, is_group').in('id', convIds),
+        db.from('conversation_members').select('conversation_id, user_id').in('conversation_id', convIds).neq('user_id', currentUser.id)
+    ]);
+
+    const partnerIds = Array.from(new Set((others || []).map(m => m.user_id)));
+    const { data: profiles } = partnerIds.length > 0
+        ? await db.from('profiles').select('id, username').in('id', partnerIds)
+        : { data: [] };
+
+    shareChats = (convs || []).map((conv) => {
+        if (conv.is_group || (conv.name && conv.name.trim())) {
+            return { key: `conv:${conv.id}`, kind: 'conv', convId: conv.id, isGroup: true, partnerId: null,
+                     label: `Group: ${conv.name || 'Chat'}`, sub: 'Group chat' };
+        }
+        const partner = (others || []).find(m => m.conversation_id === conv.id);
+        const profile = partner ? (profiles || []).find(p => p.id === partner.user_id) : null;
+        if (!profile) return null;
+        return { key: `conv:${conv.id}`, kind: 'conv', convId: conv.id, isGroup: false, partnerId: profile.id,
+                 partnerUsername: profile.username, label: `@${profile.username}`, sub: 'Direct message' };
+    }).filter(Boolean).sort((a, b) => a.label.localeCompare(b.label));
+
+    renderShareRecipients();
+}
+
+// Anyone on the site can be messaged: search usernames that aren't already in the chat list.
+async function searchSharePeople(rawQuery) {
+    const query = rawQuery.trim().replace(/^@/, '');
+    const seq = ++sharePeopleSeq;
+    if (!db || !currentUser || query.length < 2) {
+        sharePeople = [];
+        renderShareRecipients();
+        return;
+    }
+
+    // Prefix match only (and no LIKE wildcards from the user), so this can't be used to dump the user list.
+    const safe = query.replace(/[%_\\]/g, '');
+    const { data } = await db.from('profiles')
+        .select('id, username, is_private')
+        .ilike('username', `${safe}%`)
+        .neq('id', currentUser.id)
+        .limit(8);
+    if (seq !== sharePeopleSeq) return;
+
+    const haveChat = new Set(shareChats.filter(c => c.partnerId).map(c => c.partnerId));
+    sharePeople = (data || [])
+        .filter(p => p.username && !p.is_private && !haveChat.has(p.id))
+        .map(p => ({ key: `user:${p.id}`, kind: 'user', userId: p.id, username: p.username,
+                     label: `@${p.username}`, sub: 'Start a new chat' }));
+    renderShareRecipients();
+}
+
+safeAddListener(shareRecipientSearch, 'input', () => {
+    renderShareRecipients();
+    clearTimeout(sharePeopleTimer);
+    sharePeopleTimer = setTimeout(() => searchSharePeople(shareRecipientSearch.value), 250);
 });
 
+safeAddListener(shareRecipientList, 'click', (e) => {
+    const row = e.target.closest('.share-recipient');
+    if (!row) return;
+    const key = row.getAttribute('data-key');
+    const recipient = [...shareChats, ...sharePeople].find(r => r.key === key);
+    if (!recipient) return;
 
+    if (shareSelected.has(key)) {
+        shareSelected.delete(key);
+    } else {
+        if (shareSelected.size >= MAX_SHARE_RECIPIENTS) {
+            showToast({ title: "Too many recipients", message: `You can send to up to ${MAX_SHARE_RECIPIENTS} chats at once.`, type: "info", icon: "✉", force: true });
+            return;
+        }
+        shareSelected.set(key, recipient);
+    }
+    renderShareRecipients();
+});
 
+safeAddListener(shareSelectedChips, 'click', (e) => {
+    const chip = e.target.closest('.share-chip');
+    if (!chip) return;
+    shareSelected.delete(chip.getAttribute('data-key'));
+    renderShareRecipients();
+});
+
+// Looks up (or creates) the 1-on-1 conversation with a user. Shared by "message a friend" and sharing.
+async function ensureDirectConversation(friend) {
+    const { data: friendship } = await db
+        .from('friendships')
+        .select('status')
+        .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${friend.id}),and(user_id.eq.${friend.id},friend_id.eq.${currentUser.id})`)
+        .maybeSingle();
+    const isFriend = Boolean(friendship && friendship.status === 'accepted');
+
+    const { data: myMemberships } = await db
+        .from('conversation_members')
+        .select('conversation_id')
+        .eq('user_id', currentUser.id);
+
+    const myConvIds = (myMemberships || []).map(m => m.conversation_id);
+    if (myConvIds.length > 0) {
+        const { data: sharedMemberships } = await db
+            .from('conversation_members')
+            .select('conversation_id')
+            .in('conversation_id', myConvIds)
+            .eq('user_id', friend.id);
+
+        if (sharedMemberships && sharedMemberships.length > 0) {
+            const { data: conv } = await db
+                .from('conversations')
+                .select('id')
+                .in('id', sharedMemberships.map(s => s.conversation_id))
+                .eq('is_group', false)
+                .limit(1)
+                .maybeSingle();
+            if (conv) return { convId: conv.id, isFriend };
+        }
+    }
+
+    const { data: newConv, error: convErr } = await db
+        .from('conversations')
+        .insert([{ is_group: false, created_by: currentUser.id }])
+        .select()
+        .single();
+    if (convErr) throw new Error(`Error creating chat: ${convErr.message}`);
+
+    const { error: memberErr } = await db.from('conversation_members').insert([
+        { conversation_id: newConv.id, user_id: currentUser.id },
+        { conversation_id: newConv.id, user_id: friend.id }
+    ]);
+    if (memberErr) throw new Error(`Error creating chat: ${memberErr.message}`);
+
+    return { convId: newConv.id, isFriend };
+}
+
+// Posts one message into a conversation with the same approval rules as the normal chat box:
+// a first message to a non-friend waits for approval and sends them a friend request.
+async function sendMessageToConversation({ convId, partnerId, isFriend, text, notifyText }) {
+    let pending = false;
+    if (partnerId && !isFriend) {
+        const { data: approved } = await db
+            .from('chat_messages')
+            .select('id')
+            .eq('conversation_id', convId)
+            .eq('pending_approval', false)
+            .limit(1);
+        pending = !approved || approved.length === 0;
+    }
+
+    // Writing back to someone who messaged us first approves their pending request.
+    if (partnerId) {
+        await db.from('chat_messages')
+            .update({ pending_approval: false })
+            .eq('conversation_id', convId)
+            .neq('sender_id', currentUser.id)
+            .eq('pending_approval', true);
+    }
+
+    const { error } = await db.from('chat_messages').insert([{
+        conversation_id: convId,
+        sender_id: currentUser.id,
+        sender_username: currentUsername,
+        content: text,
+        pending_approval: pending
+    }]);
+    if (error) throw new Error(error.message);
+
+    if (pending && partnerId) {
+        const { data: existing } = await db
+            .from('friendships')
+            .select('id')
+            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${partnerId}),and(user_id.eq.${partnerId},friend_id.eq.${currentUser.id})`)
+            .maybeSingle();
+        if (!existing) {
+            await db.from('friendships').insert([{ user_id: currentUser.id, friend_id: partnerId, status: 'pending' }]);
+        }
+        sendNotification(partnerId, 'friend_request', null, 'sent you a friend request and a pending message.');
+        return;
+    }
+
+    let recipientIds = partnerId ? [partnerId] : [];
+    if (!partnerId) {
+        const { data: members } = await db
+            .from('conversation_members')
+            .select('user_id')
+            .eq('conversation_id', convId)
+            .neq('user_id', currentUser.id);
+        recipientIds = (members || []).map(m => m.user_id);
+    }
+    recipientIds.forEach(id => sendNotification(id, 'direct_message', String(convId), notifyText));
+}
+
+async function deliverShare(recipient, text, notifyText) {
+    if (recipient.kind === 'user') {
+        const { convId, isFriend } = await ensureDirectConversation({ id: recipient.userId, username: recipient.username });
+        return sendMessageToConversation({ convId, partnerId: recipient.userId, isFriend, text, notifyText });
+    }
+
+    let isFriend = true;
+    if (recipient.partnerId) {
+        const { data: friendship } = await db
+            .from('friendships')
+            .select('status')
+            .or(`and(user_id.eq.${currentUser.id},friend_id.eq.${recipient.partnerId}),and(user_id.eq.${recipient.partnerId},friend_id.eq.${currentUser.id})`)
+            .maybeSingle();
+        isFriend = Boolean(friendship && friendship.status === 'accepted');
+    }
+    return sendMessageToConversation({ convId: recipient.convId, partnerId: recipient.partnerId, isFriend, text, notifyText });
+}
 
 // 3. Send via Internal DM
 safeAddListener(internalShareBtn, 'click', async () => {
-    const selectedConvId = shareDmSelect.value;
-    if (!selectedConvId || !currentShareTarget || !currentUser) return;
+    if (shareSelected.size === 0 || !currentShareTarget || !currentUser) return;
 
-
-
+    const recipients = Array.from(shareSelected.values());
+    const note = (shareNote ? shareNote.value : '').trim();
+    const link = currentShareType === 'thread'
+        ? `[Open Thread](${currentSharePostUrl})`
+        : `[View Post](${currentSharePostUrl})`;
+    const text = note ? `${note}\n${link}` : link;
+    const notifyText = currentShareType === 'thread'
+        ? `shared the #${currentShareTarget} community with you.`
+        : 'shared a post with you.';
 
     internalShareBtn.disabled = true;
     internalShareBtn.textContent = 'Sending...';
 
-
-
-
-    const formattedLink = currentShareType === 'thread'
-        ? `Check out the #${currentShareTarget} community: [Open Thread](${currentSharePostUrl})`
-        : `Check out this post: [View Post](${currentSharePostUrl})`;
-
-
-
-
-    const { error } = await db.from('chat_messages').insert([{
-        conversation_id: selectedConvId,
-        sender_id: currentUser.id,
-        sender_username: currentUsername,
-        content: formattedLink,
-        pending_approval: false
-    }]);
-
-
-
-
-    if (error) {
-        alert(`Error sharing: ${error.message}`);
-        internalShareBtn.disabled = false;
-        internalShareBtn.textContent = 'Send Message';
-        return;
+    const failed = [];
+    let sent = 0;
+    for (const recipient of recipients) {
+        try {
+            await deliverShare(recipient, text, notifyText);
+            sent++;
+            shareSelected.delete(recipient.key);
+        } catch (err) {
+            console.warn("Share failed for", recipient.label, err);
+            failed.push(recipient.label);
+        }
     }
 
-
-
-
-    await db.from('chat_messages')
-        .update({ is_read: false })
-        .eq('conversation_id', selectedConvId)
-        .neq('sender_id', currentUser.id);
-
-
-
-
-    if (currentShareType === 'post') {
+    if (sent > 0 && currentShareType === 'post') {
         await incrementShareCount(currentShareTarget);
     }
 
+    if (failed.length === 0) {
+        showToast({
+            title: currentShareType === 'thread' ? "Thread shared" : "Post shared",
+            message: sent === 1 ? `Sent to ${recipients[0].label}.` : `Sent to ${sent} chats.`,
+            type: "success",
+            icon: "✉",
+            force: true
+        });
+        if (shareModal) shareModal.classList.add('hidden');
+        resetShareRecipients();
+        checkNotifications();
+    } else {
+        showToast({
+            title: sent > 0 ? "Partly shared" : "Could not share",
+            message: `Failed: ${failed.join(', ')}. They are still selected so you can retry.`,
+            type: "error",
+            icon: "⚠",
+            duration: 7000,
+            force: true
+        });
+        renderShareRecipients();
+    }
+});
 
+// --- Shared-link cards inside chat bubbles ---
+const sharedPostCache = new Map(); // post id -> Promise<post | null>
 
+function extractSharedLink(content) {
+    if (!content) return null;
+    const match = content.match(/\[(?:View Post|Open Thread)\]\((https?:\/\/[^\s)]+)\)\s*$/);
+    if (!match) return null;
+    try {
+        const url = new URL(match[1]);
+        if (url.host !== window.location.host) return null;
+        const note = content.slice(0, match.index).trim();
+        const postId = url.searchParams.get('post');
+        if (postId && /^\d+$/.test(postId)) return { kind: 'post', id: postId, url: url.href, note };
+        const thread = url.searchParams.get('thread');
+        if (thread) return { kind: 'thread', name: thread, url: url.href, note };
+    } catch (e) {}
+    return null;
+}
 
-    alert(currentShareType === 'thread' ? "Thread shared in your messages!" : "Post shared in your messages!");
-    if (shareModal) shareModal.classList.add('hidden');
-    internalShareBtn.textContent = 'Send Message';
+function shareCardPlaceholder(link) {
+    const attr = link.kind === 'post' ? `data-post-id="${escapeHTML(link.id)}"` : `data-thread="${escapeHTML(link.name)}"`;
+    const label = link.kind === 'post' ? 'Loading post…' : `#${escapeHTML(link.name)}`;
+    return `<a class="share-card" href="${escapeHTML(link.url)}" data-kind="${link.kind}" ${attr}>
+        <span class="share-card-body"><span class="share-card-kicker">${link.kind === 'post' ? 'Shared post' : 'Shared thread'}</span><span class="share-card-title">${label}</span></span>
+    </a>`;
+}
+
+async function hydrateShareCard(card) {
+    const kind = card.getAttribute('data-kind');
+    if (kind === 'thread') {
+        card.querySelector('.share-card-body').insertAdjacentHTML('beforeend', '<span class="share-card-cta">Open thread →</span>');
+        return;
+    }
+
+    const id = card.getAttribute('data-post-id');
+    if (!sharedPostCache.has(id)) {
+        sharedPostCache.set(id, db
+            ? db.from('Posts').select('id, thread, author, title, content, image_url').eq('id', id).maybeSingle()
+                .then(({ data }) => data || null, () => null)
+            : Promise.resolve(null));
+    }
+    const post = await sharedPostCache.get(id);
+    const body = card.querySelector('.share-card-body');
+    if (!body) return;
+
+    if (!post) {
+        body.innerHTML = '<span class="share-card-kicker">Shared post</span><span class="share-card-title">This post is no longer available.</span>';
+        card.classList.add('is-gone');
+        return;
+    }
+
+    const media = parsePostMedia(post.image_url);
+    const first = media[0];
+    const thumb = first ? (first.type === 'video' ? first.poster : first.url) : '';
+    const plain = (post.content || '').replace(/[#*_`>\[\]()]/g, '').replace(/\s+/g, ' ').trim();
+    const headline = post.title || plain.slice(0, 90) || (first ? (first.type === 'video' ? 'Video post' : 'Photo post') : 'Post');
+    const snippet = post.title ? plain.slice(0, 110) : (plain.length > 90 ? plain.slice(90, 190) : '');
+    const extra = media.length > 1 ? `<span class="share-card-badge">${media.length} attachments</span>` : (first && first.type === 'video' ? '<span class="share-card-badge">▶ Video</span>' : '');
+
+    card.classList.toggle('has-thumb', Boolean(thumb));
+    card.innerHTML = `
+        ${thumb ? `<span class="share-card-thumb" style="background-image:url('${escapeHTML(thumb).replace(/'/g, '%27')}')">${extra}</span>` : ''}
+        <span class="share-card-body">
+            <span class="share-card-kicker">#${escapeHTML(post.thread || 'forum')} · @${escapeHTML((post.author || 'anonymous').replace('@', ''))}</span>
+            <span class="share-card-title">${escapeHTML(headline)}</span>
+            ${snippet ? `<span class="share-card-snippet">${escapeHTML(snippet)}</span>` : ''}
+            ${!thumb && extra ? extra : ''}
+            <span class="share-card-cta">View post →</span>
+        </span>`;
+}
+
+// One delegated handler: tapping a card closes the chat and jumps to the post or thread.
+safeAddListener(chatMessages, 'click', (e) => {
+    const card = e.target.closest('.share-card');
+    if (!card) return;
+    e.preventDefault();
+    const kind = card.getAttribute('data-kind');
+    closeMessagesModal();
+    if (kind === 'thread') navigateToThread(card.getAttribute('data-thread'));
+    else navigateToPost(card.getAttribute('data-post-id'));
 });
 
 
@@ -10173,13 +10374,13 @@ function removeChannelTracked(ch) {
     return done;
 }
 
-async function openFreshChannel(name) {
+async function openFreshChannel(name, config) {
     const topic = `realtime:${name}`;
     if (channelRemovals.has(topic)) await channelRemovals.get(topic);
     for (const stale of db.getChannels().filter(c => c.topic === topic)) {
         await removeChannelTracked(stale);
     }
-    return db.channel(name);
+    return config ? db.channel(name, config) : db.channel(name);
 }
 
 // Resolves true once the channel has joined, false on error/timeout.
@@ -10294,12 +10495,13 @@ function triggerIncomingCallUI(data) {
 
     // Broadcast pulse and notification fallback both arrive for the same call: don't restart the ringtone.
     if (incomingCallData && incomingCallData.conversationId === data.conversationId) {
-        incomingCallData = { ...incomingCallData, ...data };
+        const seen = new Set([...(incomingCallData.ringIds || []), data.callId].filter(Boolean));
+        incomingCallData = { ...incomingCallData, ...data, ringIds: Array.from(seen) };
         renderIncomingCallerName(incomingCallData);
         return;
     }
 
-    incomingCallData = data;
+    incomingCallData = { ...data, ringIds: data.callId ? [data.callId] : [] };
     renderIncomingCallerName(data);
     playRingtoneSound();
     if (navigator.vibrate) {
@@ -10402,11 +10604,6 @@ function showActiveCallBar(status, isConnecting = true) {
 function setCallConnectedState() {
     if (!activeCall) return;
     stopRingtoneSound();
-    if (activeCall.dialingInterval) {
-        clearInterval(activeCall.dialingInterval);
-        activeCall.dialingInterval = null;
-    }
-    showActiveCallBar(`In call with @${activeCall.partnerUsername}`, false);
 
     if (callDurationText) {
         callDurationText.classList.remove('hidden');
@@ -10415,6 +10612,7 @@ function setCallConnectedState() {
 
     if (activeCall.callTimerInterval) clearInterval(activeCall.callTimerInterval);
     activeCall.callStartTime = Date.now();
+    updateCallUI(activeCall);
     activeCall.callTimerInterval = setInterval(() => {
         if (!activeCall || !activeCall.callStartTime) return;
         const elapsed = Math.floor((Date.now() - activeCall.callStartTime) / 1000);
@@ -10423,6 +10621,690 @@ function setCallConnectedState() {
         if (callDurationText) callDurationText.textContent = `${mins}:${secs}`;
     }, 1000);
 }
+
+// =============================================================================
+// AUDIO CALL ENGINE: 1-on-1 and group calls (full-mesh WebRTC)
+// =============================================================================
+// Every conversation has one call room: the realtime channel `call_room_<conversation id>`.
+//  * Presence says who is in the room right now; it is the single source of truth for the roster, so
+//    joining late, leaving early and dropped connections all fall out of the same code path.
+//  * Every pair of people in the room holds its own RTCPeerConnection (a "mesh"). For each pair the
+//    side with the higher user id creates the offer, so two people never offer at the same time.
+//  * Offers, answers and ICE candidates are broadcast on the room tagged with { from, to }; everyone
+//    ignores messages that are not addressed to them.
+//  * Ringing is separate: the caller pulses `incoming_call` to each member's personal channel (plus a
+//    notification row as a fallback). Answering simply means joining the room.
+// A 1-on-1 call is the same thing with a room of two that ends when the other person leaves.
+
+const MAX_CALL_PARTICIPANTS = 8;
+const CALL_SOLO_TIMEOUT_MS = 30000;
+const CALL_PRESENCE_GRACE_MS = 4000;
+const CALL_PEER_CONNECT_TIMEOUT_MS = 25000;
+const CALL_RING_PULSES = 14; // x 2.5s = 35s per ring
+const CALL_MAX_RING_TARGETS = 40;
+
+function callIsCurrent(call) {
+    return Boolean(call && activeCall === call && !call.ended);
+}
+
+function createCallState(fields) {
+    return {
+        callId: null,
+        ringIds: new Set(),
+        conversationId: null,
+        isGroup: false,
+        groupName: null,
+        isCaller: false,
+        partnerId: null,        // the other person in a 1-on-1 call
+        partnerUsername: '',
+        localStream: null,
+        callChannel: null,
+        joinedAt: Date.now(),
+        peers: new Map(),       // user id -> peer connection record
+        roster: new Map(),      // user id -> { username, muted } for everyone else in the room
+        earlyIce: new Map(),    // ICE that arrived before its peer existed
+        gaveUp: new Set(),      // peers we could not connect to
+        sigTargets: [],         // personal channels we ring: { id, chan, ready }
+        ringTimers: new Set(),
+        everHadPeer: false,
+        ended: false,
+        callStartTime: null,
+        callTimerInterval: null,
+        soloTimer: null,
+        speakTimer: null,
+        selfMeter: null,
+        chipSignature: '',
+        ...fields
+    };
+}
+
+function getCallAudioSink() {
+    let sink = document.getElementById('call-audio-sink');
+    if (!sink) {
+        sink = document.createElement('div');
+        sink.id = 'call-audio-sink';
+        sink.setAttribute('aria-hidden', 'true');
+        sink.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;opacity:0.01;pointer-events:none;';
+        document.body.appendChild(sink);
+    }
+    return sink;
+}
+
+function sendCallSignal(call, event, to, payload = {}) {
+    if (!call.callChannel) return;
+    call.callChannel.send({
+        type: 'broadcast',
+        event,
+        payload: { ...payload, from: currentUser.id, to }
+    }).catch(() => {});
+}
+
+// ---- peers -------------------------------------------------------------------
+
+function createCallPeer(call, id, username, { negotiate = true } = {}) {
+    const pc = new RTCPeerConnection({ iceServers: getIceServers() });
+    call.localStream.getTracks().forEach(track => pc.addTrack(track, call.localStream));
+
+    const audioEl = document.createElement('audio');
+    audioEl.autoplay = true;
+    audioEl.setAttribute('playsinline', '');
+    audioEl.muted = Boolean(userAudioSettings.deafen);
+    audioEl.dataset.peer = id;
+    getCallAudioSink().appendChild(audioEl);
+
+    const peer = {
+        id,
+        username,
+        pc,
+        audioEl,
+        queued: call.earlyIce.get(id) || [],
+        remoteSet: false,
+        failures: 0,
+        state: 'connecting',
+        speaking: false,
+        analyser: null,
+        meterSource: null,
+        meterData: null,
+        leaveTimer: null,
+        connectTimer: null,
+        disconnectTimer: null,
+        candidateTypes: { host: 0, srflx: 0, relay: 0 }
+    };
+    call.earlyIce.delete(id);
+    call.peers.set(id, peer);
+
+    pc.ontrack = (event) => {
+        const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
+        audioEl.srcObject = stream;
+        audioEl.play().catch(e => console.warn("Call audio play notice:", e));
+        attachCallMeter(call, peer, stream);
+    };
+
+    pc.onicecandidate = (event) => {
+        if (!event.candidate) {
+            callLog('ICE gathering finished for', username, peer.candidateTypes);
+            return;
+        }
+        if (event.candidate.type in peer.candidateTypes) peer.candidateTypes[event.candidate.type]++;
+        if (!callIsCurrent(call) || call.peers.get(id) !== peer) return;
+        sendCallSignal(call, 'call_ice', id, {
+            candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate
+        });
+    };
+
+    const onState = () => onCallPeerState(call, peer);
+    pc.oniceconnectionstatechange = onState;
+    pc.onconnectionstatechange = onState;
+
+    armCallPeerTimeout(call, peer);
+
+    // Deterministic roles: the higher id offers, the other side answers.
+    if (negotiate && currentUser.id > id) negotiateCallPeer(call, peer, false);
+    return peer;
+}
+
+function armCallPeerTimeout(call, peer) {
+    clearTimeout(peer.connectTimer);
+    peer.connectTimer = setTimeout(() => {
+        if (callIsCurrent(call) && call.peers.get(peer.id) === peer && peer.state !== 'connected') {
+            handleCallPeerFailure(call, peer, 'timeout');
+        }
+    }, CALL_PEER_CONNECT_TIMEOUT_MS);
+}
+
+async function negotiateCallPeer(call, peer, iceRestart) {
+    try {
+        const offer = await peer.pc.createOffer({ iceRestart: Boolean(iceRestart) });
+        if (!callIsCurrent(call) || call.peers.get(peer.id) !== peer) return;
+        await peer.pc.setLocalDescription(offer);
+        sendCallSignal(call, 'call_offer', peer.id, { sdp: { type: offer.type, sdp: offer.sdp } });
+        callLog('offer sent to', peer.username, iceRestart ? '(ICE restart)' : '');
+    } catch (err) {
+        console.error("Error creating call offer:", err);
+        handleCallPeerFailure(call, peer, 'offer-error');
+    }
+}
+
+async function flushPeerIce(peer) {
+    while (peer.queued.length > 0) {
+        const candidate = peer.queued.shift();
+        try {
+            await peer.pc.addIceCandidate(candidate);
+        } catch (err) {
+            console.warn("Notice adding queued ICE candidate:", err);
+        }
+    }
+}
+
+async function onCallOffer(call, data) {
+    if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.sdp) return;
+
+    // An offer can overtake our own presence sync, so create the peer on demand.
+    let peer = call.peers.get(data.from);
+    if (!peer) {
+        const known = call.roster.get(data.from);
+        peer = createCallPeer(call, data.from, (known && known.username) || 'User', { negotiate: false });
+    }
+
+    const pc = peer.pc;
+    try {
+        if (pc.signalingState !== 'stable') {
+            // Both sides offered (e.g. simultaneous restarts): the lower id yields, the higher keeps its offer.
+            if (currentUser.id > data.from) return;
+            await pc.setLocalDescription({ type: 'rollback' });
+        }
+        await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        peer.remoteSet = true;
+        await flushPeerIce(peer);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        sendCallSignal(call, 'call_answer', data.from, { sdp: { type: answer.type, sdp: answer.sdp } });
+        callLog('answered offer from', peer.username);
+    } catch (err) {
+        console.error("Error handling call offer:", err);
+        handleCallPeerFailure(call, peer, 'answer-error');
+    }
+}
+
+async function onCallAnswer(call, data) {
+    if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.sdp) return;
+    const peer = call.peers.get(data.from);
+    if (!peer || peer.pc.signalingState !== 'have-local-offer') return;
+
+    try {
+        await peer.pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        peer.remoteSet = true;
+        await flushPeerIce(peer);
+    } catch (err) {
+        console.error("Error handling call answer:", err);
+        handleCallPeerFailure(call, peer, 'answer-error');
+    }
+}
+
+async function onCallIce(call, data) {
+    if (!callIsCurrent(call) || !data || data.to !== currentUser.id || !data.candidate) return;
+
+    const peer = call.peers.get(data.from);
+    if (!peer) {
+        if (!call.earlyIce.has(data.from)) call.earlyIce.set(data.from, []);
+        call.earlyIce.get(data.from).push(data.candidate);
+        return;
+    }
+    if (peer.remoteSet) {
+        try { await peer.pc.addIceCandidate(data.candidate); }
+        catch (err) { console.warn("Notice adding ICE candidate:", err); }
+    } else {
+        peer.queued.push(data.candidate);
+    }
+}
+
+function onCallPeerState(call, peer) {
+    if (!callIsCurrent(call) || call.peers.get(peer.id) !== peer) return;
+
+    const ice = peer.pc.iceConnectionState;
+    const conn = peer.pc.connectionState;
+    callLog('peer', peer.username, { ice, conn });
+
+    if (ice === 'connected' || ice === 'completed' || conn === 'connected') {
+        peer.state = 'connected';
+        peer.failures = 0;
+        clearTimeout(peer.connectTimer);
+        clearTimeout(peer.disconnectTimer);
+        isAnsweringCall = false;
+        if (!call.callStartTime) setCallConnectedState();
+        updateCallUI(call);
+    } else if (ice === 'failed' || conn === 'failed') {
+        handleCallPeerFailure(call, peer, 'failed');
+    } else if (ice === 'disconnected' || conn === 'disconnected') {
+        // Usually a blip; give it a few seconds to recover before treating it as a failure.
+        peer.state = 'reconnecting';
+        updateCallUI(call);
+        clearTimeout(peer.disconnectTimer);
+        peer.disconnectTimer = setTimeout(() => {
+            if (callIsCurrent(call) && call.peers.get(peer.id) === peer && peer.state !== 'connected') {
+                handleCallPeerFailure(call, peer, 'disconnected');
+            }
+        }, 10000);
+    }
+}
+
+function handleCallPeerFailure(call, peer, reason) {
+    if (!callIsCurrent(call) || call.peers.get(peer.id) !== peer) return;
+
+    peer.failures++;
+    console.warn(`[call] Connection to @${peer.username} ${reason}.`, peer.candidateTypes.relay === 0
+        ? 'No TURN relay candidates were available; this network may block direct peer-to-peer audio (see TURN_ICE_SERVERS).'
+        : '');
+
+    if (peer.failures <= 2) {
+        // Retry. The offerer restarts ICE; the other side waits for the new offer.
+        peer.state = 'connecting';
+        updateCallUI(call);
+        armCallPeerTimeout(call, peer);
+        if (currentUser.id > peer.id) negotiateCallPeer(call, peer, true);
+        return;
+    }
+
+    if (!call.isGroup) {
+        cleanupCall("Connection Failed");
+        return;
+    }
+
+    // Group call: give up on this one person but keep the call going for everyone else.
+    closeCallPeer(peer);
+    call.peers.delete(peer.id);
+    call.gaveUp.add(peer.id);
+    showToast({
+        title: "Can't reach @" + peer.username,
+        message: "Their network may be blocking direct audio. The rest of the call continues.",
+        type: "error",
+        icon: "📡",
+        duration: 6000,
+        force: true
+    });
+    updateCallUI(call);
+}
+
+function closeCallPeer(peer) {
+    clearTimeout(peer.connectTimer);
+    clearTimeout(peer.leaveTimer);
+    clearTimeout(peer.disconnectTimer);
+    try { peer.pc.close(); } catch (e) {}
+    try { if (peer.meterSource) peer.meterSource.disconnect(); } catch (e) {}
+    peer.audioEl.srcObject = null;
+    peer.audioEl.remove();
+}
+
+function onCallPeerLeft(call, id) {
+    call.roster.delete(id);
+    call.gaveUp.delete(id);
+    call.earlyIce.delete(id);
+
+    const peer = call.peers.get(id);
+    if (!peer) {
+        updateCallUI(call);
+        return;
+    }
+
+    closeCallPeer(peer);
+    call.peers.delete(id);
+    callLog('@' + peer.username, 'left the call');
+    updateCallUI(call);
+
+    // In a 1-on-1 call the other person leaving ends it; a group call carries on.
+    if (!call.isGroup) {
+        if (call.everHadPeer) cleanupCall("Call Ended");
+        return;
+    }
+    checkCallAlone(call);
+}
+
+// If everyone else is gone, don't leave the user sitting in an empty call forever.
+function checkCallAlone(call, timeout = CALL_SOLO_TIMEOUT_MS) {
+    if (!callIsCurrent(call)) return;
+    if (call.peers.size > 0 || call.roster.size > 0) {
+        clearTimeout(call.soloTimer);
+        call.soloTimer = null;
+        return;
+    }
+    if (call.soloTimer) return;
+    call.soloTimer = setTimeout(() => {
+        call.soloTimer = null;
+        if (callIsCurrent(call) && call.peers.size === 0 && call.roster.size === 0) {
+            cleanupCall(call.everHadPeer ? "Everyone left" : "Call Ended");
+        }
+    }, timeout);
+}
+
+// ---- roster (presence) ------------------------------------------------------------
+
+function reconcileCallPeers(call) {
+    if (!callIsCurrent(call) || !call.callChannel) return;
+
+    const state = call.callChannel.presenceState ? call.callChannel.presenceState() : {};
+    const me = currentUser.id;
+    const everyone = [];
+    const present = new Map();
+
+    for (const [key, metas] of Object.entries(state || {})) {
+        const meta = (Array.isArray(metas) && metas[0]) || {};
+        everyone.push({ key, at: Number(meta.at) || 0 });
+        if (key !== me) present.set(key, { username: meta.username || 'User', muted: Boolean(meta.muted) });
+    }
+
+    // Capacity: if the room is over the limit, the most recent joiners step out (and are ignored meanwhile).
+    const overflow = new Set();
+    if (everyone.length > MAX_CALL_PARTICIPANTS) {
+        everyone.sort((a, b) => (a.at - b.at) || (a.key < b.key ? -1 : 1));
+        everyone.slice(MAX_CALL_PARTICIPANTS).forEach(e => overflow.add(e.key));
+        if (overflow.has(me)) {
+            showToast({
+                title: "Call is full",
+                message: `Calls are limited to ${MAX_CALL_PARTICIPANTS} people.`,
+                type: "error",
+                icon: "📞",
+                force: true
+            });
+            endCurrentAudioCall();
+            return;
+        }
+    }
+
+    overflow.forEach(id => present.delete(id));
+    call.roster = present;
+
+    for (const [id, info] of present) {
+        const existing = call.peers.get(id);
+        if (existing) {
+            existing.username = info.username;
+            existing.muted = info.muted;
+            clearTimeout(existing.leaveTimer);
+            existing.leaveTimer = null;
+        } else if (!call.gaveUp.has(id)) {
+            const peer = createCallPeer(call, id, info.username);
+            peer.muted = info.muted;
+        }
+    }
+
+    // People who vanished from presence get a short grace period (reconnects look like leave+join).
+    for (const [id, peer] of call.peers) {
+        if (!present.has(id) && !peer.leaveTimer) {
+            peer.leaveTimer = setTimeout(() => {
+                if (callIsCurrent(call) && !call.roster.has(id)) onCallPeerLeft(call, id);
+            }, CALL_PRESENCE_GRACE_MS);
+        }
+    }
+
+    if (present.size > 0) {
+        call.everHadPeer = true;
+        clearTimeout(call.soloTimer);
+        call.soloTimer = null;
+        // Somebody picked up: stop the ringback tone.
+        stopRingtoneSound();
+    } else if (call.everHadPeer) {
+        checkCallAlone(call);
+    }
+
+    updateCallUI(call);
+}
+
+function bindCallRoomEvents(call, chan) {
+    const mine = (payload) => payload && payload.to === currentUser?.id;
+
+    chan
+        .on('presence', { event: 'sync' }, () => reconcileCallPeers(call))
+        .on('presence', { event: 'join' }, () => reconcileCallPeers(call))
+        .on('presence', { event: 'leave' }, () => reconcileCallPeers(call))
+        .on('broadcast', { event: 'call_offer' }, (msg) => { if (mine(msg?.payload)) onCallOffer(call, msg.payload); })
+        .on('broadcast', { event: 'call_answer' }, (msg) => { if (mine(msg?.payload)) onCallAnswer(call, msg.payload); })
+        .on('broadcast', { event: 'call_ice' }, (msg) => { if (mine(msg?.payload)) onCallIce(call, msg.payload); })
+        .on('broadcast', { event: 'call_leave' }, (msg) => {
+            const from = msg?.payload?.from;
+            if (callIsCurrent(call) && from && from !== currentUser.id) onCallPeerLeft(call, from);
+        })
+        .on('broadcast', { event: 'call_declined' }, () => {
+            if (!callIsCurrent(call) || call.isGroup || !call.isCaller || call.everHadPeer) return;
+            cleanupCall("Call Declined");
+        })
+        .on('broadcast', { event: 'call_busy' }, () => {
+            if (!callIsCurrent(call) || call.isGroup || !call.isCaller || call.everHadPeer) return;
+            cleanupCall("User is Busy");
+        });
+}
+
+// Opens the call room, listens for signals and announces ourselves in presence.
+async function joinCallRoom(call) {
+    const chan = await openFreshChannel(`call_room_${call.conversationId}`, {
+        config: { presence: { key: currentUser.id } }
+    });
+    if (!callIsCurrent(call)) { removeChannelTracked(chan); return false; }
+
+    call.callChannel = chan;
+    bindCallRoomEvents(call, chan);
+
+    const joined = await subscribeChannel(chan);
+    if (!callIsCurrent(call) || !joined) return false;
+
+    await chan.track({
+        user_id: currentUser.id,
+        username: currentUsername,
+        at: call.joinedAt,
+        muted: Boolean(isMicMuted)
+    });
+    if (!callIsCurrent(call)) return false;
+
+    callLog('joined call room', call.conversationId);
+    reconcileCallPeers(call);
+    return true;
+}
+
+// ---- ringing ------------------------------------------------------------------------
+
+function cancelOutgoingCall(call) {
+    const callIds = Array.from(call.ringIds);
+    call.sigTargets.forEach((target) => {
+        if (!target.ready || call.roster.has(target.id)) return;
+        target.chan.send({
+            type: 'broadcast',
+            event: 'cancel_call',
+            payload: { callerId: currentUser?.id, callIds, conversationId: call.conversationId }
+        }).catch(() => {});
+    });
+}
+
+// Rings the given members: pulses on their personal channels for ~35 seconds (until they join) and
+// adds a notification row as a fallback for anyone whose realtime connection is down.
+function startRinging(call, ids, { initial = false } = {}) {
+    const targetIds = Array.from(new Set(ids)).filter(id => id && id !== currentUser.id).slice(0, CALL_MAX_RING_TARGETS);
+    if (targetIds.length === 0) return;
+
+    const ringId = newCallId();
+    call.ringIds.add(ringId);
+    if (!call.callId) call.callId = ringId;
+
+    const payload = {
+        callId: ringId,
+        isGroup: call.isGroup,
+        groupName: call.groupName,
+        callerId: currentUser.id,
+        callerUsername: currentUsername,
+        callerAvatar: currentAvatarUrl,
+        conversationId: call.conversationId
+    };
+
+    const pulse = (target) => {
+        if (!callIsCurrent(call) || !target.ready || call.roster.has(target.id)) return;
+        target.chan.send({ type: 'broadcast', event: 'incoming_call', payload }).catch(() => {});
+    };
+
+    // Personal channels are opened once and reused by later rings.
+    targetIds.forEach((id) => {
+        let target = call.sigTargets.find(t => t.id === id);
+        if (target) {
+            pulse(target);
+            return;
+        }
+        target = { id, chan: null, ready: false };
+        call.sigTargets.push(target);
+        openFreshChannel(`user_call_sig_${id}`).then((chan) => {
+            if (!callIsCurrent(call)) { removeChannelTracked(chan); return; }
+            target.chan = chan;
+            return subscribeChannel(chan).then((ok) => {
+                target.ready = ok;
+                if (ok) pulse(target);
+            });
+        }).catch(err => console.warn("Could not reach a call member's channel:", err));
+    });
+
+    targetIds.forEach(id => {
+        sendNotification(
+            id,
+            'incoming_call',
+            call.conversationId,
+            call.isGroup ? 'started a group call in ' + (call.groupName || 'Chat') : 'is calling you...'
+        );
+    });
+
+    let pulses = 0;
+    const timer = setInterval(() => {
+        if (!callIsCurrent(call)) { clearInterval(timer); call.ringTimers.delete(timer); return; }
+
+        const waiting = call.sigTargets.filter(t => targetIds.includes(t.id) && !call.roster.has(t.id));
+        const answeredOneToOne = !call.isGroup && call.roster.size > 0;
+
+        if (waiting.length === 0 || answeredOneToOne) {
+            clearInterval(timer);
+            call.ringTimers.delete(timer);
+            return;
+        }
+
+        if (pulses >= CALL_RING_PULSES) {
+            clearInterval(timer);
+            call.ringTimers.delete(timer);
+            cancelOutgoingCall(call);
+            if (initial && !call.everHadPeer) cleanupCall("No Answer");
+            return;
+        }
+
+        pulses++;
+        waiting.forEach(pulse);
+    }, 2500);
+    call.ringTimers.add(timer);
+}
+
+// ---- UI ------------------------------------------------------------------------------
+
+function callDisplayName(call) {
+    return call.isGroup ? (call.groupName || 'Group call') : `@${call.partnerUsername || 'User'}`;
+}
+
+function updateCallUI(call) {
+    if (!callIsCurrent(call) || !activeCallBar) return;
+
+    const peers = Array.from(call.peers.values());
+    let status;
+    if (!call.isGroup) {
+        if (call.callStartTime) status = `In call with ${callDisplayName(call)}`;
+        else if (call.isCaller && !call.everHadPeer) status = `Calling ${callDisplayName(call)}...`;
+        else status = `Connecting to ${callDisplayName(call)}...`;
+    } else if (call.callStartTime) {
+        status = `${callDisplayName(call)} · ${peers.length + 1} in call`;
+    } else if (peers.length > 0) {
+        status = `Connecting to ${callDisplayName(call)}...`;
+    } else {
+        status = call.isCaller ? `Ringing ${callDisplayName(call)}...` : `Joining ${callDisplayName(call)}...`;
+    }
+    showActiveCallBar(status, !call.callStartTime);
+
+    const chips = document.getElementById('call-participants');
+    const ringBtn = document.getElementById('call-ring-btn');
+    if (ringBtn) ringBtn.classList.toggle('hidden', !call.isGroup);
+    if (!chips) return;
+
+    if (!call.isGroup) {
+        chips.classList.add('hidden');
+        return;
+    }
+    chips.classList.remove('hidden');
+
+    const signature = [isMicMuted, ...peers.map(p => `${p.id}:${p.username}:${p.state}:${p.muted ? 1 : 0}`)].join('|');
+    if (signature === call.chipSignature) return;
+    call.chipSignature = signature;
+
+    chips.innerHTML =
+        `<span class="call-chip call-chip-you${isMicMuted ? ' is-muted' : ''}${call.selfMeter && call.selfMeter.speaking ? ' speaking' : ''}" data-peer="__self">You${isMicMuted ? ' 🔇' : ''}</span>` +
+        peers.map(p => `<span class="call-chip call-chip-${escapeHTML(p.state)}${p.muted ? ' is-muted' : ''}${p.speaking ? ' speaking' : ''}" data-peer="${escapeHTML(p.id)}" title="${escapeHTML(p.state)}">@${escapeHTML(p.username)}${p.muted ? ' 🔇' : ''}</span>`).join('');
+}
+
+// "Who's talking" highlight: a light-weight volume check on each remote stream and on our own mic.
+function levelOf(analyser, data) {
+    analyser.getByteTimeDomainData(data);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128));
+    return peak;
+}
+
+function setChipSpeaking(peerId, speaking) {
+    const chip = document.querySelector(`#call-participants [data-peer="${CSS.escape(peerId)}"]`);
+    if (chip) chip.classList.toggle('speaking', speaking);
+}
+
+function startCallSpeakingMeter(call) {
+    if (call.speakTimer) return;
+    call.speakTimer = setInterval(() => {
+        if (!callIsCurrent(call) || document.hidden || !call.isGroup) return;
+
+        call.peers.forEach((peer) => {
+            if (!peer.analyser) return;
+            const speaking = levelOf(peer.analyser, peer.meterData) > 14;
+            if (speaking !== peer.speaking) {
+                peer.speaking = speaking;
+                setChipSpeaking(peer.id, speaking);
+            }
+        });
+
+        if (call.selfMeter) {
+            const speaking = !isMicMuted && levelOf(call.selfMeter.analyser, call.selfMeter.data) > 14;
+            if (speaking !== call.selfMeter.speaking) {
+                call.selfMeter.speaking = speaking;
+                setChipSpeaking('__self', speaking);
+            }
+        }
+    }, 160);
+}
+
+function attachCallMeter(call, peer, stream) {
+    if (!call.isGroup) return;
+    try {
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(stream);
+        source.connect(analyser); // analysis only; the <audio> element does the playing
+        peer.analyser = analyser;
+        peer.meterSource = source;
+        peer.meterData = new Uint8Array(analyser.fftSize);
+        startCallSpeakingMeter(call);
+    } catch (e) { /* the speaking highlight is a nicety, never a requirement */ }
+}
+
+function attachSelfMeter(call) {
+    if (!call.isGroup || !call.localStream) return;
+    try {
+        const ctx = getSharedAudioContext();
+        if (!ctx) return;
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        const source = ctx.createMediaStreamSource(call.localStream);
+        source.connect(analyser);
+        call.selfMeter = { analyser, source, data: new Uint8Array(analyser.fftSize), speaking: false };
+        startCallSpeakingMeter(call);
+    } catch (e) {}
+}
+
+// ---- lifecycle -------------------------------------------------------------------------
 
 function cleanupCall(statusNotice = null) {
     stopRingtoneSound();
@@ -10435,13 +11317,14 @@ function cleanupCall(statusNotice = null) {
 
     if (activeCall) {
         const call = activeCall;
+        call.ended = true;
         activeCall = null;
         callLog('cleaning up call', call.callId || '', statusNotice || '');
 
-        if (call.dialingInterval) clearInterval(call.dialingInterval);
-        if (call.callTimerInterval) clearInterval(call.callTimerInterval);
-        if (call.connectTimeout) clearTimeout(call.connectTimeout);
-        if (call.acceptRetry) clearInterval(call.acceptRetry);
+        call.ringTimers.forEach(timer => clearInterval(timer));
+        clearInterval(call.callTimerInterval);
+        clearInterval(call.speakTimer);
+        clearTimeout(call.soloTimer);
         if (call.localStream) {
             // Completely stop all audio tracks so the hardware microphone shuts down and recording dot disappears
             try {
@@ -10450,16 +11333,20 @@ function cleanupCall(statusNotice = null) {
                 });
             } catch (e) {}
         }
-        if (call.peerConnection) {
-            try { call.peerConnection.close(); } catch (e) {}
-        }
+        call.peers.forEach(closeCallPeer);
+        call.peers.clear();
+        try { if (call.selfMeter) call.selfMeter.source.disconnect(); } catch (e) {}
         if (call.callChannel) removeChannelTracked(call.callChannel);
-        (call.sigTargets || []).forEach(t => removeChannelTracked(t.chan));
+        call.sigTargets.forEach(t => { if (t.chan) removeChannelTracked(t.chan); });
     }
 
     if (remoteAudioEl) {
         remoteAudioEl.srcObject = null;
     }
+    const chips = document.getElementById('call-participants');
+    if (chips) { chips.innerHTML = ''; chips.classList.add('hidden'); }
+    const ringBtn = document.getElementById('call-ring-btn');
+    if (ringBtn) ringBtn.classList.add('hidden');
 
     isMicMuted = false;
     if (callMuteBtn) {
@@ -10477,198 +11364,6 @@ function cleanupCall(statusNotice = null) {
     }
 }
 
-async function flushQueuedIceCandidates(pc) {
-    while (queuedIceCandidates.length > 0) {
-        const candidate = queuedIceCandidates.shift();
-        try {
-            await pc.addIceCandidate(candidate);
-        } catch (err) {
-            console.warn("Notice adding queued ICE candidate:", err);
-        }
-    }
-}
-
-// If audio hasn't connected shortly after the offer/answer exchange, give up instead of hanging on "Connecting...".
-function armConnectTimeout(pc) {
-    if (!activeCall || activeCall.peerConnection !== pc) return;
-    if (activeCall.connectTimeout) clearTimeout(activeCall.connectTimeout);
-    activeCall.connectTimeout = setTimeout(() => {
-        if (activeCall && activeCall.peerConnection === pc && !activeCall.callStartTime) {
-            callLog('timed out waiting for audio to connect; ICE state:', pc.iceConnectionState);
-            cleanupCall("Connection Failed");
-        }
-    }, 25000);
-}
-
-// Shared RTCPeerConnection wiring for caller and callee.
-function wireCallPeer(pc, callChan) {
-    const isCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
-    const candidateTypes = { host: 0, srflx: 0, relay: 0 };
-
-    pc.ontrack = (event) => {
-        if (!remoteAudioEl) return;
-        const stream = (event.streams && event.streams[0]) || new MediaStream([event.track]);
-        remoteAudioEl.srcObject = stream;
-        remoteAudioEl.play().catch(e => console.warn("Remote audio play notice:", e));
-    };
-
-    pc.onicecandidate = (event) => {
-        if (!event.candidate) {
-            callLog('ICE gathering finished', candidateTypes);
-            return;
-        }
-        if (event.candidate.type in candidateTypes) candidateTypes[event.candidate.type]++;
-        if (!isCurrent()) return;
-        callChan.send({
-            type: 'broadcast',
-            event: 'webrtc_ice',
-            payload: {
-                candidate: event.candidate.toJSON ? event.candidate.toJSON() : event.candidate,
-                from: currentUser.id
-            }
-        }).catch(() => {});
-    };
-
-    const checkConnected = () => {
-        if (!isCurrent()) return;
-        const ice = pc.iceConnectionState;
-        const conn = pc.connectionState;
-        callLog('connection state', { ice, conn });
-        if (ice === 'connected' || ice === 'completed' || conn === 'connected') {
-            isAnsweringCall = false;
-            if (activeCall.dialingInterval) {
-                clearInterval(activeCall.dialingInterval);
-                activeCall.dialingInterval = null;
-            }
-            if (activeCall.connectTimeout) {
-                clearTimeout(activeCall.connectTimeout);
-                activeCall.connectTimeout = null;
-            }
-            if (!activeCall.callStartTime) setCallConnectedState();
-        } else if (ice === 'failed' || conn === 'failed') {
-            console.warn('[call] Audio connection failed.', candidateTypes.relay === 0
-                ? 'No TURN relay candidates were available; this network likely blocks direct peer-to-peer audio (see TURN_ICE_SERVERS).'
-                : '');
-            cleanupCall("Connection Failed");
-        }
-    };
-
-    pc.oniceconnectionstatechange = checkConnected;
-    pc.onconnectionstatechange = checkConnected;
-}
-
-function setupCallChannelListeners(callChan, pc) {
-    const isCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
-    const sendRoom = (event, payload = {}) => callChan.send({
-        type: 'broadcast',
-        event,
-        payload: { ...payload, from: currentUser.id }
-    }).catch(() => {});
-
-    callChan
-        .on('broadcast', { event: 'call_accepted' }, async () => {
-            // Callee joined the room: the caller creates the offer. Duplicates (accept is retried) are ignored.
-            if (!isCurrent() || !activeCall.isCaller || activeCall.offerSent) return;
-            activeCall.offerSent = true;
-            callLog('callee joined the room, sending offer');
-            if (activeCall.dialingInterval) {
-                clearInterval(activeCall.dialingInterval);
-                activeCall.dialingInterval = null;
-            }
-            stopRingtoneSound();
-            showActiveCallBar(`Connecting to @${activeCall.partnerUsername}...`, true);
-            armConnectTimeout(pc);
-            try {
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
-                sendRoom('webrtc_offer', { offer: { type: offer.type, sdp: offer.sdp } });
-            } catch (err) {
-                console.error("Error creating caller offer on room join:", err);
-                cleanupCall("Call Failed");
-            }
-        })
-        .on('broadcast', { event: 'webrtc_offer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.offer || data.from === currentUser?.id) return;
-            if (!isCurrent() || activeCall.isCaller || activeCall.offerHandled) return;
-            activeCall.offerHandled = true;
-            callLog('received offer, answering');
-            if (activeCall.acceptRetry) {
-                clearInterval(activeCall.acceptRetry);
-                activeCall.acceptRetry = null;
-            }
-            armConnectTimeout(pc);
-
-            try {
-                await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                await flushQueuedIceCandidates(pc);
-
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                sendRoom('webrtc_answer', { answer: { type: answer.type, sdp: answer.sdp } });
-            } catch (err) {
-                console.error("Error handling webrtc_offer in room:", err);
-                cleanupCall("Call Failed");
-            }
-        })
-        .on('broadcast', { event: 'webrtc_answer' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.answer || data.from === currentUser?.id) return;
-            if (!isCurrent() || !activeCall.isCaller) return;
-
-            try {
-                if (pc.signalingState === 'have-local-offer') {
-                    callLog('received answer');
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    await flushQueuedIceCandidates(pc);
-                }
-            } catch (err) {
-                console.error("Error handling webrtc_answer in room:", err);
-                cleanupCall("Call Failed");
-            }
-        })
-        .on('broadcast', { event: 'webrtc_ice' }, async (payload) => {
-            const data = payload?.payload;
-            if (!data || !data.candidate || data.from === currentUser?.id) return;
-            if (!isCurrent()) return;
-
-            try {
-                if (pc.remoteDescription && pc.remoteDescription.type) {
-                    await pc.addIceCandidate(data.candidate);
-                } else {
-                    queuedIceCandidates.push(data.candidate);
-                }
-            } catch (err) {
-                console.warn("Notice handling room ICE candidate:", err);
-            }
-        })
-        .on('broadcast', { event: 'call_declined' }, () => {
-            if (!isCurrent() || !activeCall.isCaller || activeCall.callStartTime) return;
-            cleanupCall("Call Declined");
-        })
-        .on('broadcast', { event: 'call_busy' }, () => {
-            if (!isCurrent() || !activeCall.isCaller || activeCall.callStartTime) return;
-            cleanupCall("User is Busy");
-        })
-        .on('broadcast', { event: 'call_ended' }, () => {
-            if (!isCurrent()) return;
-            cleanupCall("Call Ended");
-        });
-}
-
-// Tell every device that is still ringing to stop (caller hung up or nobody answered).
-function cancelOutgoingCall(call) {
-    (call.sigTargets || []).forEach(t => {
-        if (!t.ready) return;
-        t.chan.send({
-            type: 'broadcast',
-            event: 'cancel_call',
-            payload: { callerId: currentUser?.id, callId: call.callId, conversationId: call.conversationId }
-        }).catch(() => {});
-    });
-}
-
 async function startAudioCall() {
     if (!currentUser || !activeConversationId) {
         alert("Please select a conversation to start a call.");
@@ -10682,50 +11377,27 @@ async function startAudioCall() {
 
     const targetConvId = activeConversationId;
     const targetPartnerId = activeConversationPartnerId;
-    const targetPartnerUsername = activeConversationPartnerUsername || 'User';
     const isGroupCall = !targetPartnerId;
-    const callId = newCallId();
-    const stillCurrent = () => Boolean(activeCall && activeCall.callId === callId);
 
     let stream = null;
-    let pc = null;
+    let call = null;
     try {
         stream = await getMicrophoneStream();
 
-        pc = new RTCPeerConnection({ iceServers: getIceServers() });
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        const groupName = isGroupCall ? (chatHeader ? chatHeader.textContent : "Group Chat") : null;
-        const callPayload = {
-            callId,
-            isGroup: isGroupCall,
-            groupName,
-            callerId: currentUser.id,
-            callerUsername: currentUsername,
-            callerAvatar: currentAvatarUrl,
-            conversationId: targetConvId
-        };
-
-        activeCall = {
-            callId,
-            peerConnection: pc,
-            localStream: stream,
+        call = createCallState({
             conversationId: targetConvId,
-            partnerId: targetPartnerId,
-            partnerUsername: targetPartnerUsername,
-            isCaller: true,
             isGroup: isGroupCall,
-            callChannel: null,
-            sigTargets: [],
-            offerSent: false,
-            callStartTime: null,
-            callTimerInterval: null,
-            dialingInterval: null,
-            connectTimeout: null
-        };
-        callLog('starting call', callId, isGroupCall ? 'group' : 'direct');
-        showActiveCallBar(isGroupCall ? `Group Call Active (Dialing members...)` : `Calling @${targetPartnerUsername}...`, true);
+            groupName: isGroupCall ? ((chatHeader ? chatHeader.textContent : '').replace(/^Group:\s*/i, '').trim() || 'Group Chat') : null,
+            isCaller: true,
+            partnerId: targetPartnerId,
+            partnerUsername: activeConversationPartnerUsername || 'User',
+            localStream: stream
+        });
+        activeCall = call;
+        callLog('starting call', isGroupCall ? 'group' : 'direct');
+        updateCallUI(call);
         playRingtoneSound();
+        attachSelfMeter(call);
 
         let targetIds = [targetPartnerId];
         if (isGroupCall) {
@@ -10735,38 +11407,12 @@ async function startAudioCall() {
                 .eq('conversation_id', targetConvId)
                 .neq('user_id', currentUser.id);
             targetIds = (members || []).map(m => m.user_id);
-            if (!stillCurrent()) return;
+            if (!callIsCurrent(call)) return;
         }
 
-        const callChan = await openFreshChannel(`call_room_${targetConvId}`);
-        if (!stillCurrent()) { removeChannelTracked(callChan); return; }
-        activeCall.callChannel = callChan;
-        wireCallPeer(pc, callChan);
-        setupCallChannelListeners(callChan, pc);
-
-        const sigTargets = [];
-        for (const id of targetIds) {
-            sigTargets.push({ id, chan: await openFreshChannel(`user_call_sig_${id}`), ready: false });
-        }
-        if (!stillCurrent()) { sigTargets.forEach(t => removeChannelTracked(t.chan)); return; }
-        activeCall.sigTargets = sigTargets;
-
-        const pulse = (target) => {
-            if (!stillCurrent() || activeCall.offerSent || !target.ready) return;
-            target.chan.send({ type: 'broadcast', event: 'incoming_call', payload: callPayload }).catch(() => {});
-        };
-
-        // Ring each callee as soon as their signaling channel is up; keep pulsing until someone accepts.
-        sigTargets.forEach(t => {
-            subscribeChannel(t.chan).then((ok) => {
-                t.ready = ok;
-                if (ok) pulse(t);
-            });
-        });
-
-        const roomJoined = await subscribeChannel(callChan);
-        if (!stillCurrent()) return;
-        if (!roomJoined) {
+        const joined = await joinCallRoom(call);
+        if (!callIsCurrent(call)) return;
+        if (!joined) {
             console.error("[call] Could not join the call room (Realtime unavailable).");
             cleanupCall("Call Failed");
             showToast({
@@ -10779,38 +11425,12 @@ async function startAudioCall() {
             return;
         }
 
-        // Database notification fallback for callees whose realtime signaling channel is down.
-        targetIds.forEach(id => {
-            sendNotification(
-                id,
-                'incoming_call',
-                targetConvId,
-                isGroupCall ? 'started a group call in ' + (groupName || 'Chat') : 'is calling you...'
-            );
-        });
-
-        let dialCount = 0;
-        const dialTimer = setInterval(() => {
-            if (!stillCurrent() || activeCall.offerSent) {
-                clearInterval(dialTimer);
-                return;
-            }
-            if (dialCount >= 14) {
-                clearInterval(dialTimer);
-                cancelOutgoingCall(activeCall);
-                cleanupCall("No Answer");
-                return;
-            }
-            dialCount++;
-            activeCall.sigTargets.forEach(pulse);
-        }, 2500);
-        activeCall.dialingInterval = dialTimer;
+        startRinging(call, targetIds, { initial: true });
 
     } catch (err) {
         console.error("Audio call error:", err);
-        if (!activeCall) {
-            if (pc) { try { pc.close(); } catch (e) {} }
-            if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+        if (!activeCall && stream) {
+            try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
         }
         cleanupCall();
         showToast({
@@ -10834,45 +11454,31 @@ async function answerAudioCall() {
 
     isAnsweringCall = true;
     answeringConversationId = data.conversationId;
-    // Ignore any dialing pulses of this call that are still in flight.
-    if (data.callId) handledCallIds.add(data.callId);
+    // Ignore any dialing pulses of this call that are still in flight (including re-rings).
+    (data.ringIds || [data.callId]).forEach(id => { if (id) handledCallIds.add(id); });
     // Purge the database notification so polling never re-triggers the popup
     purgeIncomingCallNotifications();
 
     let stream = null;
-    let pc = null;
-    const stillCurrent = () => Boolean(activeCall && activeCall.peerConnection === pc);
-
+    let call = null;
     try {
         stream = await getMicrophoneStream();
 
-        pc = new RTCPeerConnection({ iceServers: getIceServers() });
-        stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-        activeCall = {
+        call = createCallState({
             callId: data.callId || null,
-            peerConnection: pc,
-            localStream: stream,
             conversationId: data.conversationId,
-            partnerId: data.callerId,
-            partnerUsername: data.callerUsername || 'User',
+            isGroup: Boolean(data.isGroup),
+            groupName: data.groupName || null,
             isCaller: false,
-            callChannel: null,
-            sigTargets: [],
-            offerHandled: false,
-            callStartTime: null,
-            callTimerInterval: null,
-            dialingInterval: null,
-            connectTimeout: null,
-            acceptRetry: null
-        };
-        callLog('answering call', data.callId || '(no id)');
-
-        if (data.isGroup) {
-            showActiveCallBar(`Connecting to ${data.groupName || 'Group Call'}...`, true);
-        } else {
-            showActiveCallBar(`Connecting to @${data.callerUsername}...`, true);
-        }
+            partnerId: data.isGroup ? null : data.callerId,
+            partnerUsername: data.callerUsername || 'User',
+            localStream: stream
+        });
+        (data.ringIds || [data.callId]).forEach(id => { if (id) call.ringIds.add(id); });
+        activeCall = call;
+        callLog('answering call', data.callId || '(no id)', call.isGroup ? 'group' : 'direct');
+        updateCallUI(call);
+        attachSelfMeter(call);
 
         if (dmModal && dmModal.classList.contains('hidden')) {
             openMessagesModal();
@@ -10883,44 +11489,17 @@ async function answerAudioCall() {
             selectConversation(data.conversationId, `@${data.callerUsername}`, data.callerId, data.callerUsername, true);
         }
 
-        const callChan = await openFreshChannel(`call_room_${data.conversationId}`);
-        if (!stillCurrent()) { removeChannelTracked(callChan); return; }
-        activeCall.callChannel = callChan;
-        wireCallPeer(pc, callChan);
-        setupCallChannelListeners(callChan, pc);
-
-        // Join the room and signal acceptance; the caller replies with the WebRTC offer.
-        const joined = await subscribeChannel(callChan);
-        if (!stillCurrent()) return;
+        const joined = await joinCallRoom(call);
+        if (!callIsCurrent(call)) return;
         if (!joined) throw new Error("Could not join the call room");
 
-        const sendAccepted = () => callChan.send({
-            type: 'broadcast',
-            event: 'call_accepted',
-            payload: { from: currentUser.id }
-        }).catch(() => {});
-        callLog('joined room, telling caller we accepted');
-        sendAccepted();
-        armConnectTimeout(pc);
-
-        // The accept is a single broadcast; repeat it briefly in case the caller's channel missed it.
-        let acceptTries = 0;
-        activeCall.acceptRetry = setInterval(() => {
-            if (!stillCurrent() || activeCall.offerHandled || ++acceptTries > 5) {
-                if (stillCurrent() && activeCall.acceptRetry) {
-                    clearInterval(activeCall.acceptRetry);
-                    activeCall.acceptRetry = null;
-                }
-                return;
-            }
-            sendAccepted();
-        }, 2000);
+        // The caller may have hung up while we were answering; don't wait around in an empty room.
+        checkCallAlone(call, call.isGroup ? CALL_SOLO_TIMEOUT_MS : 10000);
 
     } catch (err) {
         console.error("Answer call error:", err);
-        if (!activeCall) {
-            if (pc) { try { pc.close(); } catch (e) {} }
-            if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (e) {} }
+        if (!activeCall && stream) {
+            try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
         }
         cleanupCall();
         showToast({
@@ -10938,7 +11517,7 @@ function declineAudioCall() {
     dismissIncomingCallUI();
 
     if (data) {
-        if (data.callId) handledCallIds.add(data.callId);
+        (data.ringIds || [data.callId]).forEach(id => { if (id) handledCallIds.add(id); });
         if (data.conversationId) recentlyDeclinedCalls.set(data.conversationId, Date.now());
         if (data.callerId) recentlyDeclinedCalls.set(data.callerId, Date.now());
 
@@ -10970,22 +11549,61 @@ function toggleCallMute() {
         if (isMicMuted) callMuteBtn.className = 'call-ctrl-btn muted';
         else callMuteBtn.className = 'call-ctrl-btn secondary';
     }
+
+    // Let everyone else's participant list show the mute state.
+    if (activeCall.callChannel) {
+        activeCall.callChannel.track({
+            user_id: currentUser.id,
+            username: currentUsername,
+            at: activeCall.joinedAt,
+            muted: isMicMuted
+        }).catch(() => {});
+    }
+    updateCallUI(activeCall);
 }
 
 function endCurrentAudioCall() {
     const call = activeCall;
-    if (call) {
-        if (call.callChannel) {
-            call.callChannel.send({
-                type: 'broadcast',
-                event: 'call_ended',
-                payload: { from: currentUser?.id }
-            }).catch(() => {});
-        }
-        // Still ringing? Make sure the callee's popup goes away too.
-        if (call.isCaller && !call.offerSent) cancelOutgoingCall(call);
+    if (call && call.callChannel) {
+        // Tell the others right away instead of making them wait for presence to notice.
+        call.callChannel.send({
+            type: 'broadcast',
+            event: 'call_leave',
+            payload: { from: currentUser?.id }
+        }).catch(() => {});
+        // Still ringing? Make sure the callee popups go away too.
+        if (!call.everHadPeer) cancelOutgoingCall(call);
+        try { call.callChannel.untrack(); } catch (e) {}
     }
     cleanupCall("Call Ended");
+}
+
+// Ring everyone in the group who isn't in the call yet (late joiners, people who missed it).
+async function ringGroupAgain() {
+    const call = activeCall;
+    if (!callIsCurrent(call) || !call.isGroup || !db) return;
+
+    const { data: members } = await db
+        .from('conversation_members')
+        .select('user_id')
+        .eq('conversation_id', call.conversationId)
+        .neq('user_id', currentUser.id);
+    if (!callIsCurrent(call)) return;
+
+    const missing = (members || []).map(m => m.user_id).filter(id => !call.roster.has(id));
+    if (missing.length === 0) {
+        showToast({ title: "Everyone is already here", message: "All group members are in the call.", type: "info", icon: "✓", force: true });
+        return;
+    }
+
+    startRinging(call, missing);
+    showToast({
+        title: "Ringing again",
+        message: `Calling ${missing.length} member${missing.length === 1 ? '' : 's'} who ${missing.length === 1 ? 'is' : 'are'} not in the call.`,
+        type: "info",
+        icon: "📞",
+        force: true
+    });
 }
 
 async function initUserCallSignaling() {
@@ -11007,7 +11625,7 @@ async function initUserCallSignaling() {
                 const data = payload?.payload;
                 if (!data || !data.callerId) return;
 
-                // If we are currently answering or on this call, ignore repeat dialing pulses
+                // Already answering, or already in this conversation's call: ignore repeat pulses.
                 if (isAnsweringCall || (activeCall && (activeCall.conversationId === data.conversationId || activeCall.partnerId === data.callerId))) {
                     return;
                 }
@@ -11015,9 +11633,9 @@ async function initUserCallSignaling() {
                 // Answer each call attempt with a single busy/declined signal, not one per dialing pulse.
                 const replyKey = data.callId || `${data.callerId}:${data.conversationId}`;
 
-                // Only report busy if in a call with another conversation
+                // In a different call: tell a 1-on-1 caller we're busy; group invites just don't ring us.
                 if (activeCall) {
-                    if (!notifiedCallers.has(`busy:${replyKey}`)) {
+                    if (!data.isGroup && !notifiedCallers.has(`busy:${replyKey}`)) {
                         notifiedCallers.add(`busy:${replyKey}`);
                         sendSignalOnce(`call_room_${data.conversationId}`, {
                             event: 'call_busy',
@@ -11028,7 +11646,7 @@ async function initUserCallSignaling() {
                 }
 
                 if (!userNotifPrefs.allEnabled || !userNotifPrefs.calls) {
-                    if (!notifiedCallers.has(`declined:${replyKey}`)) {
+                    if (!data.isGroup && !notifiedCallers.has(`declined:${replyKey}`)) {
                         notifiedCallers.add(`declined:${replyKey}`);
                         sendSignalOnce(`call_room_${data.conversationId}`, {
                             event: 'call_declined',
@@ -11042,7 +11660,8 @@ async function initUserCallSignaling() {
             })
             .on('broadcast', { event: 'cancel_call' }, (payload) => {
                 const data = payload?.payload;
-                if (data?.callId) handledCallIds.add(data.callId);
+                const ids = [...(data?.callIds || []), ...(data?.callId ? [data.callId] : [])];
+                ids.forEach(id => handledCallIds.add(id));
                 if (incomingCallData && incomingCallData.callerId === data?.callerId) {
                     dismissIncomingCallUI();
                 }
@@ -11051,8 +11670,9 @@ async function initUserCallSignaling() {
             })
             .on('broadcast', { event: 'call_declined' }, (payload) => {
                 const data = payload?.payload;
-                if (!activeCall || !activeCall.isCaller || activeCall.callStartTime) return;
-                if (data?.callId && data.callId !== activeCall.callId) return;
+                const call = activeCall;
+                if (!call || !call.isCaller || call.isGroup || call.everHadPeer) return;
+                if (data?.callId && !call.ringIds.has(data.callId)) return;
                 cleanupCall("Call Declined");
             })
             .on('broadcast', { event: 'voice_stage_invite' }, (payload) => {
@@ -11082,8 +11702,8 @@ async function initUserCallSignaling() {
     }
 }
 
-
 safeAddListener(startCallBtn, 'click', startAudioCall);
+safeAddListener(document.getElementById('call-ring-btn'), 'click', ringGroupAgain);
 safeAddListener(acceptCallBtn, 'click', answerAudioCall);
 safeAddListener(declineCallBtn, 'click', declineAudioCall);
 safeAddListener(callMuteBtn, 'click', toggleCallMute);
