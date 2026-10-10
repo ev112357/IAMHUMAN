@@ -4818,7 +4818,7 @@ function renderFormattedContent(text) {
 //   * several / video  -> JSON array of { t: 'i'|'v', u: url, p?: poster url, w?, h? }
 const MAX_POST_MEDIA = 10;
 const MAX_POST_VIDEOS = 3;
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024; // Supabase's default per-file cap
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // must not exceed the bucket limit AND the project-wide upload limit in Supabase
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 const MEDIA_BUCKET = 'chat-images';
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|m4v|ogv)(?:[?#].*)?$/i;
