@@ -68,41 +68,44 @@
 
         <h2 id="secure-messages">Secure messages (end-to-end encryption)</h2>
         <div class="callout callout-secure">
-            <p><strong>Optional, and in your hands.</strong> When you and everyone in a chat have it turned on, only the people in that chat can read the text of the messages. Not Turing's Gate, not our hosting providers, and not anyone who gets into our database. Turn it on in <strong>Settings &gt; Privacy</strong>. It works in direct chats and group chats.</p>
+            <p><strong>Optional, and in your hands.</strong> When you and everyone in a chat have it turned on, the text of your messages is locked on your device before it is sent, so our servers only ever store unreadable text. We cannot read it, and neither can our hosting providers or anyone who obtains a copy of our database. Turn it on in <strong>Settings &gt; Privacy</strong>. It works in direct chats and group chats. Please read the limits below: it is a strong lock, not a magic one.</p>
         </div>
         <h3>How it works</h3>
         <ul>
             <li>You choose a <strong>recovery passphrase</strong>. Your device creates a pair of keys. The <em>public</em> key is published so other members can lock messages for you. The <em>private</em> key stays on your device, and a copy locked with your passphrase is stored so you can restore it on a new phone. We cannot open that copy.</li>
             <li>Every message gets its own random key, and that key is locked separately for each person in the chat. The server only ever stores unreadable text.</li>
-            <li>A chat is encrypted when <strong>everyone in it</strong> has turned this on. The chat then shows a green "End-to-end encrypted" bar. If someone has not, an amber bar says so plainly and messages there are sent as before.</li>
+            <li>A chat is encrypted when <strong>everyone in it</strong> has turned this on. The chat then shows a green "End-to-end encrypted" bar. If someone has not, an amber bar says so, and <strong>the app asks before it sends a message without encryption</strong> (you can answer once, or "don't ask again for this chat"). If the app cannot work out whether your secure messages are on, it also asks instead of quietly sending plain text.</li>
             <li>Notifications for encrypted messages never contain the message: they only say you received one.</li>
             <li>Disappearing messages, blocking, clearing a chat and data download all keep working. Downloaded chats show encrypted messages as readable text when your device holds your key; your private key is never in the file.</li>
+            <li>The name shown on a message comes from the sender's account, not from the message itself, and a message that cannot be matched to a key the app has seen for that person is hidden behind "Show anyway".</li>
         </ul>
         <h3>What it does not protect</h3>
         <ul>
             <li><strong>Photos and videos are not encrypted.</strong> Only text is.</li>
-            <li>We can still see who is in a chat, when messages are sent, and roughly how long they are.</li>
+            <li>We can still see who is in a chat, when messages are sent, roughly how long they are, and the addresses of any photos. Account names, profile information and your friend list are not encrypted either.</li>
+            <li>A server that wants to cause trouble could <strong>delete, repeat or reorder</strong> encrypted messages, and the app cannot tell. It cannot read or change their text without being noticed.</li>
             <li>There is <strong>no forward secrecy</strong>: if someone steals your private key and also holds copies of old encrypted messages, they could read them. Keep your device locked.</li>
             <li>Anything on your own screen: a screenshot, someone looking over your shoulder, or a phone that has been broken into.</li>
             <li>Our website's code is delivered to your browser by our server each time (the iOS app loads the same site). Someone who took over our hosting could ship harmful code. This is a limit of every web app.</li>
             <li>We built this with your browser's standard Web Crypto tools (AES-256-GCM, ECDH P-256, HKDF and PBKDF2-SHA-256 with 600,000 rounds). It has <strong>not</strong> been independently audited.</li>
-            <li>Who is in a chat is decided by our server. The app locks each message for the people our server lists as members, so someone who took over our database could add themselves to a chat. Safety numbers do not cover this. Keep an eye on who is in your group chats.</li>
-            <li>Messages from before you turned it on, and chats where someone has not turned it on, are not encrypted.</li>
+            <li>Who is in a chat is decided by our server. The app locks each message for the people our server lists as members. Our database only lets people be added to a chat while it is created, and the app remembers who was in each chat: if a new person shows up it tells you and waits for your OK before sending them anything. But someone who took over our database could still add themselves, and safety numbers do not cover this. Keep an eye on who is in your chats.</li>
+            <li>Messages from before you turned it on, and chats where someone has not turned it on, are not encrypted, and a message sent before you turned it on cannot be opened later: it was never locked for you.</li>
         </ul>
         <h3>Check that nobody is in the middle</h3>
         <ul>
             <li>Open <strong>Chat options &gt; Safety number</strong> and compare the number with your contact in person or on a call (not in the chat). If it matches, nobody swapped keys. You can mark it verified.</li>
-            <li>If a contact's key changes (a new phone, or someone interfering), the chat warns you and holds your message until you choose to continue. Messages they sent before the change stay readable and are marked with a lock and a warning sign ("earlier key").</li>
+            <li>The app records a contact's key the first time it sees it (when you send to them or read a message from them). If that key later changes (a new phone, or someone interfering), the chat warns you and holds your message until you choose to continue. Messages they sent with their earlier key stay readable and are labelled "earlier key". A contact you have never exchanged a message with has no earlier key on record, so compare safety numbers before trusting anything important. These records live in your browser's own storage: if your browser clears it, the app starts fresh for that contact.</li>
         </ul>
         <h3>Phone lost or passphrase forgotten</h3>
         <ul>
             <li>On a new phone, choose <strong>Restore</strong> in Settings &gt; Privacy and enter your passphrase to read your old encrypted messages again.</li>
             <li>If you forget the passphrase and have no device that still holds your key, older encrypted messages <strong>cannot be recovered</strong>, by you or by us. <strong>Start over</strong> creates a new key; your contacts will see that your safety number changed. Choose a passphrase of at least 10 characters that is hard to guess, because someone who got the locked backup could try guesses offline.</li>
-            <li>You can turn secure messages off at any time. Your keys are deleted from your device and from our servers.</li>
+            <li>Changing your passphrase does not change your key. Anyone who copied the old locked backup <em>and</em> knows the old passphrase could still open it, so if you think the old passphrase was exposed, choose <strong>Start over</strong> (a new key) instead.</li>
+            <li>You can turn secure messages off at any time. Your key and its backup are deleted from our servers (the app tells you if that fails and then changes nothing) and from the device you turned it off on. Other phones that still hold the key notice the next time they sign in and remove it.</li>
         </ul>
         <h3>Reports and moderation</h3>
         <ul>
-            <li>We cannot read encrypted messages. If you report one, the report contains the text of that message, which you choose to send us, and nothing else from the chat.</li>
+            <li>We cannot read encrypted messages. If you report one, the app says so first: the report contains the text you see (up to 270 characters), which you choose to hand to us, and nothing else from the chat. We cannot verify it, because we only hold the locked version, so it is labelled "supplied by the reporter, unverified" and moderators weigh it that way.</li>
         </ul>
 
         <h2>Your messages</h2>

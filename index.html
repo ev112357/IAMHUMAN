@@ -2433,6 +2433,9 @@ img, video, canvas, pre, code {
         .chat-e2ee-banner.warn { color: #fde68a; background: rgba(217, 119, 6, 0.14); border-color: rgba(234, 179, 8, 0.45); }
         .chat-e2ee-banner .e2ee-btn { width: auto; margin: 0; padding: 4px 10px; font-size: 0.74rem; background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 6px; flex-shrink: 0; cursor: pointer; }
         .msg-lock { font-size: 0.7rem; opacity: 0.75; margin-left: 6px; }
+        .msg-lock.old-key { opacity: 1; color: #fcd34d; font-weight: 600; }
+        .msg-unverified { font-size: 0.8rem; color: #fcd34d; font-style: italic; line-height: 1.4; }
+        .msg-reveal-btn { width: auto; margin: 4px 0 0; padding: 3px 10px; font-size: 0.74rem; background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 6px; cursor: pointer; font-style: normal; }
         .msg-bubble.msg-locked { font-style: italic; opacity: 0.85; }
         .psc-secure { border-color: rgba(34, 197, 94, 0.45); background: rgba(22, 163, 74, 0.06); }
         #ui-dialog-message { white-space: pre-line; }
@@ -3171,7 +3174,7 @@ img, video, canvas, pre, code {
                         <li>We do not sell your data and we do not show ads.</li>
                         <li>Voice calls go straight between members' devices. We never record them, and live chat is not saved.</li>
                         <li>Your password is never visible to us, and every connection is encrypted.</li>
-                        <li><strong>Chats can be end-to-end encrypted (optional, below):</strong> then only the people in the chat can read the text, not even us. Photos are not encrypted.</li>
+                        <li><strong>Chats can be end-to-end encrypted (optional, below):</strong> when everyone in a chat has it on, we store only unreadable text and cannot read it. Photos are not encrypted, and if someone in a chat has not turned it on, the app asks before sending plain text.</li>
                         <li>You can download everything we hold about you, and delete your account and data at any time.</li>
                         <li>Blocked members, reports and private profiles are respected everywhere in the app.</li>
                     </ul>
@@ -3186,7 +3189,7 @@ img, video, canvas, pre, code {
                         </div>
                         <button type="button" id="e2ee-toggle-btn" class="secondary" style="width: auto; margin: 0; padding: 8px 14px;" disabled>...</button>
                     </div>
-                    <p class="psc-note" style="margin: 8px 0 0;">Optional, and you choose a recovery passphrase. Chats are encrypted when everyone in them has turned it on. Text only; photos are not encrypted. <a href="security.html#secure-messages">How it works and its limits</a></p>
+                    <p class="psc-note" style="margin: 8px 0 0;">Optional, and you choose a recovery passphrase. Chats are encrypted when everyone in them has turned it on; if someone has not, the app asks before it sends plain text. Text only; photos are not encrypted. <a href="security.html#secure-messages">How it works and its limits</a></p>
                 </div>
 
                 <div class="psc-card">
@@ -3831,7 +3834,7 @@ img, video, canvas, pre, code {
                 <p style="margin-bottom: 16px;">To prevent automated account farming, every member has <strong>three invite slots</strong>, and a slot refills 30 days after it is used. The database enforces this limit. Invites record who introduced whom, and moderators can flag a whole chain of accounts that turns out to be spam.</p>
                 
                 <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">5. Secure Messages (End-to-End Encryption)</h3>
-                <p style="margin-bottom: 16px;">You can lock your chats so that only the people in them can read the text, not even Turing's Gate. Turn it on in <strong>Settings &gt; Privacy</strong>. It is optional, works in direct and group chats once everyone has turned it on, and uses a recovery passphrase you choose. Photos are not encrypted. <a href="security.html#secure-messages" style="color:#38bdf8;">Read how it works and its limits.</a></p>
+                <p style="margin-bottom: 16px;">You can lock your chats so that only the people in them can read the text, not even Turing's Gate. Turn it on in <strong>Settings &gt; Privacy</strong>. It is optional, works in direct and group chats once everyone has turned it on, and uses a recovery passphrase you choose. If someone in a chat has not turned it on, the app asks before it sends a message without encryption. Photos are not encrypted, and reporting an encrypted message hands the text you see to our moderators. <a href="security.html#secure-messages" style="color:#38bdf8;">Read how it works and its limits.</a></p>
 
                 <div style="background: #0f172a; border: 1px dashed #475569; padding: 16px; border-radius: 8px; margin-top: 24px; text-align: center;">
                     <strong style="color: #38bdf8;">Current Status:</strong> You are protected by the Turing's Gate Defense Protocol.
@@ -3983,6 +3986,6 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="vendor/supabase-js-2.117.3.js"></script>
-    <script type="module" src="script.js?v=27"></script>
+    <script type="module" src="script.js?v=28"></script>
 </body>
 </html>
