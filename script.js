@@ -5200,27 +5200,206 @@ safeAddListener(document.getElementById('post-media-grid'), 'click', (e) => {
     renderPostMediaPreview();
 });
 
+// --- RESUMABLE (TUS) UPLOADS FOR BIG FILES ---
+// Anything over 6 MB goes through Supabase's resumable endpoint, so a dropped mobile connection picks up
+// where it stopped instead of restarting. Smaller files, and a resumable upload that never gets going
+// (client fails to load, endpoint refuses), use the plain single-request upload.
+const RESUMABLE_MIN_BYTES = 6 * 1024 * 1024;
+const RESUMABLE_CHUNK_BYTES = 6 * 1024 * 1024; // Supabase requires exactly 6 MB chunks
+const TUS_LIB_URL = '/vendor/tus-js-client-4.3.1.min.js';
+let tusLibPromise = null;
+
+// Loads the vendored tus client the first time a big file is uploaded.
+function loadTusLib() {
+    if (window.tus && window.tus.Upload) return Promise.resolve(window.tus);
+    if (!tusLibPromise) {
+        tusLibPromise = new Promise((resolve, reject) => {
+            const tag = document.createElement('script');
+            let timer = null;
+            const fail = () => {
+                clearTimeout(timer);
+                tag.remove();
+                reject(new Error('The upload helper did not load.'));
+            };
+            tag.onload = () => {
+                clearTimeout(timer);
+                if (window.tus && window.tus.Upload) resolve(window.tus); else fail();
+            };
+            tag.onerror = fail;
+            timer = setTimeout(fail, 20000);
+            tag.src = TUS_LIB_URL;
+            document.head.appendChild(tag);
+        });
+        // A failed load is not cached, so the next big file tries again.
+        tusLibPromise.catch(() => { tusLibPromise = null; });
+    }
+    return tusLibPromise;
+}
+
+// getSession hands back a refreshed token when the current one is about to expire.
+async function getUploadAuthHeader() {
+    let token = null;
+    try {
+        const { data } = await db.auth.getSession();
+        token = data && data.session ? data.session.access_token : null;
+    } catch (e) {}
+    return `Bearer ${token || SUPABASE_ANON_KEY}`;
+}
+
+function describeTusError(err) {
+    const res = err && err.originalResponse;
+    if (!res) {
+        if (err && err.originalRequest) return 'the connection dropped, check your network and try again';
+        return (err && err.message) || 'upload failed';
+    }
+    let detail = '';
+    try {
+        const body = JSON.parse(res.getBody());
+        detail = body.message || body.error || '';
+    } catch (e) {}
+    return detail || `the server answered ${res.getStatus()}`;
+}
+
+// Uploads one file in resumable chunks and resolves with the stored path (a resumed upload keeps the path it
+// started with). Rejects with err.fallback set when the server never took the upload, so the caller can use
+// the plain upload. Running uploads are tracked in `jobs` so the caller can cancel them if another file fails.
+async function uploadResumable(file, { path, contentType, cacheControl, jobs, onBytes }) {
+    let tus;
+    try {
+        tus = await loadTusLib();
+        if (tus.isSupported === false) throw new Error('Resumable uploads are not supported here.');
+    } catch (err) {
+        err.fallback = true;
+        throw err;
+    }
+
+    const job = { path, cancelled: false, cancel: null };
+    let succeed = null;
+    let fail = null;
+    const finished = new Promise((resolve, reject) => { succeed = resolve; fail = reject; });
+    finished.catch(() => {}); // cancelled before anyone awaited it
+
+    const metadata = { bucketName: MEDIA_BUCKET, objectName: path, contentType, cacheControl };
+    const upload = new tus.Upload(file, {
+        endpoint: `${SUPABASE_URL}/storage/v1/upload/resumable`,
+        headers: { apikey: SUPABASE_ANON_KEY, 'x-upsert': 'false' },
+        metadata,
+        chunkSize: RESUMABLE_CHUNK_BYTES,
+        retryDelays: [0, 3000, 5000, 10000, 20000],
+        uploadDataDuringCreation: true,
+        removeFingerprintOnSuccess: true,
+        // A fresh token on every request, retries included, so a long upload outlives the first one.
+        onBeforeRequest: async (req) => { req.setHeader('authorization', await getUploadAuthHeader()); },
+        // A 401 is most likely an expired token, which the retry replaces.
+        onShouldRetry: (err, attempt, options) => {
+            const res = err && err.originalResponse;
+            if (res && res.getStatus() === 401) return attempt < 2;
+            return tus.defaultOptions.onShouldRetry(err, attempt, options);
+        },
+        onProgress: (sent) => onBytes(sent),
+        onSuccess: () => succeed(),
+        onError: (err) => fail(err)
+    });
+
+    job.cancel = () => {
+        job.cancelled = true;
+        upload.abort(true).then(null, () => {});
+        fail(Object.assign(new Error('Upload cancelled'), { cancelled: true }));
+    };
+    jobs.add(job);
+
+    try {
+        // Resume an earlier attempt at this same file (name, size, date) if the server still holds it.
+        try {
+            const mine = `forum_posts/${currentUser.id}_`;
+            const earlier = (await upload.findPreviousUploads())
+                .filter(p => p.uploadUrl && p.metadata && p.metadata.bucketName === MEDIA_BUCKET
+                    && typeof p.metadata.objectName === 'string' && p.metadata.objectName.startsWith(mine))
+                .sort((a, b) => (Date.parse(b.creationTime) || 0) - (Date.parse(a.creationTime) || 0));
+            if (earlier.length) {
+                metadata.objectName = earlier[0].metadata.objectName;
+                job.path = metadata.objectName;
+                upload.resumeFromPreviousUpload(earlier[0]);
+            }
+        } catch (e) {}
+
+        if (!job.cancelled) upload.start();
+        await finished;
+        return job.path;
+    } catch (err) {
+        if (err.cancelled) throw err;
+        const message = describeTusError(err); // before abort(), which resets the request the response is read from
+        const started = !!upload.url;
+        // Drop what the server holds for this try. Offline that fails and the stored link stays for next time.
+        upload.abort(true).then(null, () => {});
+        const failure = new Error(message);
+        failure.fallback = !started;
+        failure.path = job.path;
+        throw failure;
+    } finally {
+        jobs.delete(job);
+    }
+}
+
 // Uploads every queued attachment (3 at a time) and returns the media entries
 // to store on the post. On any failure the files already uploaded are removed.
-async function uploadPostMedia(items, onProgress) {
+// onProgress(completed, total) fires per finished file; onBytes(sent, total) tracks bytes across all files
+// (each item also keeps its own count in item.uploadedBytes).
+async function uploadPostMedia(items, onProgress, onBytes) {
     // Posters and dimensions are still being extracted if the user publishes quickly.
     await Promise.all(items.map(item => item.ready).filter(Boolean));
 
     const entries = new Array(items.length);
     const uploadedPaths = [];
+    const resumableJobs = new Set();
+    const totalBytes = items.reduce((sum, item) => sum + item.file.size, 0) || 1;
     let completed = 0;
     let next = 0;
     let failure = null;
+
+    items.forEach(item => { item.uploadedBytes = 0; });
+
+    const reportBytes = (index, bytes) => {
+        const item = items[index];
+        item.uploadedBytes = Math.max(item.uploadedBytes, Math.min(bytes, item.file.size)); // never goes backwards on a retry
+        if (onBytes) onBytes(items.reduce((sum, m) => sum + m.uploadedBytes, 0), totalBytes);
+    };
+
+    // Stops the resumable uploads still running after a failure. Their paths are rolled back too in case
+    // the last chunk had already landed.
+    const cancelResumable = () => {
+        resumableJobs.forEach(job => { uploadedPaths.push(job.path); job.cancel(); });
+        resumableJobs.clear();
+    };
 
     const uploadOne = async (item, index) => {
         const stamp = `${currentUser.id}_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 7)}`;
         const uploadOpts = (contentType) => ({ contentType, cacheControl: '31536000', upsert: false });
 
+        // Big files go up in resumable chunks; everything else, and a resumable upload that never started, in one request.
+        const storeFile = async (file, path, opts) => {
+            if (file.size > RESUMABLE_MIN_BYTES) {
+                try {
+                    const stored = await uploadResumable(file, {
+                        path, contentType: opts.contentType, cacheControl: opts.cacheControl,
+                        jobs: resumableJobs, onBytes: (sent) => reportBytes(index, sent)
+                    });
+                    return { path: stored, error: null };
+                } catch (err) {
+                    if (!err.fallback) {
+                        if (err.path) uploadedPaths.push(err.path);
+                        return { path, error: err };
+                    }
+                }
+            }
+            const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, file, opts);
+            return { path, error };
+        };
+
         if (item.kind === 'image') {
             const compressed = await compressImage(item.file, 1280, 0.78);
             const ext = (compressed.name.split('.').pop() || 'jpeg').toLowerCase();
-            const path = `forum_posts/${stamp}.${ext}`;
-            const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, compressed, uploadOpts(compressed.type || 'image/jpeg'));
+            const { path, error } = await storeFile(compressed, `forum_posts/${stamp}.${ext}`, uploadOpts(compressed.type || 'image/jpeg'));
             if (error) throw new Error(`"${item.file.name}": ${error.message}`);
             uploadedPaths.push(path);
             entries[index] = { t: 'i', u: db.storage.from(MEDIA_BUCKET).getPublicUrl(path).data.publicUrl };
@@ -5228,9 +5407,8 @@ async function uploadPostMedia(items, onProgress) {
         }
 
         const ext = (item.file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
-        const path = `forum_posts/${stamp}.${ext}`;
         const videoType = item.file.type || (ext === 'webm' ? 'video/webm' : 'video/mp4');
-        const { error } = await db.storage.from(MEDIA_BUCKET).upload(path, item.file, uploadOpts(videoType));
+        const { path, error } = await storeFile(item.file, `forum_posts/${stamp}.${ext}`, uploadOpts(videoType));
         if (error) throw new Error(`"${item.file.name}": ${error.message}`);
         uploadedPaths.push(path);
 
@@ -5253,10 +5431,12 @@ async function uploadPostMedia(items, onProgress) {
             const index = next++;
             try {
                 await uploadOne(items[index], index);
+                reportBytes(index, items[index].file.size);
                 completed++;
                 if (onProgress) onProgress(completed, items.length);
             } catch (err) {
                 failure = failure || err;
+                cancelResumable();
             }
         }
     };
@@ -5265,7 +5445,7 @@ async function uploadPostMedia(items, onProgress) {
 
     if (failure) {
         if (uploadedPaths.length) {
-            await db.storage.from(MEDIA_BUCKET).remove(uploadedPaths).then(null, () => {});
+            await db.storage.from(MEDIA_BUCKET).remove(Array.from(new Set(uploadedPaths))).then(null, () => {});
         }
         throw new Error(`Upload failed for ${failure.message}`);
     }
@@ -9629,9 +9809,20 @@ safeAddListener(forumForm, 'submit', async (event) => {
     let published = false;
     try {
         if (postMediaQueue.length > 0) {
+            // Big videos go up in resumable chunks, so show combined byte progress instead of a file count.
+            const bigVideos = postMediaQueue.filter(m => m.kind === 'video' && m.file.size > RESUMABLE_MIN_BYTES).length;
+            const videoLabel = bigVideos > 1 ? 'videos' : 'video';
+            let shownPercent = 0;
+            if (submitBtn && bigVideos) submitBtn.textContent = `Uploading ${videoLabel} 0%`;
             const entries = await uploadPostMedia(postMediaQueue, (done, total) => {
-                if (submitBtn) submitBtn.textContent = `Uploading ${done}/${total}...`;
+                if (submitBtn && !bigVideos) submitBtn.textContent = `Uploading ${done}/${total}...`;
+            }, (sent, total) => {
+                const percent = Math.floor(sent * 100 / total);
+                if (!submitBtn || !bigVideos || percent === shownPercent) return;
+                shownPercent = percent;
+                submitBtn.textContent = `Uploading ${videoLabel} ${percent}%`;
             });
+            if (submitBtn) submitBtn.textContent = 'Publishing...';
             postImageUrl = encodePostMedia(entries);
         }
 
