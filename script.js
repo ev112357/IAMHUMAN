@@ -15587,12 +15587,17 @@ function secureAnnounceOnce() {
     let seen = false;
     try { seen = localStorage.getItem('tg_seen_secure_messages') === '1'; localStorage.setItem('tg_seen_secure_messages', '1'); } catch (e) { /* storage unavailable */ }
     if (seen) return;
-    showToast({
-        title: "New: secure messages",
-        message: "Lock your chats so only the people in them can read them. Turn it on in Settings > Privacy.",
-        type: "info", icon: "🔒", duration: 12000, force: true,
-        onClick: () => { if (typeof openSettingsBtn !== 'undefined' && openSettingsBtn) { openSettingsBtn.click(); switchSettingsTab('privacy'); } }
-    });
+    // a few seconds after sign-in, so it does not pile onto the other sign-in notices
+    const uid = secure.uid;
+    setTimeout(() => {
+        if (secure.uid !== uid || secure.state !== 'off') return; // signed out, or turned it on already
+        showToast({
+            title: "New: secure messages",
+            message: "Lock your chats so only the people in them can read them. Turn it on in Settings > Privacy.",
+            type: "info", icon: "🔒", duration: 12000, force: true,
+            onClick: () => { if (typeof openSettingsBtn !== 'undefined' && openSettingsBtn) { openSettingsBtn.click(); switchSettingsTab('privacy'); } }
+        });
+    }, 3500);
 }
 
 // ---- sending and reading ----
