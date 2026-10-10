@@ -11399,8 +11399,22 @@ async function submitPollVote(postId, optIdx) {
     if (votes[currentUsername.toLowerCase()] !== undefined) {
         return; // Security: User already voted
     }
-    
-    // Record their vote
+
+    // The database records the vote (cast_poll_vote): one vote each, the option and closing time are checked, and the
+    // tally cannot be rewritten from outside.
+    const rpc = await db.rpc('cast_poll_vote', { p_post_id: Number(postId), p_option: Number(optIdx) });
+    if (!rpc.error && rpc.data && typeof rpc.data === 'object') {
+        post.poll_votes = rpc.data;
+        renderCurrentFeed();
+        return;
+    }
+    if (rpc.error && !isMissingFunctionError(rpc.error)) {
+        const closed = /closed/i.test(rpc.error.message || '');
+        showToast({ title: closed ? "Poll closed" : "Vote not recorded", message: closed ? "This poll has closed, so your vote was not counted." : (rpc.error.message || "Please try again."), type: "error", icon: "▵", duration: 5000, force: true });
+        return;
+    }
+
+    // Older database without cast_poll_vote: record the vote the previous way.
     votes[currentUsername.toLowerCase()] = Number(optIdx);
 
 
