@@ -1,0 +1,6 @@
+# How to report a security problem with Turing's Gate. Please read the policy first.
+Contact: mailto:support@turingsgate.com
+Expires: 2027-10-01T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://www.turingsgate.com/.well-known/security.txt
+Policy: https://www.turingsgate.com/security.html

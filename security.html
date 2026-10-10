@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="description" content="How Turing's Gate protects your account and your data, what you can control, and how to report a security problem.">
+    <title>Security - Turing's Gate</title>
+    <link rel="icon" href="/favicon.ico">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; min-height: 100vh; padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(32px + env(safe-area-inset-bottom, 0px)); display: flex; justify-content: center; }
+        .container { max-width: 800px; width: 100%; background-color: #1e293b; padding: 32px; border-radius: 12px; border: 1px solid #334155; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); }
+        .back { display: inline-block; margin-bottom: 18px; font-size: 0.9rem; color: #7dd3fc; text-decoration: none; padding: 6px 0; }
+        .back:hover { text-decoration: underline; }
+        h1 { color: #38bdf8; font-size: 1.8rem; margin-bottom: 8px; }
+        .last-updated { font-size: 0.85rem; color: #94a3b8; margin-bottom: 24px; }
+        h2 { color: #e2e8f0; font-size: 1.2rem; margin-top: 26px; margin-bottom: 10px; border-bottom: 1px solid #334155; padding-bottom: 6px; }
+        h3 { color: #cbd5e1; font-size: 1rem; margin: 16px 0 6px; }
+        p, li { font-size: 0.95rem; line-height: 1.65; color: #cbd5e1; margin-bottom: 12px; overflow-wrap: anywhere; }
+        ul, ol { padding-left: 22px; margin-bottom: 14px; }
+        a { color: #7dd3fc; text-decoration: underline; }
+        .callout { background: #0f172a; border: 1px solid #334155; border-left: 3px solid #38bdf8; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+        .callout p:last-child { margin-bottom: 0; }
+        details { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 0 14px; margin-bottom: 10px; }
+        summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: #e2e8f0; font-size: 0.97rem; }
+        details[open] summary { border-bottom: 1px solid #334155; margin-bottom: 10px; }
+        .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #334155; font-size: 0.85rem; color: #64748b; text-align: center; }
+        .footer a { margin: 0 8px; }
+        @media (max-width: 520px) { .container { padding: 22px 18px; } h1 { font-size: 1.5rem; } }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 16px; }
+        .card { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; }
+        .card h3 { margin: 0 0 6px; color: #e2e8f0; font-size: 0.95rem; }
+        .card p { margin: 0; font-size: 0.88rem; line-height: 1.55; }
+        @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a class="back" href="/">&larr; Back to Turing's Gate</a>
+
+        <h1>Security &amp; Your Data</h1>
+        <div class="last-updated">Last reviewed: October 10, 2026</div>
+
+        <p>People come here to talk as themselves, so we treat what you share with care. This page says plainly what protects you, what you can control, and where the limits are. Nothing here is marketing: if something is not protected, we say so.</p>
+
+        <div class="callout">
+            <p><strong>Our promises:</strong> we do not sell your data. We do not run ads. We do not record voice calls. We do not follow you around other websites. You can download everything we hold about you, and you can delete your account, from inside the app.</p>
+        </div>
+
+        <h2>Protecting your account</h2>
+        <div class="grid">
+            <div class="card"><h3>Passwords</h3><p>Your password is stored only as a salted hash by our sign-in provider. We cannot read it and nobody can look it up.</p></div>
+            <div class="card"><h3>Two-factor sign-in (optional)</h3><p>Turn it on in <strong>Settings &gt; Privacy</strong>. You then enter a 6-digit code from an authenticator app when you sign in. It is off unless you choose to use it. We recommend it, but we never require it.</p></div>
+            <div class="card"><h3>Sign out other devices</h3><p>One button in <strong>Settings &gt; Privacy</strong> signs your account out everywhere except the device you are holding. Use it if a phone is lost or you signed in on a shared computer.</p></div>
+            <div class="card"><h3>New sign-in alerts</h3><p>When your account signs in somewhere new, any other device where you currently have the app open shows an alert right away, with a shortcut to sign everyone else out. These alerts appear inside the app; a device that is closed or offline will not see one.</p></div>
+        </div>
+
+        <h2>How we keep bots out without spying on you</h2>
+        <ul>
+            <li><strong>Sign-up needs a Red Pearl code,</strong> and the code is checked by our database at the moment the account is created, not only by the web page. Skipping the page does not skip the check.</li>
+            <li><strong>Cloudflare Turnstile</strong> runs at sign-up and sign-in to tell humans from scripts.</li>
+            <li><strong>The Human Check</strong> looks at a few signals while you write a post: whether text was pasted, an impossible typing speed, a hidden field only bots fill in, and posting in rapid bursts. We keep one number from 0 to 5 on your profile. We do not keep what you typed for this check, and you can see your number in <strong>Settings &gt; Privacy</strong>.</li>
+            <li>That number, your counters and your account status are written by the database itself. They cannot be edited from your browser, so nobody can award themselves a clean record.</li>
+        </ul>
+
+        <h2>Your messages</h2>
+        <ul>
+            <li>Messages travel over encrypted connections (HTTPS) and our hosting provider encrypts stored data.</li>
+            <li><strong>Direct messages are not end-to-end encrypted.</strong> That means the service itself can technically open them. We do not read private messages as a matter of course; they are looked at only when a member reports them. Do not send anything through any chat that you could not stand to see leak.</li>
+            <li><strong>Disappearing messages (optional):</strong> in a chat, open the options button and choose 24 hours or 7 days. Expired messages vanish for everyone straight away and are then deleted from our database by an automatic cleanup. Timed chats are text only, because photos are stored separately. Everyone in the chat is told when the timer changes.</li>
+            <li><strong>Clear chat for me</strong> hides the history on your side only. The other people keep their copy.</li>
+            <li>Voice and video calls go directly between devices and are never recorded or stored by us.</li>
+            <li>You can block anyone, and you can report posts, replies and messages. Reports are reviewed within 24 hours.</li>
+        </ul>
+
+        <h2>Your data, your control</h2>
+        <ul>
+            <li><strong>Download my data</strong> (Settings &gt; Privacy): one file with your account details, profile, posts, replies, votes, friend connections, notifications and the chats you are in. Photos and videos are linked rather than embedded.</li>
+            <li><strong>Delete my account</strong> (Settings &gt; Privacy or Settings &gt; Profile): removes your login, profile, messages, friend links, votes and blocks right away. Your old public posts stay readable but are detached from you and show as "[deleted]".</li>
+            <li><strong>Private profile:</strong> hides your post and reply history from other members.</li>
+            <li>The full detail is in the <a href="privacy.html">Privacy Policy</a>.</li>
+        </ul>
+
+        <h2>How the site itself is built</h2>
+        <ul>
+            <li>Every database table has row-level security rules, so the database decides who may read or change each row, even if someone tampers with the page in their browser.</li>
+            <li>The main script library is hosted on this site at a fixed version rather than loaded from a third-party network, so a change at someone else's server cannot change our code.</li>
+            <li>Pages are served over HTTPS only, cannot be placed inside another site's frame, and tell browsers not to guess file types.</li>
+            <li>Content from members is escaped before it is displayed.</li>
+            <li>We use a small number of providers (Supabase, Vercel, Cloudflare, OneSignal) and list them in the <a href="privacy.html">Privacy Policy</a>.</li>
+        </ul>
+
+        <h2>Report a security problem</h2>
+        <div class="callout">
+            <p>Found a weakness? Email <a href="mailto:support@turingsgate.com?subject=Security%20report">support@turingsgate.com</a> with the subject "Security report". Tell us what you found and how to reproduce it. We will reply within 3 business days and keep you updated until it is fixed.</p>
+        </div>
+        <ul>
+            <li>If you test in good faith, stay within these rules and report promptly, we will not take legal action against you.</li>
+            <li>Please do not read, change or delete other people's data beyond what is needed to show the problem, do not run denial-of-service or spam attacks, and do not test with real members' accounts.</li>
+            <li>We do not run a paid bounty program, but we will thank you publicly if you want.</li>
+            <li>A machine-readable copy of this is at <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</li>
+        </ul>
+
+        <div class="footer">
+            <a href="terms.html">Terms of Use</a> &middot; <a href="privacy.html">Privacy Policy</a> &middot; <a href="security.html">Security</a> &middot; <a href="support.html">Support</a><br><br>
+            &copy; 2026 Turing's Gate. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>

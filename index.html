@@ -2394,6 +2394,35 @@ img, video, canvas, pre, code {
             .modal-overlay { padding: 14px 22px !important; }
         }
 
+        /* ---- Privacy & Security Center ---- */
+        .psc-card { background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+        .psc-promises { border-color: #0e7490; background: linear-gradient(180deg, rgba(14,116,144,.14), #0f172a); }
+        .psc-title { font-size: 0.98rem; color: #f8fafc; margin: 0 0 6px; border: none; padding: 0; }
+        .psc-note { font-size: 0.8rem; color: #94a3b8; line-height: 1.5; margin: 0 0 8px; }
+        .psc-list { margin: 0 0 8px; padding-left: 18px; }
+        .psc-list li { font-size: 0.84rem; color: #cbd5e1; line-height: 1.5; margin: 0 0 5px; }
+        .psc-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; }
+        .psc-links a { color: #7dd3fc; text-decoration: underline; padding: 4px 0; }
+        .psc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .psc-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .psc-actions button { width: auto; margin: 0; flex: 1 1 150px; min-height: 42px; }
+
+        /* ---- Two-factor window ---- */
+        #mfa-modal { z-index: 26200 !important; }
+        .mfa-box { max-width: 420px; height: auto !important; max-height: 100% !important; overflow-y: auto; padding: 18px; }
+        .mfa-box > * { flex-shrink: 0; }
+        #mfa-setup { text-align: center; margin-bottom: 8px; }
+        #mfa-qr { width: 190px; height: 190px; background: #fff; padding: 8px; border-radius: 10px; display: block; margin: 8px auto; }
+        #mfa-secret { display: inline-block; font-family: ui-monospace, Menlo, Consolas, monospace; background: #020617; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; font-size: 0.82rem; color: #e2e8f0; overflow-wrap: anywhere; user-select: all; }
+        #mfa-code { text-align: center; letter-spacing: .35em; font-size: 1.4rem !important; font-variant-numeric: tabular-nums; margin: 6px 0; }
+        .mfa-help { font-size: 0.82rem; color: #94a3b8; line-height: 1.45; margin: 0 0 8px; }
+        .ui-dialog-choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+        .ui-dialog-choices button { margin: 0; min-height: 46px; text-align: left; }
+        .ui-dialog-choices button.current { border-color: #38bdf8; color: #7dd3fc; }
+        .chat-privacy-banner { font-size: 0.78rem; color: #bae6fd; background: rgba(2,132,199,.14); border: 1px solid rgba(56,189,248,.35); border-radius: 8px; padding: 6px 10px; margin: 6px 0 4px; display: flex; align-items: center; gap: 6px; }
+        .chat-options-btn { background: transparent; border: 1px solid #334155; color: #94a3b8; width: 34px; height: 34px; padding: 0 !important; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin: 0; }
+        .chat-options-btn:hover { color: #f8fafc; border-color: #38bdf8; }
+
 </style>
 </head>
 <body>
@@ -2530,7 +2559,7 @@ img, video, canvas, pre, code {
 
                         <button type="submit" id="auth-submit-btn">Log In</button>
                         <button type="button" class="secondary" id="auth-toggle-btn">Need an account? Sign Up</button>
-                        <div class="legal-links"><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="support.html">Support</a></div>
+                        <div class="legal-links"><a href="terms.html">Terms</a><a href="privacy.html">Privacy</a><a href="security.html">Security</a><a href="support.html">Support</a></div>
                     </form>
                 </div>
             </div>
@@ -2829,6 +2858,7 @@ img, video, canvas, pre, code {
                             <span id="chat-header">Select a conversation</span>
                         </div>
                         <div class="chat-header-actions" style="display: flex; align-items: center; gap: 6px;">
+                            <button type="button" id="chat-options-btn" class="chat-options-btn hidden" title="Chat options" aria-label="Chat options"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
                             <button type="button" id="start-call-btn" class="call-action-btn hidden" title="Start Audio Call">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
                             </button>
@@ -2836,6 +2866,7 @@ img, video, canvas, pre, code {
                     </div>
                     <!-- ACTIVE 1-ON-1 AUDIO CALL BAR -->
                     
+                    <div id="chat-privacy-banner" class="chat-privacy-banner hidden" role="status"></div>
                     <div id="chat-pending-banner" class="msg-pending-banner hidden">
                         ◈ Non-friend conversation: Messages remain hidden from recipient until accepted.
                     </div>
@@ -3110,26 +3141,100 @@ img, video, canvas, pre, code {
                 </div>
             </div>
 
-            <!-- Tab 2: Privacy Pane -->
+            <!-- Tab 2: Privacy & Security Center -->
             <div id="pane-settings-privacy" class="hidden">
-                <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-bottom: 14px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="psc-card psc-promises">
+                    <h3 class="psc-title">How we treat your data</h3>
+                    <ul class="psc-list">
+                        <li>We do not sell your data and we do not show ads.</li>
+                        <li>Voice calls go straight between members' devices. We never record them, and live chat is not saved.</li>
+                        <li>Your password is never visible to us, and every connection is encrypted.</li>
+                        <li>You can download everything we hold about you, and delete your account and data at any time.</li>
+                        <li>Blocked members, reports and private profiles are respected everywhere in the app.</li>
+                    </ul>
+                    <div class="psc-links"><a href="privacy.html">Privacy Policy</a><a href="security.html">Security &amp; reporting a problem</a></div>
+                </div>
+
+                <div class="psc-card">
+                    <div class="psc-row">
                         <div style="padding-right: 12px;">
-                            <div style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 3px;">Private Account</div>
-                            <p id="account-privacy-desc" style="font-size: 0.8rem; color: #94a3b8; margin: 0;">Public: Any human can view your forum post & comment history.</p>
+                            <h3 class="psc-title" style="margin-bottom: 3px;">Private Account</h3>
+                            <p id="account-privacy-desc" class="psc-note" style="margin: 0;">Public: Any human can view your forum post &amp; comment history.</p>
                         </div>
                         <input type="checkbox" id="privacy-toggle-chk" style="width: 22px; height: 22px; cursor: pointer; margin: 0; flex-shrink: 0;">
                     </div>
+                    <p class="psc-note" style="margin: 10px 0 0;">When your account is private, other members see your username and Human Score, but your post and comment histories are hidden.</p>
                 </div>
-                <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; font-size: 0.82rem; color: #cbd5e1; line-height: 1.5;">
-                    ◈ <strong>Private Profile Guard:</strong> When your account is set to private, other members see your username and human verification score, but your post and comment histories are completely hidden.
+
+                <div class="psc-card">
+                    <h3 class="psc-title">Your data</h3>
+                    <p class="psc-note">Download a copy of what we hold about you: your profile, posts, replies, chats you are in, friends, blocks, votes and notifications, as one file you can keep.</p>
+                    <div class="psc-actions">
+                        <button type="button" id="export-data-btn">Download my data</button>
+                        <button type="button" id="privacy-delete-account-btn" class="danger">Delete my account</button>
+                    </div>
+                    <p id="export-data-status" class="psc-note" role="status" aria-live="polite" style="margin: 8px 0 0;"></p>
                 </div>
-                <div style="background-color: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 14px; margin-top: 14px;">
-                    <div style="font-size: 0.95rem; color: #f8fafc; font-weight: 700; margin-bottom: 3px;">Blocked Users</div>
-                    <p style="font-size: 0.8rem; color: #94a3b8; margin: 0 0 10px;">Blocked members can't appear in your feed, replies, chats, live chat, notifications or calls. You can block someone from their profile card.</p>
+
+                <div class="psc-card">
+                    <h3 class="psc-title">Human check</h3>
+                    <p class="psc-note">To keep bots out, the app watches a few simple behaviour signals while you write a post: pasted text, an impossible typing speed, a hidden trap field that only bots fill in, and posting in rapid bursts. We never keep what you typed for this check. The only thing stored is the risk score below, on your profile. At 5 out of 5, posting pauses until you solve a short code.</p>
+                    <div class="psc-row" style="margin-top: 8px;">
+                        <span class="psc-note" style="margin: 0;">Score stored on your profile</span>
+                        <strong id="psc-human-score" style="font-size: 1.05rem; color: #f8fafc;">0 / 5</strong>
+                    </div>
+                </div>
+
+                <div class="psc-card">
+                    <h3 class="psc-title">Sign-in security</h3>
+                    <div class="psc-row">
+                        <div style="padding-right: 12px;">
+                            <div style="font-weight: 700; color: #f8fafc; font-size: 0.92rem;">Two-factor authentication</div>
+                            <p id="mfa-state-text" class="psc-note" style="margin: 2px 0 0;">Checking...</p>
+                        </div>
+                        <button type="button" id="mfa-toggle-btn" class="secondary" style="width: auto; margin: 0; padding: 8px 14px;" disabled>...</button>
+                    </div>
+                    <div class="psc-row" style="margin-top: 12px;">
+                        <div style="padding-right: 12px;">
+                            <div style="font-weight: 700; color: #f8fafc; font-size: 0.92rem;">Other devices</div>
+                            <p class="psc-note" style="margin: 2px 0 0;">Signed in somewhere you no longer use? Sign out everywhere else. Your other devices also get an alert whenever someone signs in to your account.</p>
+                        </div>
+                        <button type="button" id="signout-others-btn" class="secondary" style="width: auto; margin: 0; padding: 8px 14px;">Sign out others</button>
+                    </div>
+                </div>
+
+                <div class="psc-card">
+                    <h3 class="psc-title">Blocked Users</h3>
+                    <p class="psc-note">Blocked members can't appear in your feed, replies, chats, live chat, notifications or calls. You can block someone from their profile card.</p>
                     <div id="blocked-users-list"><div class="no-posts" style="font-size: 0.8rem;">You haven't blocked anyone.</div></div>
                 </div>
-                <div class="legal-links" style="margin-top: 16px;"><a href="terms.html">Terms of Use</a><a href="privacy.html">Privacy Policy</a><a href="support.html">Help &amp; Support</a></div>
+
+                <div class="legal-links" style="margin-top: 16px;"><a href="terms.html">Terms of Use</a><a href="privacy.html">Privacy Policy</a><a href="security.html">Security</a><a href="support.html">Help &amp; Support</a></div>
+            </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- TWO-FACTOR WINDOW (set up, sign in, turn off) -->
+    <div id="mfa-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="mfa-title">
+        <div class="modal-box mfa-box">
+            <div class="modal-header">
+                <h2 id="mfa-title">Two-factor authentication</h2>
+                <button type="button" id="mfa-close" class="close-btn" aria-label="Close">&times;</button>
+            </div>
+            <div id="mfa-setup" class="hidden">
+                <p class="mfa-help">1. Scan this QR code with an authenticator app (1Password, Authy, Google Authenticator and similar).</p>
+                <img id="mfa-qr" alt="QR code for your authenticator app" width="190" height="190">
+                <p class="mfa-help">Cannot scan it? Enter this key by hand: <span id="mfa-secret"></span></p>
+                <p class="mfa-help"><strong>Keep this key somewhere safe</strong> (a password manager is ideal). If you lose your phone it is the only way to get your two-factor login back. You can also add the same key to a second device.</p>
+            </div>
+            <p id="mfa-prompt" class="mfa-help" style="font-size: 0.9rem; color: #cbd5e1;">Enter the 6-digit code from your authenticator app.</p>
+            <input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" aria-label="6-digit code">
+            <p id="mfa-status" class="report-status" role="status" aria-live="polite"></p>
+            <div class="ui-dialog-actions">
+                <button type="button" id="mfa-cancel" class="secondary">Cancel</button>
+                <button type="button" id="mfa-submit">Verify</button>
             </div>
         </div>
     </div>
@@ -3141,6 +3246,7 @@ img, video, canvas, pre, code {
             <h2 class="ui-dialog-title" id="ui-dialog-title">Confirm</h2>
             <p class="ui-dialog-message" id="ui-dialog-message"></p>
             <input type="text" id="ui-dialog-input" class="hidden" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <div id="ui-dialog-choices" class="ui-dialog-choices hidden"></div>
             <div class="ui-dialog-actions">
                 <button type="button" id="ui-dialog-cancel" class="secondary">Cancel</button>
                 <button type="button" id="ui-dialog-ok">OK</button>
@@ -3317,16 +3423,6 @@ img, video, canvas, pre, code {
                     <button type="button" id="user-card-report-btn">Report</button>
                 </div>
 
-                <!-- SECURITY UPGRADE: Human Signature Visualizer -->
-                <div style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-top: 4px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                        <span style="font-size: 0.75rem; text-transform: uppercase; color: #94a3b8; font-weight: 700;">Keystroke Variance</span>
-                        <span style="font-size: 0.7rem; color: #38bdf8;">Verified Organic</span>
-                    </div>
-                    <div id="human-signature-chart" style="display: flex; align-items: flex-end; justify-content: space-between; height: 36px; gap: 2px;">
-                        <!-- Bars generated dynamically via JS -->
-                    </div>
-                </div>
             </div>
 
 
@@ -3686,7 +3782,7 @@ img, video, canvas, pre, code {
                 <p style="margin-bottom: 16px;">Turing's Gate employs a multi-layered defense protocol to ensure all interactions originate from verified organic traffic.</p>
                 
                 <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">1. Passive Telemetry Engine</h3>
-                <p style="margin-bottom: 16px;">We analyze keystroke cadence, micro-pauses, and input variance in real-time. Automated scripts operating with mechanical, zero-variance precision instantly flag our suspicion ledger.</p>
+                <p style="margin-bottom: 16px;">While you write a post we look at a few simple behaviour signals: whether the text was pasted, an impossible typing speed, a hidden trap field that only bots fill in, and posting in rapid bursts. We never keep what you typed for this check, only a risk score from 0 to 5 on your profile (you can see it in Settings &gt; Privacy). Reaching 5 pauses posting until you solve a short code.</p>
 
 
                 <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">2. Cryptographic Token Validation</h3>
@@ -3849,7 +3945,7 @@ img, video, canvas, pre, code {
     </div>
 
     <script defer src="/_vercel/insights/script.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=23"></script>
+    <script src="vendor/supabase-js-2.117.3.js"></script>
+    <script type="module" src="script.js?v=24"></script>
 </body>
 </html>

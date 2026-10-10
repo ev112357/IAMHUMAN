@@ -175,8 +175,8 @@ function playTechChirp(type = 'info') {
 // uiPrompt(message, {title, value, placeholder, maxLength, confirmText}) -> Promise<string | null>
 let uiDialogChain = Promise.resolve();
 function uiDialog(opts = {}) {
-    const kind = opts.kind === 'prompt' ? 'prompt' : 'confirm';
-    const cancelValue = kind === 'prompt' ? null : false;
+    const kind = opts.kind === 'prompt' ? 'prompt' : opts.kind === 'choice' ? 'choice' : 'confirm';
+    const cancelValue = kind === 'confirm' ? false : null;
     const run = () => new Promise((resolve) => {
         const root = document.getElementById('ui-dialog');
         if (!root) { resolve(cancelValue); return; }
@@ -191,6 +191,10 @@ function uiDialog(opts = {}) {
         okBtn.textContent = opts.confirmText || 'OK';
         cancelBtn.textContent = opts.cancelText || 'Cancel';
         input.classList.toggle('hidden', kind !== 'prompt');
+        const choicesEl = document.getElementById('ui-dialog-choices');
+        choicesEl.textContent = '';
+        choicesEl.classList.toggle('hidden', kind !== 'choice');
+        okBtn.classList.toggle('hidden', kind === 'choice');
         if (kind === 'prompt') {
             input.value = opts.value || '';
             input.placeholder = opts.placeholder || '';
@@ -214,8 +218,18 @@ function uiDialog(opts = {}) {
         const onBackdrop = (e) => { if (e.target === root) onCancel(); };
         const onKey = (e) => {
             if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); onCancel(); }
-            else if (e.key === 'Enter' && e.target !== cancelBtn) { e.preventDefault(); e.stopImmediatePropagation(); onOk(); }
+            else if (e.key === 'Enter' && kind !== 'choice' && e.target !== cancelBtn) { e.preventDefault(); e.stopImmediatePropagation(); onOk(); }
         };
+        if (kind === 'choice') {
+            (opts.choices || []).forEach((ch) => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'secondary' + (ch.current ? ' current' : '');
+                b.textContent = ch.label;
+                b.addEventListener('click', () => finish(ch.value));
+                choicesEl.appendChild(b);
+            });
+        }
         okBtn.addEventListener('click', onOk);
         cancelBtn.addEventListener('click', onCancel);
         root.addEventListener('click', onBackdrop);
@@ -223,6 +237,7 @@ function uiDialog(opts = {}) {
         root.classList.remove('hidden');
         // focus straight away so keyboard and screen-reader users land inside the dialog
         if (kind === 'prompt') { input.focus({ preventScroll: true }); input.select(); }
+        else if (kind === 'choice') { (choicesEl.querySelector('button') || cancelBtn).focus({ preventScroll: true }); }
         else (opts.danger ? cancelBtn : okBtn).focus({ preventScroll: true });
     });
     // One dialog at a time: a second request waits for the first to be answered.
@@ -232,6 +247,7 @@ function uiDialog(opts = {}) {
 }
 const uiConfirm = (message, opts = {}) => uiDialog({ ...opts, kind: 'confirm', message });
 const uiPrompt = (message, opts = {}) => uiDialog({ ...opts, kind: 'prompt', message });
+const uiChoose = (message, choices, opts = {}) => uiDialog({ ...opts, kind: 'choice', message, choices });
 
 // Browsers show their own "Please fill out this field" bubble on required form fields. Show the app's toast instead,
 // so every message in the app looks the same. (Cancelling the event keeps the form from submitting, as before.)
@@ -335,36 +351,35 @@ function showToast({ title = 'Notification', message = '', type = 'info', icon =
 }
 
 
-// --- GLOBAL CYBERPUNK POPUP INTERCEPTOR (REPLACES GENERIC BROWSER ALERTS) ---
+// --- GLOBAL POPUP INTERCEPTOR (turns any leftover browser alert() into a styled toast) ---
+// Titles are plain and describe the situation, never "security" language for an ordinary problem.
 window.alert = function(msg) {
     if (!msg) return;
     const str = String(msg);
-    let title = "System Notification";
+    let title = "Notice";
     let icon = "✦";
     let type = "info";
-
 
     const lower = str.toLowerCase();
     if (lower.includes("error") || lower.includes("failed") || lower.includes("blocked") || lower.includes("denied") || lower.includes("must be") || lower.includes("please") || lower.includes("security check") || lower.includes("invalid") || lower.includes("already taken") || lower.includes("incorrect")) {
         type = "error";
         icon = "▵";
-        title = "Security Clearance Alert";
+        title = "Couldn't do that";
         if (lower.includes("security check") || lower.includes("captcha") || lower.includes("turnstile")) {
-            title = "Perimeter Verification";
+            title = "Human check";
             icon = "◈";
         } else if (lower.includes("username") || lower.includes("password") || lower.includes("login") || lower.includes("sign up")) {
-            title = "Authentication Gate";
+            title = "Sign-in problem";
             icon = "◈";
         } else if (lower.includes("call") || lower.includes("microphone") || lower.includes("audio")) {
-            title = "Comms Protocol";
+            title = "Call problem";
             icon = "◈";
         }
     } else if (lower.includes("success") || lower.includes("copied") || lower.includes("updated") || lower.includes("welcome")) {
         type = "success";
         icon = "✓";
-        title = "Confirmed";
+        title = "Done";
     }
-
 
     showToast({
         title: title,
@@ -876,6 +891,11 @@ let cachedPosts = [];
 // People the signed-in user has blocked (see the SAFETY section): id -> { id, username }, plus a lowercase-name index.
 const blockedById = new Map();
 const blockedNames = new Set();
+// Privacy & Security Center state
+const mfaCleared = new Set();      // user ids whose two-factor check is done on this device
+let mfaPending = null;             // in-flight two-factor prompt (so a second auth event never opens a second one)
+let pendingSigninAlert = false;    // set after a password sign-in so the member's other devices get an alert
+let chatPrivacy = { timer: 0, clearedAt: null }; // disappearing-message timer / clear-chat time of the open chat
 const userCardSafety = document.getElementById('user-card-safety');
 const userCardBlockBtn = document.getElementById('user-card-block-btn');
 const userCardReportBtn = document.getElementById('user-card-report-btn');
@@ -1042,6 +1062,7 @@ function switchSettingsTab(tab) {
     if (tab === 'notifs') {
         syncNotificationSettingsUI();
     }
+    if (tab === 'privacy' && typeof refreshPrivacyCenter === 'function') refreshPrivacyCenter();
 }
 
 
@@ -1687,6 +1708,44 @@ function drawCaptcha(code) {
 
 
 
+// The Human Check score and the suspension flag are kept by the database (report_behavior / clear_suspension), so a
+// browser console can no longer reset them. Older databases without those functions fall back to a direct write.
+async function persistBehavior(points) {
+    if (!currentUser || !db) return null;
+    try {
+        const { data, error } = await db.rpc('report_behavior', { p_points: points });
+        if (error) throw error;
+        const d = Array.isArray(data) ? data[0] : data;
+        return d && typeof d.score === 'number' ? d : null;
+    } catch (e) {
+        if (isMissingFunctionError(e)) {
+            try {
+                await db.from('profiles').update(suspicionScore >= 5 ? { suspicion_score: suspicionScore, is_suspended: true } : { suspicion_score: suspicionScore }).eq('id', currentUser.id);
+            } catch (e2) { /* nothing more to try */ }
+        } else {
+            console.warn("Human check update notice:", e);
+        }
+        return null;
+    }
+}
+
+// Returns { ok, waitSeconds }. The server makes everyone wait a few minutes after a suspension.
+async function clearSuspensionOnServer() {
+    if (!currentUser || !db) return { ok: true, waitSeconds: 0 };
+    try {
+        const { data, error } = await db.rpc('clear_suspension');
+        if (error) throw error;
+        const d = Array.isArray(data) ? data[0] : data;
+        return { ok: d ? d.ok !== false : true, waitSeconds: d && d.wait_seconds ? Number(d.wait_seconds) : 0 };
+    } catch (e) {
+        if (isMissingFunctionError(e)) {
+            await db.from('profiles').update({ is_suspended: false, suspicion_score: 0 }).eq('id', currentUser.id);
+            return { ok: true, waitSeconds: 0 };
+        }
+        throw e;
+    }
+}
+
 function triggerSuspensionGate() {
     isSuspended = true;
     suspicionScore = Math.max(5, suspicionScore);
@@ -1720,18 +1779,7 @@ function triggerSuspensionGate() {
 
 
     // 3. Persist suspension lock to Supabase securely
-    if (currentUser && db) {
-        (async () => {
-            try {
-                await db.from('profiles').update({ 
-                    is_suspended: true, 
-                    suspicion_score: suspicionScore 
-                }).eq('id', currentUser.id);
-            } catch (err) {
-                console.warn("Suspension update notice:", err);
-            }
-        })();
-    }
+    persistBehavior(5);
 }
 
 
@@ -1748,19 +1796,16 @@ safeAddListener(submitCaptchaBtn, 'click', async () => {
 
 
         try {
+            const cleared = await clearSuspensionOnServer();
+            if (!cleared.ok) {
+                // Solved, but the server asks for a short wait after a suspension. Keep the window open.
+                const mins = Math.max(1, Math.ceil(cleared.waitSeconds / 60));
+                if (captchaStatusMsg) captchaStatusMsg.textContent = `Code accepted. Please wait about ${mins} minute${mins === 1 ? '' : 's'}, then press Verify again.`;
+                return;
+            }
             isSuspended = false;
             suspicionScore = 0;
             updateSuspicionUI();
-
-
-
-
-            if (currentUser && db) {
-                await db.from('profiles').update({ 
-                    is_suspended: false, 
-                    suspicion_score: 0 
-                }).eq('id', currentUser.id);
-            }
 
 
 
@@ -2576,6 +2621,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 async function syncUserState(user) {
+    // A member who turned on two-factor login must enter a code before anything loads.
+    if (user && !(await ensureMfaVerified(user))) return;
+    if (!user) mfaCleared.clear();
     switchVoteStore(user ? user.id : null);
     if (user) {
         currentUser = user;
@@ -2668,6 +2716,7 @@ async function syncUserState(user) {
         initUserCallSignaling();
         initRealtimeActivityNotifications();
         startNotificationPolling();
+        if (pendingSigninAlert) { pendingSigninAlert = false; announceSignIn(); }
     } else {
         currentUser = null;
         currentUsername = null;
@@ -2948,76 +2997,68 @@ safeAddListener(authForm, 'submit', async (e) => {
 
 
 
-        // A Founder Red Pearl key is checked by the database function; ordinary invite codes live in `invitations`.
+        // The database checks the code (check_invite_code) and ALSO enforces it when the account is created, so a
+        // code that is sent along with the sign-up is what actually admits the member.
         const pearlCode = FOUNDER_KEY_RE.test(inviteCode.toUpperCase()) ? inviteCode.toUpperCase() : null;
-        let inviteData = null, inviteErr = null;
-        if (pearlCode) {
-            const res = await db.rpc('check_founder_pearl', { p_code: pearlCode });
-            inviteErr = res.error;
-            inviteData = res.data === true ? { id: pearlCode, status: 'pending' } : null;
-            if (!inviteData && !inviteErr) {
-                clearFounderPearl();
-                alert("That Red Pearl code has expired or was already used. Pop a fresh pearl from the bowl.");
-                authSubmitBtn.disabled = false;
-                authSubmitBtn.textContent = "Sign Up";
-                if (window.turnstile) turnstile.reset();
-                if (authInviteInput()) authInviteInput().value = '';
-                refreshFounder().then(() => { if (founderRemaining() > 0) openFounderModal(); });
-                return;
-            }
-        } else {
-            const res = await db
-                .from('invitations')
-                .select('id, status')
-                .eq('code', inviteCode)
-                .eq('status', 'pending')
-                .maybeSingle();
-            inviteData = res.data;
-            inviteErr = res.error;
+        let codeValid = null; // true / false from the database, null when it cannot be asked
+        try {
+            const res = await db.rpc('check_invite_code', { p_code: inviteCode });
+            if (res.error) throw res.error;
+            codeValid = res.data === true;
+        } catch (e) {
+            if (!isMissingFunctionError(e)) console.warn("Red Pearl code check notice:", e);
+            // Older database without check_invite_code: use the previous checks.
+            try {
+                if (pearlCode) {
+                    const res = await db.rpc('check_founder_pearl', { p_code: pearlCode });
+                    if (!res.error) codeValid = res.data === true;
+                } else {
+                    const res = await db.from('invitations').select('id, status').eq('code', inviteCode).eq('status', 'pending').maybeSingle();
+                    if (!res.error) codeValid = Boolean(res.data);
+                }
+            } catch (err2) { /* leave null */ }
         }
 
-
-
-
-        if (inviteErr || !inviteData) {
-            alert("Invalid or already used Red Pearl code.");
+        if (codeValid !== true) {
+            if (pearlCode && codeValid === false) {
+                clearFounderPearl();
+                alert("That Red Pearl code has expired or was already used. Pop a fresh pearl from the bowl.");
+                if (authInviteInput()) authInviteInput().value = '';
+                refreshFounder().then(() => { if (founderRemaining() > 0) openFounderModal(); });
+            } else {
+                alert(codeValid === false ? "Invalid or already used Red Pearl code." : "We couldn't check your Red Pearl code right now. Please try again in a moment.");
+            }
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = "Sign Up";
             if (window.turnstile) turnstile.reset();
             return;
         }
 
-
-
-
         const { error } = await db.auth.signUp({
             email,
             password,
             options: { 
-                data: { username: username },
+                data: { username: username, invite_code: inviteCode },
                 captchaToken: captchaToken // Supabase backend validates this
             }
         });
 
-
-
-
         authSubmitBtn.disabled = false;
         authSubmitBtn.textContent = "Sign Up";
 
-
-
-
         if (error) {
-            alert(`Sign up error: ${error.message}`);
+            // The database refuses accounts without a valid unused code with a generic "Database error saving new user".
+            const codeProblem = /database error saving new user|red pearl code/i.test(error.message || '');
+            if (codeProblem && pearlCode) clearFounderPearl();
+            alert(codeProblem
+                ? "Your Red Pearl code was not accepted. It may have expired or already been used. Please try a different code."
+                : `Sign up error: ${error.message}`);
             if (window.turnstile) turnstile.reset(); 
             return;
         }
 
-
-
-
         // Burn the founder pearl so it can't be used twice (the bowl counter drops as the new profile appears).
+        // (The database already did this when the account was created; this is only for older databases.)
         if (pearlCode) {
             db.rpc('claim_founder_pearl', { p_code: pearlCode, p_username: username }).then(null, () => {});
             clearFounderPearl();
@@ -3067,6 +3108,7 @@ safeAddListener(authForm, 'submit', async (e) => {
             if (window.turnstile) turnstile.reset();
             return;
         }
+        pendingSigninAlert = true;
         authForm.reset();
         if (window.turnstile) turnstile.reset();
     }
@@ -6371,7 +6413,11 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
 
 
 
-    loadMessages(true);
+    // Load the chat's privacy settings first so expired or cleared messages never flash on screen.
+    chatPrivacy = { timer: 0, clearedAt: null };
+    updateChatPrivacyUI();
+    const openedConversation = conversationId;
+    loadChatPrivacy(conversationId).then(() => { if (activeConversationId === openedConversation) loadMessages(true); });
 
 
 
@@ -6466,6 +6512,7 @@ function createMessageElement(msg) {
     const row = document.createElement('div');
     row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
     row.id = `msg-${msg.id}`;
+    if (msg.created_at) row.dataset.created = msg.created_at;
     if (isOptimistic) row.style.opacity = '0.75';
 
 
@@ -6610,7 +6657,7 @@ async function loadMessages(forceScroll = false) {
 
 
 
-    const visibleMessages = (messages || []).reverse().filter(m => !isBlockedMessage(m));
+    const visibleMessages = (messages || []).reverse().filter(m => !isBlockedMessage(m) && !isMessageExpiredOrCleared(m));
 
 
 
@@ -6759,6 +6806,11 @@ async function loadMessages(forceScroll = false) {
 
 safeAddListener(dmImageInput, 'change', () => {
     const file = dmImageInput.files[0];
+    if (file && chatPrivacy.timer > 0) {
+        dmImageInput.value = '';
+        showToast({ title: "No photos right now", message: "Photos are turned off while disappearing messages are on in this chat.", type: "info", icon: "◈", duration: 4500, force: true });
+        return;
+    }
     const label = document.querySelector('.upload-photo-label');
     if (!label) return;
     if (file) {
@@ -7562,7 +7614,7 @@ Turing's Gate is built to protect organic human discussions from automated AI cr
     </div>
     <div class="diagram-step">
         <span class="diagram-badge">2. Telemetry Cadence</span>
-        <span>In-app keystroke intervals and micro-pauses are evaluated in real time. Mechanical, zero-variance cadence raises suspicion scores.</span>
+        <span>Simple behaviour signals (pasted text, impossible typing speed, a hidden trap field and rapid-fire posting) feed a 0 to 5 risk score. Only the score is kept, never what you typed.</span>
     </div>
     <div class="diagram-step">
         <span class="diagram-badge">3. Web of Trust (3 Lifetime Invites)</span>
@@ -9543,12 +9595,11 @@ safeAddListener(forumForm, 'submit', async (event) => {
 
 
 
-        if (currentUser && db) {
-            try {
-                await db.from('profiles').update({ suspicion_score: suspicionScore }).eq('id', currentUser.id);
-            } catch (err) {
-                console.warn("Suspicion update error:", err);
-            }
+        const saved = await persistBehavior(behaviorPoints);
+        if (saved) {
+            suspicionScore = Math.min(5, Math.max(suspicionScore, saved.score)); // the database has the final say
+            if (saved.suspended) suspicionScore = 5;
+            updateSuspicionUI();
         }
 
 
@@ -12619,6 +12670,7 @@ async function initUserCallSignaling() {
 
                 triggerIncomingCallUI(data);
             })
+            .on('broadcast', { event: 'security_signin' }, (payload) => showSigninAlert(payload?.payload))
             .on('broadcast', { event: 'cancel_call' }, (payload) => {
                 const data = payload?.payload;
                 const ids = [...(data?.callIds || []), ...(data?.callId ? [data.callId] : [])];
@@ -14245,6 +14297,412 @@ safeAddListener(fEl('founder-ribbon'), 'click', () => {
     }
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !currentUser && founderStatus) refreshFounder(); });
+
+// ---------------------------------------------------------------------------------------------------------
+// PRIVACY & SECURITY CENTER: two-factor login, sign-in alerts, "Download my data", disappearing messages.
+// ---------------------------------------------------------------------------------------------------------
+const mfaEl = (id) => document.getElementById(id);
+
+// Shows the two-factor window and resolves true once onSubmit(code) succeeds, false if the person backs out.
+// onSubmit throws an Error to show a message and let them try again.
+function openMfaModal({ title, prompt, setup = null, submitText = 'Verify', cancelText = 'Cancel', locked = false, onSubmit }) {
+    return new Promise((resolve) => {
+        const modal = mfaEl('mfa-modal'), code = mfaEl('mfa-code'), status = mfaEl('mfa-status');
+        const submit = mfaEl('mfa-submit'), cancel = mfaEl('mfa-cancel'), closeX = mfaEl('mfa-close');
+        if (!modal) { resolve(false); return; }
+        mfaEl('mfa-title').textContent = title;
+        mfaEl('mfa-prompt').textContent = prompt;
+        submit.textContent = submitText;
+        cancel.textContent = cancelText;
+        status.textContent = '';
+        status.classList.remove('ok');
+        code.value = '';
+        // A sign-in challenge must be answered (or the person signed out), so it ignores outside clicks, Esc and the X.
+        modal.toggleAttribute('data-no-backdrop-close', locked);
+        closeX.classList.toggle('hidden', locked);
+        const setupBox = mfaEl('mfa-setup');
+        setupBox.classList.toggle('hidden', !setup);
+        if (setup) {
+            const qr = String(setup.qr || '');
+            if (/^data:image\/svg\+xml/i.test(qr)) mfaEl('mfa-qr').src = qr; else mfaEl('mfa-qr').removeAttribute('src');
+            mfaEl('mfa-qr').classList.toggle('hidden', !/^data:image\/svg\+xml/i.test(qr));
+            mfaEl('mfa-secret').textContent = setup.secret || '';
+        }
+
+        let busy = false, done = false;
+        const finish = (result) => {
+            if (done) return;
+            done = true;
+            submit.removeEventListener('click', onGo);
+            cancel.removeEventListener('click', onNo);
+            closeX.removeEventListener('click', onNo);
+            code.removeEventListener('keydown', onKey);
+            code.removeEventListener('input', onInput);
+            modal.classList.add('hidden');
+            mfaEl('mfa-qr').removeAttribute('src');
+            mfaEl('mfa-secret').textContent = '';
+            code.value = '';
+            resolve(result);
+        };
+        const onNo = () => { if (!busy) finish(false); };
+        const onGo = async () => {
+            if (busy) return;
+            const digits = code.value.replace(/\D/g, '');
+            if (digits.length !== 6) { status.textContent = 'Enter the 6-digit code.'; return; }
+            busy = true; submit.disabled = true; status.textContent = '';
+            try { await onSubmit(digits); busy = false; submit.disabled = false; finish(true); }
+            catch (err) {
+                busy = false; submit.disabled = false;
+                status.textContent = /invalid|expired|incorrect/i.test(err && err.message || '') ? 'That code did not work. Check the app and try the new code.' : ((err && err.message) || 'Something went wrong. Try again.');
+                code.select();
+            }
+        };
+        const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); onGo(); } };
+        const onInput = () => { code.value = code.value.replace(/\D/g, '').slice(0, 6); };
+        submit.addEventListener('click', onGo);
+        cancel.addEventListener('click', onNo);
+        closeX.addEventListener('click', onNo);
+        code.addEventListener('keydown', onKey);
+        code.addEventListener('input', onInput);
+        modal.classList.remove('hidden');
+        setTimeout(() => code.focus({ preventScroll: true }), 30);
+    });
+}
+
+// Called before the app loads for a signed-in member. Returns false when they were signed out instead.
+async function ensureMfaVerified(user) {
+    if (!db || !db.auth || !db.auth.mfa || !user) return true;
+    if (mfaCleared.has(user.id)) return true;
+    if (mfaPending) return mfaPending;
+    mfaPending = (async () => {
+        try {
+            let level = null;
+            try { level = (await db.auth.mfa.getAuthenticatorAssuranceLevel()).data; } catch (e) { return true; } // cannot tell: never lock anyone out
+            if (!level || level.nextLevel !== 'aal2' || level.currentLevel === 'aal2') { mfaCleared.add(user.id); return true; }
+            const factors = await db.auth.mfa.listFactors();
+            const factor = ((factors.data && factors.data.totp) || [])[0];
+            if (!factor) { mfaCleared.add(user.id); return true; }
+            const ok = await openMfaModal({
+                title: 'Two-factor sign-in',
+                prompt: 'Enter the 6-digit code from your authenticator app to finish signing in.',
+                submitText: 'Verify', cancelText: 'Sign out', locked: true,
+                onSubmit: async (code) => {
+                    const r = await db.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+                    if (r.error) throw r.error;
+                }
+            });
+            if (!ok) { await db.auth.signOut(); return false; }
+            mfaCleared.add(user.id);
+            return true;
+        } finally {
+            mfaPending = null;
+        }
+    })();
+    return mfaPending;
+}
+
+async function getVerifiedTotpFactor() {
+    const r = await db.auth.mfa.listFactors();
+    return ((r.data && r.data.totp) || []).find(f => f.status === 'verified') || null;
+}
+
+async function refreshMfaState() {
+    const text = mfaEl('mfa-state-text'), btn = mfaEl('mfa-toggle-btn');
+    if (!text || !btn) return;
+    if (!db || !db.auth || !db.auth.mfa || !currentUser) { text.textContent = 'Not available right now.'; btn.disabled = true; return; }
+    try {
+        const factor = await getVerifiedTotpFactor();
+        btn.dataset.state = factor ? 'on' : 'off';
+        text.textContent = factor
+            ? 'On. You enter a code from your authenticator app each time you sign in.'
+            : 'Off (optional). You can add a second step so a stolen password is not enough to get in. Nobody is required to use this.';
+        btn.textContent = factor ? 'Turn off' : 'Turn on';
+        btn.className = factor ? 'danger' : '';
+        btn.disabled = false;
+    } catch (e) {
+        text.textContent = 'Could not check right now.';
+        btn.disabled = true;
+    }
+}
+
+async function enableTwoFactor() {
+    const btn = mfaEl('mfa-toggle-btn');
+    btn.disabled = true;
+    try {
+        // clear half-finished setups from earlier attempts
+        const all = await db.auth.mfa.listFactors();
+        for (const f of ((all.data && all.data.all) || [])) {
+            if (f.status === 'unverified') await db.auth.mfa.unenroll({ factorId: f.id });
+        }
+        const en = await db.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Turing Gate ${new Date().toISOString().slice(0, 10)}` });
+        if (en.error) {
+            showToast({ title: "Two-factor setup", message: `Could not start: ${en.error.message}. If this keeps happening, two-factor login may not be switched on for this site yet.`, type: "error", icon: "▵", duration: 9000, force: true });
+            return;
+        }
+        const factorId = en.data.id;
+        const ok = await openMfaModal({
+            title: 'Turn on two-factor',
+            prompt: '2. Enter the 6-digit code your authenticator app shows now.',
+            setup: { qr: en.data.totp && en.data.totp.qr_code, secret: en.data.totp && en.data.totp.secret },
+            submitText: 'Turn on',
+            onSubmit: async (code) => {
+                const r = await db.auth.mfa.challengeAndVerify({ factorId, code });
+                if (r.error) throw r.error;
+            }
+        });
+        if (!ok) { await db.auth.mfa.unenroll({ factorId }).then(null, () => {}); return; }
+        if (currentUser) mfaCleared.add(currentUser.id);
+        hapticTap('success');
+        showToast({ title: "Two-factor is on", message: "Your other devices will ask for a code the next time you open the app.", type: "success", icon: "◈", duration: 7000, force: true });
+    } catch (e) {
+        showToast({ title: "Two-factor setup", message: (e && e.message) || 'Something went wrong.', type: "error", icon: "▵", duration: 7000, force: true });
+    } finally {
+        await refreshMfaState();
+    }
+}
+
+async function disableTwoFactor() {
+    const btn = mfaEl('mfa-toggle-btn');
+    btn.disabled = true;
+    try {
+        const factor = await getVerifiedTotpFactor();
+        if (!factor) return;
+        const ok = await openMfaModal({
+            title: 'Turn off two-factor',
+            prompt: 'Enter a code from your authenticator app to confirm.',
+            submitText: 'Turn off',
+            onSubmit: async (code) => {
+                const v = await db.auth.mfa.challengeAndVerify({ factorId: factor.id, code });
+                if (v.error) throw v.error;
+                const u = await db.auth.mfa.unenroll({ factorId: factor.id });
+                if (u.error) throw u.error;
+            }
+        });
+        if (ok) showToast({ title: "Two-factor is off", message: "You can turn it back on any time.", type: "info", icon: "◈", duration: 5000, force: true });
+    } catch (e) {
+        showToast({ title: "Two-factor", message: (e && e.message) || 'Something went wrong.', type: "error", icon: "▵", duration: 7000, force: true });
+    } finally {
+        await refreshMfaState();
+    }
+}
+
+safeAddListener(mfaEl('mfa-toggle-btn'), 'click', () => {
+    if (mfaEl('mfa-toggle-btn').dataset.state === 'on') disableTwoFactor(); else enableTwoFactor();
+});
+
+safeAddListener(mfaEl('signout-others-btn'), 'click', async () => {
+    if (!db || !currentUser) return;
+    if (!(await uiConfirm("Every other phone, tablet and computer signed in to your account will be signed out. This device stays signed in.", { title: 'Sign out other devices?', confirmText: 'Sign them out', danger: true }))) return;
+    const { error } = await db.auth.signOut({ scope: 'others' });
+    if (error) showToast({ title: "Not signed out", message: error.message, type: "error", icon: "▵", duration: 6000, force: true });
+    else showToast({ title: "Other devices signed out", message: "If you think someone else had your password, change it now in Settings > Profile.", type: "success", icon: "◈", duration: 8000, force: true });
+});
+
+safeAddListener(mfaEl('privacy-delete-account-btn'), 'click', () => { if (openDeleteModalBtn) openDeleteModalBtn.click(); });
+
+// --- Sign-in alerts: a new password sign-in tells the member's other open devices ---
+function deviceLabel() {
+    const ua = navigator.userAgent || '';
+    if (/TuringsGateApp/.test(ua)) return "Turing's Gate app";
+    const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'Chromebook' : /Linux/.test(ua) ? 'Linux' : 'a device';
+    const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /(Chrome|CriOS)\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'a browser';
+    return `${browser} on ${os}`;
+}
+function thisDeviceId() {
+    try {
+        let id = localStorage.getItem('tg_device_id');
+        if (!id) { id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); localStorage.setItem('tg_device_id', id); }
+        return id;
+    } catch (e) { return 'unknown'; }
+}
+function announceSignIn() {
+    if (!currentUser) return;
+    sendSignalOnce(`user_call_sig_${currentUser.id}`, { event: 'security_signin', payload: { label: deviceLabel(), from: thisDeviceId(), at: Date.now() } });
+}
+function showSigninAlert(data) {
+    if (!data || !currentUser || data.from === thisDeviceId()) return;
+    const label = String(data.label || 'a new device').replace(/[^A-Za-z0-9 .'()-]/g, '').slice(0, 40) || 'a new device';
+    showToast({
+        title: "New sign-in to your account",
+        message: `Signed in on ${label}. If this was not you, change your password and use Settings > Privacy > Sign out others.`,
+        type: "error", icon: "▵", duration: 15000, force: true,
+        onClick: () => { if (typeof openSettingsBtn !== 'undefined' && openSettingsBtn) { openSettingsBtn.click(); switchSettingsTab('privacy'); } }
+    });
+}
+
+// --- Download my data ---
+async function collectMyData() {
+    const uid = currentUser.id, uname = (currentUsername || '').toLowerCase();
+    const out = {
+        exported_at: new Date().toISOString(),
+        about: "A copy of the data Turing's Gate holds about you. Chats include messages from the other people in them. Reports you filed are kept for moderation and are not included. Photos and videos are linked by address rather than embedded.",
+        account: {
+            id: uid, email: currentUser.email || null, username: currentUsername,
+            created_at: currentUser.created_at || null, last_sign_in_at: currentUser.last_sign_in_at || null
+        }
+    };
+    const ask = async (key, run) => {
+        try {
+            const r = await run();
+            if (r && r.error) throw r.error;
+            out[key] = r && 'data' in r ? r.data : r;
+        } catch (e) { out[key] = { unavailable: String((e && e.message) || e) }; }
+    };
+    await ask('profile', () => db.from('profiles').select('*').eq('id', uid).maybeSingle());
+    await ask('posts', () => db.from('Posts').select('*').ilike('author', uname).order('id').limit(10000));
+    await ask('comments', () => db.from('post_comments').select('*').ilike('author', uname).order('id').limit(10000));
+    await ask('friendships', () => db.from('friendships').select('*').or(`user_id.eq.${uid},friend_id.eq.${uid}`).limit(10000));
+    await ask('blocked_members', () => db.from('user_blocks').select('*').limit(10000));
+    await ask('votes', () => db.from('post_votes').select('*').limit(50000));
+    await ask('notifications', () => db.from('user_notifications').select('*').eq('user_id', uid).order('id').limit(10000));
+    await ask('thread_flairs', () => db.from('user_thread_flairs').select('*').ilike('username', uname).limit(10000));
+    await ask('invites_created', () => db.from('invitations').select('code, status, created_at, claimed_by_username, claimed_at').eq('inviter_id', uid).limit(1000));
+    try {
+        const mem = await db.from('conversation_members').select('conversation_id').eq('user_id', uid).limit(10000);
+        if (mem.error) throw mem.error;
+        const ids = (mem.data || []).map(m => m.conversation_id);
+        out.conversations = ids.length ? (await db.from('conversations').select('*').in('id', ids)).data || [] : [];
+        out.messages_in_my_chats = ids.length ? (await db.from('chat_messages').select('*').in('conversation_id', ids).order('id').limit(50000)).data || [] : [];
+    } catch (e) { out.conversations = { unavailable: String((e && e.message) || e) }; }
+    const local = {};
+    try { Object.keys(localStorage).filter(k => /^(tg_|forum_)/.test(k) && !/founder_pearl|device_id/.test(k)).forEach(k => { local[k] = localStorage.getItem(k); }); } catch (e) { /* storage unavailable */ }
+    out.settings_on_this_device = local;
+    return out;
+}
+
+async function deliverFile(file) {
+    const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "My Turing's Gate data" }); return 'shared'; }
+        catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; }
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url; a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return 'downloaded';
+}
+
+safeAddListener(mfaEl('export-data-btn'), 'click', async () => {
+    if (!db || !currentUser) return;
+    const btn = mfaEl('export-data-btn'), status = mfaEl('export-data-status');
+    btn.disabled = true; btn.textContent = 'Preparing...';
+    status.textContent = 'Gathering your data. This can take a moment.';
+    try {
+        const data = await collectMyData();
+        const file = new File([JSON.stringify(data, null, 2)], `turings-gate-data-${(currentUsername || 'me').toLowerCase()}-${new Date().toISOString().slice(0, 10)}.json`, { type: 'application/json' });
+        const how = await deliverFile(file);
+        const count = (v) => Array.isArray(v) ? v.length : 0;
+        status.textContent = how === 'cancelled' ? 'Cancelled.' : `Done: ${count(data.posts)} posts, ${count(data.comments)} replies, ${count(data.messages_in_my_chats)} chat messages, ${count(data.friendships)} friend links (${(file.size / 1024).toFixed(0)} KB).`;
+        if (how !== 'cancelled') showToast({ title: "Your data is ready", message: how === 'shared' ? "Choose where to save it." : "The file was downloaded.", type: "success", icon: "◈", duration: 5000, force: true });
+    } catch (e) {
+        status.textContent = 'Could not prepare your data right now. Please try again.';
+        console.warn("Data export notice:", e);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Download my data';
+    }
+});
+
+function refreshPrivacyCenter() {
+    const score = mfaEl('psc-human-score');
+    if (score) score.textContent = `${Math.min(5, Math.max(0, Number(suspicionScore) || 0))} / 5`;
+    refreshMfaState();
+}
+
+// --- Disappearing messages and "clear chat for me" ---
+const formatTimer = (secs) => secs === 86400 ? '24 hours' : secs === 604800 ? '7 days' : 'off';
+
+function isMessageExpiredOrCleared(msg) {
+    if (!msg || !msg.created_at) return false;
+    const t = Date.parse(msg.created_at);
+    if (!Number.isFinite(t)) return false;
+    if (chatPrivacy.clearedAt && t <= Date.parse(chatPrivacy.clearedAt)) return true;
+    return chatPrivacy.timer > 0 && t < Date.now() - chatPrivacy.timer * 1000;
+}
+
+function updateChatPrivacyUI() {
+    const banner = mfaEl('chat-privacy-banner'), opts = mfaEl('chat-options-btn');
+    if (opts) opts.classList.toggle('hidden', !activeConversationId);
+    if (banner) {
+        banner.classList.toggle('hidden', !(chatPrivacy.timer > 0));
+        banner.textContent = chatPrivacy.timer > 0 ? `⏱ Messages in this chat disappear after ${formatTimer(chatPrivacy.timer)}. Photos are turned off while this is on.` : '';
+    }
+    const label = document.querySelector('.upload-photo-label');
+    if (label) {
+        label.style.opacity = chatPrivacy.timer > 0 ? '0.4' : '';
+        label.style.pointerEvents = chatPrivacy.timer > 0 ? 'none' : '';
+    }
+    if (dmImageInput) dmImageInput.disabled = chatPrivacy.timer > 0 || !activeConversationId;
+}
+
+async function loadChatPrivacy(convId) {
+    chatPrivacy = { timer: 0, clearedAt: null };
+    if (!db || !currentUser || !convId) { updateChatPrivacyUI(); return; }
+    try {
+        const [c, m] = await Promise.all([
+            db.from('conversations').select('disappear_after').eq('id', convId).maybeSingle(),
+            db.from('conversation_members').select('cleared_at').eq('conversation_id', convId).eq('user_id', currentUser.id).maybeSingle()
+        ]);
+        if (convId !== activeConversationId) return; // the person opened another chat meanwhile
+        if (!c.error && c.data) chatPrivacy.timer = Number(c.data.disappear_after) || 0;
+        if (!m.error && m.data) chatPrivacy.clearedAt = m.data.cleared_at || null;
+    } catch (e) { /* the privacy columns are not installed yet: the feature stays off */ }
+    updateChatPrivacyUI();
+    db.rpc('purge_expired_messages').then(null, () => {});
+}
+
+safeAddListener(mfaEl('chat-options-btn'), 'click', async () => {
+    if (!activeConversationId || !db) return;
+    const choice = await uiChoose('', [
+        { value: 'timer', label: `⏱ Disappearing messages (${formatTimer(chatPrivacy.timer)})` },
+        { value: 'clear', label: '🧹 Clear this chat for me' }
+    ], { title: 'Chat options' });
+    const convId = activeConversationId;
+    if (choice === 'timer') {
+        const pick = await uiChoose('Messages are deleted for everyone in this chat once they are older than the timer. Photos cannot be sent while a timer is on.', [
+            { value: 0, label: 'Off', current: chatPrivacy.timer === 0 },
+            { value: 86400, label: '24 hours', current: chatPrivacy.timer === 86400 },
+            { value: 604800, label: '7 days', current: chatPrivacy.timer === 604800 }
+        ], { title: 'Disappearing messages' });
+        if (pick === null || pick === chatPrivacy.timer) return;
+        const { error } = await db.rpc('set_conversation_disappearing', { p_conversation_id: String(convId), p_seconds: pick });
+        if (error) {
+            showToast({ title: "Timer not changed", message: isMissingFunctionError(error) ? "This needs a database update that has not been installed yet." : error.message, type: "error", icon: "▵", duration: 6000, force: true });
+            return;
+        }
+        chatPrivacy.timer = pick;
+        updateChatPrivacyUI();
+        // tell everyone in the chat, so nobody is surprised
+        try {
+            await sendMessageToConversation({
+                convId, partnerId: activeConversationPartnerId, isFriend: activeConversationIsFriend,
+                text: pick ? `⏱ ${currentUsername} turned on disappearing messages: ${formatTimer(pick)}.` : `⏱ ${currentUsername} turned off disappearing messages.`
+            });
+        } catch (e) { /* the timer is set even if the notice could not be sent */ }
+        loadMessages(true);
+    } else if (choice === 'clear') {
+        if (!(await uiConfirm("This hides the chat history for you. The messages are permanently deleted once everyone in the chat has cleared it.", { title: 'Clear this chat?', confirmText: 'Clear for me', danger: true }))) return;
+        const { error } = await db.rpc('clear_conversation_for_me', { p_conversation_id: String(convId) });
+        if (error) {
+            showToast({ title: "Chat not cleared", message: isMissingFunctionError(error) ? "This needs a database update that has not been installed yet." : error.message, type: "error", icon: "▵", duration: 6000, force: true });
+            return;
+        }
+        chatPrivacy.clearedAt = new Date().toISOString();
+        loadMessages(true);
+        showToast({ title: "Chat cleared", message: "The history is hidden for you.", type: "success", icon: "◈", duration: 4000, force: true });
+    }
+});
+
+// Remove messages from the open chat as they expire, and keep the server tidy while the chat is open.
+setInterval(() => {
+    if (!activeConversationId || !chatMessages) return;
+    if (chatPrivacy.timer > 0) {
+        const cutoff = Date.now() - chatPrivacy.timer * 1000;
+        chatMessages.querySelectorAll('.msg-row[data-created]').forEach(row => { if (Date.parse(row.dataset.created) < cutoff) row.remove(); });
+    }
+}, 30000);
+setInterval(() => { if (activeConversationId && chatPrivacy.timer > 0 && db && !document.hidden) db.rpc('purge_expired_messages').then(null, () => {}); }, 300000);
 
 // ---------------------------------------------------------------------------------------------------------
 // CLICK / TAP OUTSIDE A WINDOW TO CLOSE IT (and Esc on a keyboard). Works for every overlay in the app by pressing the
