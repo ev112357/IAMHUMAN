@@ -1344,7 +1344,7 @@ async function loadProfileUserActivity(username, isPrivate) {
     const { data: posts } = await db
         .from('Posts')
         .select('*')
-        .ilike('author', username)
+        .ilike('author', likeExact(username))
         .order('id', { ascending: false })
         .limit(20);
 
@@ -1391,7 +1391,7 @@ async function loadProfileUserActivity(username, isPrivate) {
     const { data: comments } = await db
         .from('post_comments')
         .select('*')
-        .ilike('author', username)
+        .ilike('author', likeExact(username))
         .order('id', { ascending: false })
         .limit(20);
 
@@ -2192,7 +2192,7 @@ async function calculateUserScore(username) {
         const { data: posts } = await db
             .from('Posts')
             .select('likes, dislikes')
-            .ilike('author', cleanUser);
+            .ilike('author', likeExact(cleanUser));
 
 
 
@@ -2208,7 +2208,7 @@ async function calculateUserScore(username) {
         const { data: comments } = await db
             .from('post_comments')
             .select('likes, dislikes')
-            .ilike('author', cleanUser);
+            .ilike('author', likeExact(cleanUser));
 
 
 
@@ -2335,7 +2335,7 @@ window.openUserProfileCard = async function(username) {
         const { data: profile } = await db
             .from('profiles')
             .select('id, username, avatar_url, is_private')
-            .ilike('username', cleanUser)
+            .ilike('username', likeExact(cleanUser))
             .maybeSingle();
 
 
@@ -3001,10 +3001,12 @@ safeAddListener(authForm, 'submit', async (e) => {
         // code that is sent along with the sign-up is what actually admits the member.
         const pearlCode = FOUNDER_KEY_RE.test(inviteCode.toUpperCase()) ? inviteCode.toUpperCase() : null;
         let codeValid = null; // true / false from the database, null when it cannot be asked
+        let serverGate = false; // true when the database itself admits (and records) the code at sign-up
         try {
             const res = await db.rpc('check_invite_code', { p_code: inviteCode });
             if (res.error) throw res.error;
             codeValid = res.data === true;
+            serverGate = true;
         } catch (e) {
             if (!isMissingFunctionError(e)) console.warn("Red Pearl code check notice:", e);
             // Older database without check_invite_code: use the previous checks.
@@ -3047,12 +3049,17 @@ safeAddListener(authForm, 'submit', async (e) => {
         authSubmitBtn.textContent = "Sign Up";
 
         if (error) {
-            // The database refuses accounts without a valid unused code with a generic "Database error saving new user".
-            const codeProblem = /database error saving new user|red pearl code/i.test(error.message || '');
+            // The sign-in service hides the real reason behind a generic "Database error saving new user", which can mean
+            // the code was just used or expired, or that the username is taken. The code was already checked a moment ago,
+            // so keep the code and ask the person to check both.
+            const generic = /database error saving new user/i.test(error.message || '');
+            const codeProblem = /red pearl code/i.test(error.message || '');
             if (codeProblem && pearlCode) clearFounderPearl();
             alert(codeProblem
                 ? "Your Red Pearl code was not accepted. It may have expired or already been used. Please try a different code."
-                : `Sign up error: ${error.message}`);
+                : generic
+                    ? "We couldn't create your account. The username may already be taken, or your Red Pearl code may have just expired or been used. Please check both and try again."
+                    : `Sign up error: ${error.message}`);
             if (window.turnstile) turnstile.reset(); 
             return;
         }
@@ -3060,12 +3067,12 @@ safeAddListener(authForm, 'submit', async (e) => {
         // Burn the founder pearl so it can't be used twice (the bowl counter drops as the new profile appears).
         // (The database already did this when the account was created; this is only for older databases.)
         if (pearlCode) {
-            db.rpc('claim_founder_pearl', { p_code: pearlCode, p_username: username }).then(null, () => {});
+            if (!serverGate) db.rpc('claim_founder_pearl', { p_code: pearlCode, p_username: username }).then(null, () => {});
             clearFounderPearl();
         }
 
         // Mark invite as claimed and log chain-of-custody lineage
-        if (inviteCode && !pearlCode) {
+        if (inviteCode && !pearlCode && !serverGate) {
             try {
                 const { data: { user: newUser } } = await db.auth.getUser().catch(() => ({ data: {} }));
                 const claimPayload = {
@@ -3300,8 +3307,10 @@ safeAddListener(finalDeleteBtn, 'click', async () => {
     // requires that in-app deletion actually deletes the account, not just a profile row.
     const doomedId = currentUser.id;
     let viaLegacyPath = false;
+    let removedFiles = [];
     try {
-        const { error: rpcErr } = await db.rpc('delete_my_account');
+        const { data: delData, error: rpcErr } = await db.rpc('delete_my_account');
+        if (delData && Array.isArray(delData.files)) removedFiles = delData.files;
         if (rpcErr) {
             if (!isMissingFunctionError(rpcErr)) throw rpcErr;
             // The SQL hasn't been installed yet: fall back to removing the profile only.
@@ -3316,6 +3325,8 @@ safeAddListener(finalDeleteBtn, 'click', async () => {
         return;
     }
 
+    // The profile photo and photos sent in chats belonged to this person only: remove them from storage too (best effort).
+    await removeStoredFiles(removedFiles);
     try {
         Object.keys(localStorage).filter(k => k.includes(doomedId)).forEach(k => localStorage.removeItem(k));
     } catch (e) { /* storage unavailable */ }
@@ -3480,7 +3491,7 @@ async function unblockUser(id) {
 async function resolveProfileId(username) {
     const clean = String(username || '').toLowerCase().replace('@', '');
     if (!clean || !db) return null;
-    const { data } = await db.from('profiles').select('id').ilike('username', clean).maybeSingle();
+    const { data } = await db.from('profiles').select('id').ilike('username', likeExact(clean)).maybeSingle();
     return data ? data.id : null;
 }
 
@@ -6285,7 +6296,7 @@ safeAddListener(addFriendBtn, 'click', async () => {
     const { data: targetProfile, error: profileErr } = await db
         .from('profiles')
         .select('id, username')
-        .ilike('username', targetUsername)
+        .ilike('username', likeExact(targetUsername))
         .maybeSingle();
 
 
@@ -6693,6 +6704,7 @@ function createMessageElement(msg) {
     row.className = `msg-row ${isMine ? 'mine' : 'theirs'}`;
     row.id = `msg-${msg.id}`;
     if (msg.created_at) row.dataset.created = msg.created_at;
+    if (msg.expires_at) row.dataset.expires = msg.expires_at;
     if (isOptimistic) row.style.opacity = '0.75';
 
 
@@ -7581,6 +7593,36 @@ function isMissingRelationError(error) {
         /schema cache|does not exist|Could not find the table/i.test(error.message || ''));
 }
 
+// ilike() treats _ and % as wildcards; escape them when we mean an exact (case-insensitive) match.
+function likeExact(value) { return String(value).replace(/[\\%_]/g, '\\$&'); }
+
+// Removes files by their public address ( .../storage/v1/object/public/<bucket>/<path> ). Only files of this project, never throws.
+async function removeStoredFiles(urls) {
+    try {
+        const marker = '/storage/v1/object/public/';
+        const byBucket = new Map();
+        (urls || []).forEach((u) => {
+            const str = String(u || '');
+            if (!str.startsWith(SUPABASE_URL)) return;
+            const rest = str.slice(str.indexOf(marker) + marker.length).split('?')[0];
+            if (str.indexOf(marker) < 0 || !rest) return;
+            const slash = rest.indexOf('/');
+            if (slash < 1) return;
+            const bucket = rest.slice(0, slash), path = decodeURIComponent(rest.slice(slash + 1));
+            if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+            byBucket.get(bucket).push(path);
+        });
+        for (const [bucket, paths] of byBucket) await db.storage.from(bucket).remove(paths).then(null, () => {});
+    } catch (e) { /* best effort */ }
+}
+
+// Unguessable invite codes: random hex from the browser's secure random source.
+function randomHex(len) {
+    const bytes = new Uint8Array(Math.ceil(len / 2));
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').slice(0, len).toUpperCase();
+}
+
 function isMissingFunctionError(error) {
     return Boolean(error) && (error.code === 'PGRST202' || error.code === '42883' ||
         /Could not find the function|function .* does not exist/i.test(error.message || ''));
@@ -7668,7 +7710,7 @@ async function handleVote(postId, direction) {
             if (newVote === 1 && previousVote !== 1 && post.author) {
                 const cleanAuthor = post.author.toLowerCase().replace('@', '');
                 if (currentUsername && cleanAuthor !== currentUsername.toLowerCase().replace('@', '')) {
-                    db.from('profiles').select('id').ilike('username', cleanAuthor).maybeSingle()
+                    db.from('profiles').select('id').ilike('username', likeExact(cleanAuthor)).maybeSingle()
                         .then(({ data: authorProfile }) => {
                             if (authorProfile && authorProfile.id) {
                                 sendNotification(
@@ -8398,7 +8440,7 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
 
     // Notify post author
     if (postAuthorUsername && postAuthorUsername.toLowerCase().replace('@', '') !== currentUsername.toLowerCase().replace('@', '')) {
-        db.from('profiles').select('id').ilike('username', postAuthorUsername.toLowerCase().replace('@', '')).maybeSingle()
+        db.from('profiles').select('id').ilike('username', likeExact(postAuthorUsername.toLowerCase().replace('@', ''))).maybeSingle()
             .then(({ data: profile }) => {
                 if (profile?.id) {
                     sendNotification(profile.id, 'comment_reply', postId, 'replied to your post.');
@@ -8413,7 +8455,7 @@ async function submitComment(postId, postAuthorUsername, content, parentId = nul
             .then(({ data: parentComment }) => {
                 const parentAuthor = parentComment?.author?.toLowerCase().replace('@', '');
                 if (parentAuthor && parentAuthor !== currentUsername.toLowerCase().replace('@', '') && parentAuthor !== postAuthorUsername.toLowerCase().replace('@', '')) {
-                    db.from('profiles').select('id').ilike('username', parentAuthor).maybeSingle()
+                    db.from('profiles').select('id').ilike('username', likeExact(parentAuthor)).maybeSingle()
                         .then(({ data: pProfile }) => {
                             if (pProfile?.id) {
                                 sendNotification(pProfile.id, 'comment_reply', postId, 'replied to your comment.');
@@ -10457,7 +10499,7 @@ async function loadUserInvites() {
 
 
                     setTimeout(async () => {
-                        const newCode = 'TG-' + Math.random().toString(16).substr(2, 8).toUpperCase();
+                        const newCode = 'TG-' + randomHex(12);
                         const regenIso = new Date(Date.now() + REGEN_DURATION).toISOString();
 
 
@@ -10714,7 +10756,7 @@ safeAddListener(document.getElementById('admin-overdrive-btn'), 'click', async (
     btn.textContent = 'Minting Key...';
 
 
-    const newCode = 'TG-ADM-' + Math.random().toString(16).substr(2, 6).toUpperCase();
+    const newCode = 'TG-ADM-' + randomHex(12);
     const { error } = await db.from('invitations').insert([{
         inviter_id: currentUser.id,
         inviter_username: currentUsername,
@@ -13729,7 +13771,7 @@ async function sendVoiceStageInvite() {
         const { data: userRow, error } = await db
             .from('profiles')
             .select('id, username')
-            .ilike('username', cleanUser)
+            .ilike('username', likeExact(cleanUser))
             .single();
 
 
@@ -14683,7 +14725,7 @@ safeAddListener(mfaEl('mfa-toggle-btn'), 'click', () => {
 
 safeAddListener(mfaEl('signout-others-btn'), 'click', async () => {
     if (!db || !currentUser) return;
-    if (!(await uiConfirm("Every other phone, tablet and computer signed in to your account will be signed out. This device stays signed in.", { title: 'Sign out other devices?', confirmText: 'Sign them out', danger: true }))) return;
+    if (!(await uiConfirm("Every other phone, tablet and computer signed in to your account will be signed out. This device stays signed in. A device that was already open can keep working for up to an hour before it is asked to sign in again. If you think someone else has your password, change it too.", { title: 'Sign out other devices?', confirmText: 'Sign them out', danger: true }))) return;
     const { error } = await db.auth.signOut({ scope: 'others' });
     if (error) showToast({ title: "Not signed out", message: error.message, type: "error", icon: "▵", duration: 6000, force: true });
     else showToast({ title: "Other devices signed out", message: "If you think someone else had your password, change it now in Settings > Profile.", type: "success", icon: "◈", duration: 8000, force: true });
@@ -14740,13 +14782,13 @@ async function collectMyData() {
         } catch (e) { out[key] = { unavailable: String((e && e.message) || e) }; }
     };
     await ask('profile', () => db.from('profiles').select('*').eq('id', uid).maybeSingle());
-    await ask('posts', () => db.from('Posts').select('*').ilike('author', uname).order('id').limit(10000));
-    await ask('comments', () => db.from('post_comments').select('*').ilike('author', uname).order('id').limit(10000));
+    await ask('posts', () => db.from('Posts').select('*').ilike('author', likeExact(uname)).order('id').limit(10000));
+    await ask('comments', () => db.from('post_comments').select('*').ilike('author', likeExact(uname)).order('id').limit(10000));
     await ask('friendships', () => db.from('friendships').select('*').or(`user_id.eq.${uid},friend_id.eq.${uid}`).limit(10000));
     await ask('blocked_members', () => db.from('user_blocks').select('*').limit(10000));
     await ask('votes', () => db.from('post_votes').select('*').limit(50000));
     await ask('notifications', () => db.from('user_notifications').select('*').eq('user_id', uid).order('id').limit(10000));
-    await ask('thread_flairs', () => db.from('user_thread_flairs').select('*').ilike('username', uname).limit(10000));
+    await ask('thread_flairs', () => db.from('user_thread_flairs').select('*').ilike('username', likeExact(uname)).limit(10000));
     await ask('invites_created', () => db.from('invitations').select('code, status, created_at, claimed_by_username, claimed_at').eq('inviter_id', uid).limit(1000));
     try {
         const mem = await db.from('conversation_members').select('conversation_id').eq('user_id', uid).limit(10000);
@@ -14804,12 +14846,14 @@ function refreshPrivacyCenter() {
 // --- Disappearing messages and "clear chat for me" ---
 const formatTimer = (secs) => secs === 86400 ? '24 hours' : secs === 604800 ? '7 days' : 'off';
 
+// The database stamps every new message with its own expiry (expires_at). A timer only affects messages sent after it was set.
 function isMessageExpiredOrCleared(msg) {
     if (!msg || !msg.created_at) return false;
     const t = Date.parse(msg.created_at);
     if (!Number.isFinite(t)) return false;
     if (chatPrivacy.clearedAt && t <= Date.parse(chatPrivacy.clearedAt)) return true;
-    return chatPrivacy.timer > 0 && t < Date.now() - chatPrivacy.timer * 1000;
+    const exp = msg.expires_at ? Date.parse(msg.expires_at) : NaN;
+    return Number.isFinite(exp) && exp <= Date.now();
 }
 
 function updateChatPrivacyUI() {
@@ -14817,7 +14861,7 @@ function updateChatPrivacyUI() {
     if (opts) opts.classList.toggle('hidden', !activeConversationId);
     if (banner) {
         banner.classList.toggle('hidden', !(chatPrivacy.timer > 0));
-        banner.textContent = chatPrivacy.timer > 0 ? `⏱ Messages in this chat disappear after ${formatTimer(chatPrivacy.timer)}. Photos are turned off while this is on.` : '';
+        banner.textContent = chatPrivacy.timer > 0 ? `⏱ New messages in this chat disappear after ${formatTimer(chatPrivacy.timer)}. Earlier messages stay. Photos are turned off while this is on.` : '';
     }
     const label = document.querySelector('.upload-photo-label');
     if (label) {
@@ -14851,7 +14895,7 @@ safeAddListener(mfaEl('chat-options-btn'), 'click', async () => {
     ], { title: 'Chat options' });
     const convId = activeConversationId;
     if (choice === 'timer') {
-        const pick = await uiChoose('Messages are deleted for everyone in this chat once they are older than the timer. Photos cannot be sent while a timer is on.', [
+        const pick = await uiChoose('Messages sent from now on are deleted for everyone in this chat once they are older than the timer. Earlier messages are not affected. Photos cannot be sent while a timer is on.', [
             { value: 0, label: 'Off', current: chatPrivacy.timer === 0 },
             { value: 86400, label: '24 hours', current: chatPrivacy.timer === 86400 },
             { value: 604800, label: '7 days', current: chatPrivacy.timer === 604800 }
@@ -14868,7 +14912,7 @@ safeAddListener(mfaEl('chat-options-btn'), 'click', async () => {
         try {
             await sendMessageToConversation({
                 convId, partnerId: activeConversationPartnerId, isFriend: activeConversationIsFriend,
-                text: pick ? `⏱ ${currentUsername} turned on disappearing messages: ${formatTimer(pick)}.` : `⏱ ${currentUsername} turned off disappearing messages.`
+                text: pick ? `⏱ ${currentUsername} turned on disappearing messages: new messages disappear after ${formatTimer(pick)}.` : `⏱ ${currentUsername} turned off disappearing messages for new messages.`
             });
         } catch (e) { /* the timer is set even if the notice could not be sent */ }
         loadMessages(true);
@@ -14888,12 +14932,10 @@ safeAddListener(mfaEl('chat-options-btn'), 'click', async () => {
 // Remove messages from the open chat as they expire, and keep the server tidy while the chat is open.
 setInterval(() => {
     if (!activeConversationId || !chatMessages) return;
-    if (chatPrivacy.timer > 0) {
-        const cutoff = Date.now() - chatPrivacy.timer * 1000;
-        chatMessages.querySelectorAll('.msg-row[data-created]').forEach(row => { if (Date.parse(row.dataset.created) < cutoff) row.remove(); });
-    }
+    const now = Date.now();
+    chatMessages.querySelectorAll('.msg-row[data-expires]').forEach(row => { if (Date.parse(row.dataset.expires) <= now) row.remove(); });
 }, 30000);
-setInterval(() => { if (activeConversationId && chatPrivacy.timer > 0 && db && !document.hidden) db.rpc('purge_expired_messages').then(null, () => {}); }, 300000);
+setInterval(() => { if (activeConversationId && db && !document.hidden) db.rpc('purge_expired_messages').then(null, () => {}); }, 300000);
 
 // ---------------------------------------------------------------------------------------------------------
 // CLICK / TAP OUTSIDE A WINDOW TO CLOSE IT (and Esc on a keyboard). Works for every overlay in the app by pressing the

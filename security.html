@@ -51,8 +51,8 @@
         <h2>Protecting your account</h2>
         <div class="grid">
             <div class="card"><h3>Passwords</h3><p>Your password is stored only as a salted hash by our sign-in provider. We cannot read it and nobody can look it up.</p></div>
-            <div class="card"><h3>Two-factor sign-in (optional)</h3><p>Turn it on in <strong>Settings &gt; Privacy</strong>. You then enter a 6-digit code from an authenticator app when you sign in. It is off unless you choose to use it. We recommend it, but we never require it.</p></div>
-            <div class="card"><h3>Sign out other devices</h3><p>One button in <strong>Settings &gt; Privacy</strong> signs your account out everywhere except the device you are holding. Use it if a phone is lost or you signed in on a shared computer.</p></div>
+            <div class="card"><h3>Two-factor sign-in (optional)</h3><p>Turn it on in <strong>Settings &gt; Privacy</strong>. You then enter a 6-digit code from an authenticator app when you sign in. It is off unless you choose to use it. We recommend it, but we never require it. If you ever lose your authenticator, email us from your account address and we will verify it is you and remove the second step.</p></div>
+            <div class="card"><h3>Sign out other devices</h3><p>One button in <strong>Settings &gt; Privacy</strong> signs your account out everywhere except the device you are holding. A device that was already open can keep working for up to an hour before it is asked to sign in again, so if someone else may have your password, change it too.</p></div>
             <div class="card"><h3>New sign-in alerts</h3><p>When your account signs in somewhere new, any other device where you currently have the app open shows an alert right away, with a shortcut to sign everyone else out. These alerts appear inside the app; a device that is closed or offline will not see one.</p></div>
         </div>
 
@@ -61,15 +61,16 @@
             <li><strong>Sign-up needs a Red Pearl code,</strong> and the code is checked by our database at the moment the account is created, not only by the web page. Skipping the page does not skip the check.</li>
             <li><strong>Cloudflare Turnstile</strong> runs at sign-up and sign-in to tell humans from scripts.</li>
             <li><strong>The Human Check</strong> looks at a few signals while you write a post: whether text was pasted, an impossible typing speed, a hidden field only bots fill in, and posting in rapid bursts. We keep one number from 0 to 5 on your profile. We do not keep what you typed for this check, and you can see your number in <strong>Settings &gt; Privacy</strong>.</li>
-            <li>That number, your counters and your account status are written by the database itself. They cannot be edited from your browser, so nobody can award themselves a clean record.</li>
+            <li>That number and your account status are changed only by the database, not by editing your profile. The Human Check is a light speed bump for scripts, not a lie detector: it is one layer next to Turnstile and the sign-up code, and it is not proof that someone is human.</li>
         </ul>
 
         <h2>Your messages</h2>
         <ul>
             <li>Messages travel over encrypted connections (HTTPS) and our hosting provider encrypts stored data.</li>
             <li><strong>Direct messages are not end-to-end encrypted.</strong> That means the service itself can technically open them. We do not read private messages as a matter of course; they are looked at only when a member reports them. Do not send anything through any chat that you could not stand to see leak.</li>
-            <li><strong>Disappearing messages (optional):</strong> in a chat, open the options button and choose 24 hours or 7 days. Expired messages vanish for everyone straight away and are then deleted from our database by an automatic cleanup. Timed chats are text only, because photos are stored separately. Everyone in the chat is told when the timer changes.</li>
+            <li><strong>Disappearing messages (optional):</strong> in a chat, open the options button and choose 24 hours or 7 days. From then on every new message gets its own expiry time, stamped by our server, so changing the timer never deletes older messages and nobody can backdate one. Expired messages disappear for everyone in the app straight away and are permanently deleted from our database by a regular cleanup shortly after. A banner at the top of the chat shows whenever a timer is on. Timed chats are text only, because photos are stored separately.</li>
             <li><strong>Clear chat for me</strong> hides the history on your side only. The other people keep their copy.</li>
+            <li>Photos sent in chats are stored at long, hard-to-guess web addresses. Anyone who has the exact address can open the photo without signing in, so do not pass those addresses around.</li>
             <li>Voice and video calls go directly between devices and are never recorded or stored by us.</li>
             <li>You can block anyone, and you can report posts, replies and messages. Reports are reviewed within 24 hours.</li>
         </ul>
@@ -77,15 +78,16 @@
         <h2>Your data, your control</h2>
         <ul>
             <li><strong>Download my data</strong> (Settings &gt; Privacy): one file with your account details, profile, posts, replies, votes, friend connections, notifications and the chats you are in. Photos and videos are linked rather than embedded.</li>
-            <li><strong>Delete my account</strong> (Settings &gt; Privacy or Settings &gt; Profile): removes your login, profile, messages, friend links, votes and blocks right away. Your old public posts stay readable but are detached from you and show as "[deleted]".</li>
+            <li><strong>Delete my account</strong> (Settings &gt; Privacy or Settings &gt; Profile): removes your login, profile, messages, friend links, votes and blocks right away, and removes your profile photo and the photos you sent in chats from storage. Your old public posts stay readable but are detached from you and show as "[deleted]"; photos or videos attached to those posts stay with them.</li>
             <li><strong>Private profile:</strong> hides your post and reply history from other members.</li>
             <li>The full detail is in the <a href="privacy.html">Privacy Policy</a>.</li>
         </ul>
 
         <h2>How the site itself is built</h2>
         <ul>
-            <li>Every database table has row-level security rules, so the database decides who may read or change each row, even if someone tampers with the page in their browser.</li>
-            <li>The main script library is hosted on this site at a fixed version rather than loaded from a third-party network, so a change at someone else's server cannot change our code.</li>
+            <li>Private data (messages, friendships, notifications, invitations, votes) sits behind row-level security rules and guests have no access to it, so the database, not the web page, decides who may read or change it even if someone tampers with the page in their browser.</li>
+            <li>The database also refuses things the page should never ask for: editing someone else's post, changing who wrote a post, setting your own admin role or Human Check score, or inventing vote counts.</li>
+            <li>Our own script libraries are hosted on this site at a fixed version rather than loaded from a third-party network. The one outside script is Cloudflare Turnstile, our human check.</li>
             <li>Pages are served over HTTPS only, cannot be placed inside another site's frame, and tell browsers not to guess file types.</li>
             <li>Content from members is escaped before it is displayed.</li>
             <li>We use a small number of providers (Supabase, Vercel, Cloudflare, OneSignal) and list them in the <a href="privacy.html">Privacy Policy</a>.</li>
