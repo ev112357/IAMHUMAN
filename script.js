@@ -150,6 +150,104 @@ function playTechChirp(type = 'info') {
 }
 
 
+// Phones zoom the page when a text field is focused (and sometimes leave it zoomed). The stylesheet keeps inputs at
+// 16px, which stops that; this is the safety net for anything that still ends up zoomed in once the keyboard closes.
+(function initZoomGuard() {
+    const vv = window.visualViewport;
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!vv || !meta) return;
+    const original = meta.getAttribute('content') || 'width=device-width, initial-scale=1.0';
+    let timer = null;
+    const reset = () => {
+        if (vv.scale <= 1.02) return;
+        meta.setAttribute('content', original + ', maximum-scale=1');
+        setTimeout(() => meta.setAttribute('content', original), 400);
+    };
+    document.addEventListener('focusout', (e) => {
+        if (!e.target || !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+        clearTimeout(timer);
+        timer = setTimeout(reset, 150);
+    });
+})();
+
+// --- IN-APP DIALOGS: styled replacements for the browser's confirm() and prompt() boxes ---
+// uiConfirm(message, {title, confirmText, cancelText, danger}) -> Promise<boolean>
+// uiPrompt(message, {title, value, placeholder, maxLength, confirmText}) -> Promise<string | null>
+let uiDialogChain = Promise.resolve();
+function uiDialog(opts = {}) {
+    const kind = opts.kind === 'prompt' ? 'prompt' : 'confirm';
+    const cancelValue = kind === 'prompt' ? null : false;
+    const run = () => new Promise((resolve) => {
+        const root = document.getElementById('ui-dialog');
+        if (!root) { resolve(cancelValue); return; }
+        const box = document.getElementById('ui-dialog-box');
+        const input = document.getElementById('ui-dialog-input');
+        const okBtn = document.getElementById('ui-dialog-ok');
+        const cancelBtn = document.getElementById('ui-dialog-cancel');
+        const previousFocus = document.activeElement;
+        document.getElementById('ui-dialog-title').textContent = opts.title || (kind === 'prompt' ? 'Enter a value' : 'Please confirm');
+        document.getElementById('ui-dialog-message').textContent = opts.message || '';
+        box.classList.toggle('danger', Boolean(opts.danger));
+        okBtn.textContent = opts.confirmText || 'OK';
+        cancelBtn.textContent = opts.cancelText || 'Cancel';
+        input.classList.toggle('hidden', kind !== 'prompt');
+        if (kind === 'prompt') {
+            input.value = opts.value || '';
+            input.placeholder = opts.placeholder || '';
+            input.maxLength = opts.maxLength || 120;
+        }
+
+        let done = false;
+        const finish = (result) => {
+            if (done) return;
+            done = true;
+            document.removeEventListener('keydown', onKey, true);
+            root.removeEventListener('click', onBackdrop);
+            okBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            root.classList.add('hidden');
+            try { if (previousFocus && previousFocus.focus) previousFocus.focus({ preventScroll: true }); } catch (e) { /* element gone */ }
+            resolve(result);
+        };
+        const onOk = () => finish(kind === 'prompt' ? input.value : true);
+        const onCancel = () => finish(cancelValue);
+        const onBackdrop = (e) => { if (e.target === root) onCancel(); };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); onCancel(); }
+            else if (e.key === 'Enter' && e.target !== cancelBtn) { e.preventDefault(); e.stopImmediatePropagation(); onOk(); }
+        };
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+        root.addEventListener('click', onBackdrop);
+        document.addEventListener('keydown', onKey, true);
+        root.classList.remove('hidden');
+        // focus straight away so keyboard and screen-reader users land inside the dialog
+        if (kind === 'prompt') { input.focus({ preventScroll: true }); input.select(); }
+        else (opts.danger ? cancelBtn : okBtn).focus({ preventScroll: true });
+    });
+    // One dialog at a time: a second request waits for the first to be answered.
+    const next = uiDialogChain.then(run, run);
+    uiDialogChain = next.then(() => {}, () => {});
+    return next;
+}
+const uiConfirm = (message, opts = {}) => uiDialog({ ...opts, kind: 'confirm', message });
+const uiPrompt = (message, opts = {}) => uiDialog({ ...opts, kind: 'prompt', message });
+
+// Browsers show their own "Please fill out this field" bubble on required form fields. Show the app's toast instead,
+// so every message in the app looks the same. (Cancelling the event keeps the form from submitting, as before.)
+let invalidToastLock = false;
+document.addEventListener('invalid', (e) => {
+    const el = e.target;
+    e.preventDefault();
+    if (invalidToastLock) return; // several fields can be invalid at once: speak up once, about the first
+    invalidToastLock = true;
+    setTimeout(() => { invalidToastLock = false; }, 400);
+    const raw = (el.labels && el.labels[0] && el.labels[0].textContent) || el.getAttribute('aria-label') || el.placeholder || el.name || 'This field';
+    const label = raw.replace(/\s*\(required\)\s*/i, '').replace(/\s+/g, ' ').trim();
+    showToast({ title: "Check your details", message: `${label}: ${el.validationMessage || 'please check this field.'}`, type: "error", icon: "▵", duration: 4500, force: true });
+    try { el.focus(); } catch (err) { /* hidden field */ }
+}, true);
+
 // --- NATIVE POLISH (only active inside the iOS/Android app; harmless in a browser) ---
 // Light haptic feedback through the Capacitor Haptics plugin when it is installed in the native shell.
 function hapticTap(kind = 'light') {
@@ -3380,7 +3478,7 @@ safeAddListener(userCardBlockBtn, 'click', async () => {
     try {
         if (isBlockedId(targetProfileId)) {
             await unblockUser(targetProfileId);
-        } else if (confirm(`Block @${targetProfileUsername}?\n\nTheir posts, replies, messages and notifications will be hidden from you, and they won't be able to ring you. You can unblock them any time in Settings > Privacy.`)) {
+        } else if (await uiConfirm("Their posts, replies, messages and notifications will be hidden from you, and they won't be able to ring you. You can unblock them any time in Settings > Privacy.", { title: `Block @${targetProfileUsername}?`, confirmText: 'Block', danger: true })) {
             await blockUser(targetProfileId, targetProfileUsername);
         }
     } finally {
@@ -3497,7 +3595,7 @@ async function submitReport() {
     // Offer to block as well, for anything that isn't a profile report (the card has its own Block button).
     if (target.type !== 'user' && target.username && !isBlockedUsername(target.username)) {
         setTimeout(async () => {
-            if (!confirm(`Also block @${target.username}? You won't see their posts, replies or messages any more.`)) return;
+            if (!(await uiConfirm("You won't see their posts, replies or messages any more.", { title: `Also block @${target.username}?`, confirmText: 'Block', cancelText: 'No thanks', danger: true }))) return;
             const id = await resolveProfileId(target.username);
             if (id) await blockUser(id, target.username);
             else alert("Could not find that member to block.");
@@ -4278,7 +4376,7 @@ function updateThreadControlsUI() {
             bannerBtn.type = 'button';
             bannerBtn.className = 'secondary btn-thread-action desktop-only-btn';
             bannerBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><span>Set Banner</span>';
-            bannerBtn.onclick = () => document.getElementById('banner-upload-input').click();
+            bannerBtn.onclick = () => { if (!canSetThreadBanner()) { denyBannerChange(); return; } document.getElementById('banner-upload-input').click(); };
             actionsBar.prepend(bannerBtn);
         }
         // Remove Banner Button (Only visible when a banner is currently set)
@@ -4307,7 +4405,7 @@ function updateThreadControlsUI() {
             flairBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span>Set Flair</span>';
             flairBtn.onclick = async () => {
                 const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
-                const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
+                const input = await uiPrompt('Shown next to your name in this thread. Leave it blank to remove it.', { title: `Set your flair for "${activeThread}"`, value: currentFlair, maxLength: 18, placeholder: 'e.g. Night Owl', confirmText: 'Save' });
                 if (input === null) return;
 
 
@@ -6568,7 +6666,7 @@ async function loadMessages(forceScroll = false) {
             const denyBtn = document.getElementById('deny-chat-request-btn');
             if (denyBtn) {
                 denyBtn.onclick = async () => {
-                    if (!confirm("Decline and delete this message request?")) return;
+                    if (!(await uiConfirm("This removes the message request and the messages in it.", { title: 'Decline this request?', confirmText: 'Decline', danger: true }))) return;
                     denyBtn.disabled = true;
                     await db.from('chat_messages').delete().eq('conversation_id', activeConversationId);
                     chatPendingBanner.classList.add('hidden');
@@ -7692,7 +7790,7 @@ function createPostCardElement(post) {
     const deleteBtn = item.querySelector('.btn-delete-post');
     if (deleteBtn) {
         deleteBtn.addEventListener('click', async () => {
-            if (!confirm("Are you sure you want to delete this post?")) return;
+            if (!(await uiConfirm("This permanently removes the post and any photos or videos attached to it.", { title: 'Delete this post?', confirmText: 'Delete', danger: true }))) return;
             await deletePostById(post.id);
         });
     }
@@ -9633,47 +9731,37 @@ function renderThreadBanner() {
 
 
 
-safeAddListener(document.getElementById('banner-upload-input'), 'change', async (e) => {
-    const rawFile = e.target.files[0];
-    if (!rawFile || !currentUser) return;
+// Only the thread owner, its moderators and site admins may set or remove a banner.
+function canSetThreadBanner(threadName = activeThread) {
+    if (!currentUser) return false;
+    const role = getThreadRole(threadName);
+    return role === 'Owner' || role === 'Moderator' || role === 'Site Admin';
+}
+function denyBannerChange() {
+    showToast({
+        title: "Banner is managed by moderators",
+        message: "Only the thread owner, its moderators or a site admin can change this thread's banner.",
+        type: "error", icon: "▵", duration: 5000, force: true
+    });
+}
 
-
-
-
-    const bannerBtn = document.getElementById('set-banner-btn');
-    if (bannerBtn) { bannerBtn.disabled = true; bannerBtn.textContent = 'Uploading...'; }
-
-
-
+// Uploads an already-prepared banner image and saves it on the thread. Returns true on success.
+async function uploadThreadBanner(file) {
+    if (!currentUser || !db) return false;
+    if (!canSetThreadBanner()) { denyBannerChange(); return false; }
 
     try {
-        // Compress banner, skips if GIF
-        const file = await compressImage(rawFile, 1920, 0.80);
-        
-        const fileExt = file.name.split('.').pop() || (file.type === 'image/gif' ? 'gif' : 'jpeg');
+        const fileExt = (file.name.split('.').pop() || '').toLowerCase() || (file.type === 'image/gif' ? 'gif' : 'jpeg');
         const safeThreadName = activeThread.replace(/[^a-zA-Z0-9]/g, '_');
         const filePath = `banners/${safeThreadName}_${Date.now()}.${fileExt}`;
-
-
-
 
         const { error: uploadError } = await db.storage
             .from('chat-images')
             .upload(filePath, file, { upsert: true });
-
-
-
-
         if (uploadError) throw uploadError;
-
-
-
 
         const { data: publicUrlData } = db.storage.from('chat-images').getPublicUrl(filePath);
         const bannerUrl = publicUrlData.publicUrl;
-
-
-
 
         // Force select() so we know if a row was actually updated
         const { error: updateError, data: updateData } = await db
@@ -9681,14 +9769,7 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
             .update({ banner_url: bannerUrl })
             .eq('name', activeThread)
             .select();
-
-
-
-
         if (updateError) throw updateError;
-
-
-
 
         // If the DB returned 0 updated rows, the thread didn't exist in the DB yet. Insert it.
         if (!updateData || updateData.length === 0) {
@@ -9699,27 +9780,18 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
                 owner_username: SITE_ADMIN_USERNAME,
                 is_private: false
             }]);
-            
             if (insertErr) throw new Error("Database blocked row creation: " + insertErr.message);
         }
 
-
-
-
         // UPDATE LOCAL MEMORY DIRECTLY AND PERMANENTLY
-        let localThreadIndex = allCloudThreads.findIndex(t => t.name === activeThread);
-        if (localThreadIndex !== -1) {
-            allCloudThreads[localThreadIndex].banner_url = bannerUrl;
-        } else {
-            allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
-        }
-
-
-
+        const localThreadIndex = allCloudThreads.findIndex(t => t.name === activeThread);
+        if (localThreadIndex !== -1) allCloudThreads[localThreadIndex].banner_url = bannerUrl;
+        else allCloudThreads.push({ name: activeThread, banner_url: bannerUrl });
 
         renderThreadBanner();
-        alert('Community banner updated successfully!');
-        
+        updateThreadControlsUI();
+        showToast({ title: "Banner updated", message: `The banner for "${activeThread}" is live.`, type: "success", icon: "◈", duration: 4000, force: true });
+
         // Silently sync the cloud in the background WITHOUT wiping memory
         db.from('forum_threads').select('*').order('id', { ascending: true })
             .then(({ data }) => {
@@ -9729,23 +9801,220 @@ safeAddListener(document.getElementById('banner-upload-input'), 'change', async 
                         { name: "Update Thread", owner_username: "gemini" },
                         { name: "New User Discussion", owner_username: "gemini" }
                     ];
-                    let freshMerge = [...data];
+                    const freshMerge = [...data];
                     defaults.forEach(def => {
                         if (!freshMerge.find(t => t.name === def.name)) freshMerge.push(def);
                     });
                     allCloudThreads = freshMerge;
                 }
-            });
-
-
-
-
+            }, () => {});
+        return true;
     } catch (err) {
-        alert(`Error uploading banner: ${err.message}`);
-    } finally {
-        if (bannerBtn) { bannerBtn.disabled = false; bannerBtn.textContent = 'Set Banner'; }
-        e.target.value = ''; // Reset file input
+        showToast({ title: "Banner not saved", message: `Error uploading banner: ${err.message}`, type: "error", icon: "▵", duration: 6000, force: true });
+        return false;
     }
+}
+
+// --- BANNER EDITOR: reposition and resize the picture before it is confirmed ---
+// The result is cropped in the browser to a 3:1 image, so what you frame here is what gets uploaded.
+const BANNER_ASPECT = 3;
+const BANNER_OUT_W = 1800;
+const bannerEd = { open: false, busy: false, file: null, url: null, iw: 0, ih: 0, fw: 0, fh: 0, base: 1, zoom: 1, ox: 0, oy: 0, raf: 0 };
+const bEl = (id) => document.getElementById(id);
+
+function bannerClamp() {
+    const s = bannerEd.base * bannerEd.zoom;
+    bannerEd.ox = Math.min(0, Math.max(bannerEd.fw - bannerEd.iw * s, bannerEd.ox));
+    bannerEd.oy = Math.min(0, Math.max(bannerEd.fh - bannerEd.ih * s, bannerEd.oy));
+}
+function bannerRegion() {
+    const s = bannerEd.base * bannerEd.zoom;
+    return { sx: -bannerEd.ox / s, sy: -bannerEd.oy / s, sw: bannerEd.fw / s, sh: bannerEd.fh / s };
+}
+function bannerDrawPreview(canvas, aspect) {
+    const img = bEl('banner-crop-img');
+    if (!canvas || !img || !bannerEd.iw) return;
+    const { sx, sy, sw, sh } = bannerRegion();
+    let rx = sx, ry = sy, rw = sw, rh = sh;
+    // the live page shows the banner "cover" style, so a wider or narrower box trims the picture
+    if (aspect > sw / sh) { rh = sw / aspect; ry = sy + (sh - rh) / 2; }
+    else { rw = sh * aspect; rx = sx + (sw - rw) / 2; }
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, rx, ry, rw, rh, 0, 0, canvas.width, canvas.height);
+}
+function bannerApply() {
+    bannerClamp();
+    const s = bannerEd.base * bannerEd.zoom;
+    const img = bEl('banner-crop-img');
+    img.style.width = (bannerEd.iw * s) + 'px';
+    img.style.height = (bannerEd.ih * s) + 'px';
+    img.style.transform = `translate(${bannerEd.ox}px, ${bannerEd.oy}px)`;
+    const slider = bEl('banner-zoom');
+    if (slider && Number(slider.value) !== bannerEd.zoom) slider.value = bannerEd.zoom;
+    if (!bannerEd.raf) {
+        bannerEd.raf = requestAnimationFrame(() => {
+            bannerEd.raf = 0;
+            bannerDrawPreview(bEl('banner-prev-desktop'), 4.5);
+            bannerDrawPreview(bEl('banner-prev-phone'), 2.8);
+        });
+    }
+}
+function bannerSetZoom(z, cx = bannerEd.fw / 2, cy = bannerEd.fh / 2) {
+    const next = Math.min(4, Math.max(1, z));
+    const s1 = bannerEd.base * bannerEd.zoom, s2 = bannerEd.base * next;
+    const ix = (cx - bannerEd.ox) / s1, iy = (cy - bannerEd.oy) / s1;
+    bannerEd.zoom = next;
+    bannerEd.ox = cx - ix * s2;
+    bannerEd.oy = cy - iy * s2;
+    bannerApply();
+}
+function bannerMeasure(recentre) {
+    const frame = bEl('banner-crop-frame');
+    const prevCentre = bannerEd.fw ? { x: (bannerEd.fw / 2 - bannerEd.ox) / (bannerEd.base * bannerEd.zoom), y: (bannerEd.fh / 2 - bannerEd.oy) / (bannerEd.base * bannerEd.zoom) } : null;
+    bannerEd.fw = frame.clientWidth;
+    bannerEd.fh = frame.clientHeight;
+    bannerEd.base = Math.max(bannerEd.fw / bannerEd.iw, bannerEd.fh / bannerEd.ih);
+    if (recentre || !prevCentre) {
+        bannerEd.zoom = 1;
+        bannerEd.ox = (bannerEd.fw - bannerEd.iw * bannerEd.base) / 2;
+        bannerEd.oy = (bannerEd.fh - bannerEd.ih * bannerEd.base) / 2;
+    } else {
+        const s = bannerEd.base * bannerEd.zoom;
+        bannerEd.ox = bannerEd.fw / 2 - prevCentre.x * s;
+        bannerEd.oy = bannerEd.fh / 2 - prevCentre.y * s;
+    }
+    bannerApply();
+}
+
+async function openBannerEditor(file) {
+    const modal = bEl('banner-editor-modal'), img = bEl('banner-crop-img');
+    if (!modal || !img) return uploadThreadBanner(await compressImage(file, 1920, 0.8));
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    try { await img.decode(); } catch (e) { /* handled below */ }
+    if (!img.naturalWidth) {
+        URL.revokeObjectURL(url);
+        showToast({ title: "Can't open that picture", message: "Choose a JPG, PNG or WebP image.", type: "error", icon: "▵", duration: 5000, force: true });
+        return false;
+    }
+    Object.assign(bannerEd, { open: true, busy: false, file, url, iw: img.naturalWidth, ih: img.naturalHeight, fw: 0, fh: 0, zoom: 1 });
+    const confirmBtn = bEl('banner-confirm');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Use this banner';
+    modal.classList.remove('hidden');
+    await new Promise(r => requestAnimationFrame(r));
+    bannerMeasure(true);
+    return true;
+}
+
+function closeBannerEditor() {
+    if (bannerEd.busy) return;
+    const modal = bEl('banner-editor-modal');
+    if (modal) modal.classList.add('hidden');
+    if (bannerEd.url) URL.revokeObjectURL(bannerEd.url);
+    const img = bEl('banner-crop-img');
+    if (img) img.removeAttribute('src');
+    Object.assign(bannerEd, { open: false, file: null, url: null, iw: 0, ih: 0 });
+}
+
+async function renderBannerFile() {
+    const img = bEl('banner-crop-img');
+    const { sx, sy, sw, sh } = bannerRegion();
+    const outW = Math.max(300, Math.min(BANNER_OUT_W, Math.round(sw)));
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = Math.round(outW / BANNER_ASPECT);
+    canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+    if (!blob) throw new Error('Could not prepare the picture');
+    return new File([blob], 'banner.jpeg', { type: 'image/jpeg', lastModified: Date.now() });
+}
+
+safeAddListener(bEl('banner-confirm'), 'click', async () => {
+    if (!bannerEd.open || bannerEd.busy) return;
+    if (!canSetThreadBanner()) { closeBannerEditor(); denyBannerChange(); return; }
+    const btn = bEl('banner-confirm');
+    bannerEd.busy = true;
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    let ok = false;
+    try { ok = await uploadThreadBanner(await renderBannerFile()); }
+    catch (err) { showToast({ title: "Banner not saved", message: err.message, type: "error", icon: "▵", duration: 6000, force: true }); }
+    bannerEd.busy = false;
+    btn.disabled = false;
+    btn.textContent = 'Use this banner';
+    if (ok) closeBannerEditor();
+});
+safeAddListener(bEl('banner-cancel'), 'click', closeBannerEditor);
+safeAddListener(bEl('banner-editor-close'), 'click', closeBannerEditor);
+safeAddListener(bEl('banner-reset'), 'click', () => { if (bannerEd.open) bannerMeasure(true); });
+safeAddListener(bEl('banner-zoom'), 'input', (e) => { if (bannerEd.open) bannerSetZoom(Number(e.target.value)); });
+
+(function initBannerGestures() {
+    const frame = bEl('banner-crop-frame');
+    if (!frame) return;
+    const pts = new Map();
+    let pan = null, pinch = null;
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const local = (x, y) => { const r = frame.getBoundingClientRect(); return { x: x - r.left, y: y - r.top }; };
+    frame.addEventListener('pointerdown', (e) => {
+        if (!bannerEd.open) return;
+        try { frame.setPointerCapture(e.pointerId); } catch (err) { /* synthetic pointer */ }
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pts.size === 1) pan = { x: e.clientX, y: e.clientY, ox: bannerEd.ox, oy: bannerEd.oy };
+        else if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: dist(a, b) || 1, zoom: bannerEd.zoom }; pan = null; }
+    });
+    frame.addEventListener('pointermove', (e) => {
+        if (!pts.has(e.pointerId)) return;
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pts.size === 1 && pan) {
+            bannerEd.ox = pan.ox + (e.clientX - pan.x);
+            bannerEd.oy = pan.oy + (e.clientY - pan.y);
+            bannerApply();
+        } else if (pts.size === 2 && pinch) {
+            const [a, b] = [...pts.values()];
+            const mid = local((a.x + b.x) / 2, (a.y + b.y) / 2);
+            bannerSetZoom(pinch.zoom * (dist(a, b) / pinch.d), mid.x, mid.y);
+        }
+    });
+    const end = (e) => {
+        pts.delete(e.pointerId);
+        pinch = null;
+        if (pts.size === 1) { const [p] = [...pts.values()]; pan = { x: p.x, y: p.y, ox: bannerEd.ox, oy: bannerEd.oy }; }
+        else pan = null;
+    };
+    frame.addEventListener('pointerup', end);
+    frame.addEventListener('pointercancel', end);
+    frame.addEventListener('wheel', (e) => {
+        if (!bannerEd.open) return;
+        e.preventDefault();
+        const p = local(e.clientX, e.clientY);
+        bannerSetZoom(bannerEd.zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08), p.x, p.y);
+    }, { passive: false });
+    frame.addEventListener('keydown', (e) => {
+        if (!bannerEd.open) return;
+        const step = e.shiftKey ? 30 : 10;
+        const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+        if (moves[e.key]) { e.preventDefault(); bannerEd.ox += moves[e.key][0]; bannerEd.oy += moves[e.key][1]; bannerApply(); }
+        else if (e.key === '+' || e.key === '=') { e.preventDefault(); bannerSetZoom(bannerEd.zoom * 1.1); }
+        else if (e.key === '-') { e.preventDefault(); bannerSetZoom(bannerEd.zoom / 1.1); }
+    });
+    window.addEventListener('resize', () => { if (bannerEd.open) bannerMeasure(false); });
+})();
+
+safeAddListener(document.getElementById('banner-upload-input'), 'change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // let the same picture be chosen again later
+    if (!file || !currentUser) return;
+    if (!canSetThreadBanner()) { denyBannerChange(); return; }
+    if (!/^image\//.test(file.type)) {
+        showToast({ title: "Pictures only", message: "Banners must be an image (JPG, PNG, WebP or GIF).", type: "error", icon: "▵", duration: 5000, force: true });
+        return;
+    }
+    // Animated GIFs would lose their animation if cropped, so they are used as they are.
+    if (file.type === 'image/gif') { await uploadThreadBanner(file); return; }
+    await openBannerEditor(file);
 });
 
 
@@ -12584,7 +12853,7 @@ function updateVoiceStagePrivacyUI() {
 }
 
 
-function openVoiceForumModal(threadName) {
+async function openVoiceForumModal(threadName) {
     if (!currentUser) {
         alert("Please log in to join the voice stage.");
         return;
@@ -12595,7 +12864,7 @@ function openVoiceForumModal(threadName) {
 
 
     if (voiceStageIsConnected && activeVoiceStageThread !== targetThread) {
-        if (!confirm(`You are currently on the voice stage in "${activeVoiceStageThread}". Would you like to leave that stage and join "${targetThread}"?`)) {
+        if (!(await uiConfirm(`You are on the voice stage in "${activeVoiceStageThread}". Leave it and join "${targetThread}" instead?`, { title: 'Switch voice stage?', confirmText: 'Switch' }))) {
             return;
         }
         disconnectFromVoiceStage();
@@ -13977,6 +14246,50 @@ safeAddListener(fEl('founder-ribbon'), 'click', () => {
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden && !currentUser && founderStatus) refreshFounder(); });
 
+// ---------------------------------------------------------------------------------------------------------
+// CLICK / TAP OUTSIDE A WINDOW TO CLOSE IT (and Esc on a keyboard). Works for every overlay in the app by pressing the
+// window's own close button, so each one still runs its usual clean-up. Windows that need an answer (the suspension
+// notice, the in-app confirm box) opt out with data-no-backdrop-close.
+// ---------------------------------------------------------------------------------------------------------
+const isOverlayEl = (el) => Boolean(el && el.classList && (el.classList.contains('modal-overlay') || el.classList.contains('fab-modal-overlay')));
+let overlayPressTarget = null;
+
+function dismissOverlay(ov) {
+    if (!isOverlayEl(ov) || ov.classList.contains('hidden') || ov.hasAttribute('data-no-backdrop-close')) return false;
+    const closer = ov.querySelector('.close-btn, [data-close]');
+    if (closer) closer.click();
+    // Safety net: a window whose close button does nothing (or has no close button) is still hidden.
+    if (!ov.classList.contains('hidden')) { ov.classList.remove('active'); ov.classList.add('hidden'); }
+    return true;
+}
+
+document.addEventListener('pointerdown', (e) => { overlayPressTarget = isOverlayEl(e.target) ? e.target : null; }, true);
+// A drag that starts inside a window and ends on the backdrop makes the browser fire a click on the backdrop itself.
+// Several windows have their own "click the backdrop to close" handlers that would wrongly react to it, so swallow it
+// before it reaches them.
+document.addEventListener('click', (e) => {
+    if (isOverlayEl(e.target) && overlayPressTarget !== e.target) e.stopImmediatePropagation();
+}, true);
+document.addEventListener('click', (e) => {
+    const ov = e.target;
+    // Only a press that STARTED on the backdrop counts, so dragging a text selection out of a window never closes it.
+    if (!isOverlayEl(ov) || overlayPressTarget !== ov) return;
+    overlayPressTarget = null;
+    dismissOverlay(ov);
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    const open = [...document.querySelectorAll('.modal-overlay, .fab-modal-overlay')]
+        .filter(o => !o.classList.contains('hidden') && !o.hasAttribute('data-no-backdrop-close'));
+    if (!open.length) return;
+    const z = (o) => parseInt(getComputedStyle(o).zIndex, 10) || 0;
+    const top = open.reduce((best, o) => (z(o) >= z(best) ? o : best), open[0]);
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    dismissOverlay(top);
+}, true);
+
 function triggerGuestDisclaimer() {
     // If logged in, do not show
     if (currentUser) return;
@@ -14058,12 +14371,12 @@ if (document.readyState === 'loading') {
 }
 
 
-function openVoiceStageInsideLiveChat(threadName) {
+async function openVoiceStageInsideLiveChat(threadName) {
     const targetThread = threadName || activeThread || 'General';
 
 
     if (voiceStageIsConnected && activeVoiceStageThread !== targetThread) {
-        if (!confirm(`You are currently in the voice stage for "${activeVoiceStageThread}". Disconnect and switch to "${targetThread}"?`)) {
+        if (!(await uiConfirm(`You are on the voice stage in "${activeVoiceStageThread}". Disconnect and switch to "${targetThread}"?`, { title: 'Switch voice stage?', confirmText: 'Switch' }))) {
             return;
         }
         disconnectFromVoiceStage();
@@ -14124,6 +14437,7 @@ safeAddListener(threadOptionsModal, 'click', (e) => {
 
 safeAddListener(document.getElementById('opt-set-banner-btn'), 'click', () => {
     closeThreadOptionsModal();
+    if (!canSetThreadBanner()) { denyBannerChange(); return; }
     const input = document.getElementById('banner-upload-input');
     if (input) input.click();
 });
@@ -14145,7 +14459,7 @@ safeAddListener(document.getElementById('opt-manage-chat-btn'), 'click', () => {
 safeAddListener(document.getElementById('opt-set-flair-btn'), 'click', async () => {
     closeThreadOptionsModal();
     const currentFlair = threadFlairMap.get(currentUsername.toLowerCase()) || '';
-    const input = prompt(`Set your flair for "${activeThread}":\n(Leave blank to remove)`, currentFlair);
+    const input = await uiPrompt('Shown next to your name in this thread. Leave it blank to remove it.', { title: `Set your flair for "${activeThread}"`, value: currentFlair, maxLength: 18, placeholder: 'e.g. Night Owl', confirmText: 'Save' });
     if (input === null) return;
 
 
@@ -16020,7 +16334,8 @@ if (document.readyState === 'loading') {
 
 // Remove banner from current active thread (moderator action)
 async function removeCurrentThreadBanner() {
-    if (!confirm(`Are you sure you want to remove the banner for "${activeThread}"?`)) return;
+    if (!canSetThreadBanner()) { denyBannerChange(); return; }
+    if (!(await uiConfirm(`This removes the banner for "${activeThread}". You can set a new one any time.`, { title: 'Remove banner?', confirmText: 'Remove', danger: true }))) return;
     const tData = allCloudThreads.find(t => t.name === activeThread);
     if (tData && tData.id && db) {
         const { error } = await db.from('forum_threads').update({ banner_url: null }).eq('id', tData.id);

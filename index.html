@@ -2338,6 +2338,62 @@ img, video, canvas, pre, code {
             .feed-card { padding: 10px !important; }
         }
 
+        /* ---- Touch devices: 16px inputs stop iOS from zooming the page when a field is focused ---- */
+        @media (hover: none) and (pointer: coarse), (max-width: 768px) {
+            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), textarea, select { font-size: 16px !important; }
+        }
+
+        /* ---- In-app dialog (replaces the browser's confirm / prompt boxes) ---- */
+        #ui-dialog { z-index: 26500 !important; }
+        .ui-dialog-box { max-width: 420px; height: auto !important; max-height: 100% !important; overflow-y: auto; border: 1px solid #38bdf8; background: #0f172a; box-shadow: 0 20px 40px rgba(0,0,0,.8), 0 0 24px rgba(56,189,248,.22); padding: 20px; gap: 0; }
+        .ui-dialog-box.danger { border-color: #ef4444; box-shadow: 0 20px 40px rgba(0,0,0,.8), 0 0 24px rgba(239,68,68,.2); }
+        .ui-dialog-title { font-size: 1.1rem; color: #38bdf8; margin: 0 0 8px; border: none; padding: 0; display: flex; align-items: center; gap: 8px; }
+        .ui-dialog-box.danger .ui-dialog-title { color: #f87171; }
+        .ui-dialog-message { font-size: 0.92rem; color: #cbd5e1; line-height: 1.5; white-space: pre-line; margin: 0 0 14px; overflow-wrap: anywhere; }
+        .ui-dialog-box input { margin-bottom: 14px; }
+        .ui-dialog-actions { display: flex; gap: 8px; }
+        .ui-dialog-actions button { flex: 1; margin: 0; min-height: 44px; }
+        .ui-dialog-box.danger #ui-dialog-ok { background: #dc2626; color: #fff; border-color: #dc2626; }
+
+        /* ---- Thread banner editor ---- */
+        #banner-editor-modal { z-index: 10040 !important; }
+        .banner-editor-box { max-width: 640px; height: auto !important; max-height: 100% !important; overflow-y: auto; padding: 18px; }
+        .banner-editor-box > * { flex-shrink: 0; }
+        .banner-editor-help { font-size: 0.85rem; color: #94a3b8; line-height: 1.45; margin: 0 0 10px; }
+        .banner-crop-frame { position: relative; width: 100%; aspect-ratio: 3 / 1; overflow: hidden; background: #020617; border: 2px solid #38bdf8; border-radius: 10px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+        .banner-crop-frame:active { cursor: grabbing; }
+        .banner-crop-frame:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 2px; }
+        .banner-crop-frame img { position: absolute; left: 0; top: 0; max-width: none; max-height: none; transform-origin: 0 0; pointer-events: none; -webkit-user-drag: none; }
+        .banner-crop-guides { position: absolute; inset: 0; pointer-events: none; }
+        .banner-crop-guides::before, .banner-crop-guides::after { content: ""; position: absolute; left: 0; right: 0; height: 16.67%; background: rgba(2, 6, 23, .55); }
+        .banner-crop-guides::before { top: 0; border-bottom: 1px dashed rgba(255,255,255,.55); }
+        .banner-crop-guides::after { bottom: 0; border-top: 1px dashed rgba(255,255,255,.55); }
+        .banner-zoom-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; color: #94a3b8; font-size: 1.1rem; }
+        .banner-zoom-row input[type="range"] { flex: 1; margin: 0; padding: 0; accent-color: #38bdf8; min-height: 32px; }
+        .banner-zoom-row button { width: auto; margin: 0; padding: 6px 12px; font-size: 0.82rem; }
+        .banner-hint { font-size: 0.74rem; color: #64748b; margin: 0 0 10px; }
+        .banner-previews { display: flex; gap: 12px; align-items: flex-end; margin: 6px 0 14px; }
+        .banner-previews figure { margin: 0; min-width: 0; }
+        .banner-previews figure:first-child { flex: 2; }
+        .banner-previews figure:last-child { flex: 1; }
+        .banner-previews canvas { display: block; width: 100%; height: auto; border: 1px solid #334155; border-radius: 6px; background: #020617; }
+        .banner-previews figcaption { font-size: 0.72rem; color: #94a3b8; margin-top: 4px; }
+        .banner-editor-actions { display: flex; gap: 8px; }
+        .banner-editor-actions button { flex: 1; margin: 0; min-height: 44px; }
+
+        /* ---- Tap/click outside a window to close it. On phones the old full-height windows left almost no backdrop,
+              so keep a strip of it visible above every window (and below it, where the tab bar sits). ---- */
+        @media (max-width: 768px) {
+            .modal-overlay { padding-top: calc(44px + env(safe-area-inset-top, 0px)) !important; }
+            #live-chat-modal { padding: calc(44px + env(safe-area-inset-top, 0px)) 6px calc(8px + env(safe-area-inset-bottom, 0px)) !important; align-items: stretch !important; }
+            #live-chat-modal .modal-box { height: 100% !important; max-height: 100% !important; }
+            .fab-modal-overlay { align-items: flex-end; }
+            .fab-modal-container { height: calc(100% - 44px - env(safe-area-inset-top, 0px)); max-height: none; border-radius: 16px 16px 0 0; padding-top: 18px; }
+        }
+        @media (max-height: 520px) and (orientation: landscape) {
+            .modal-overlay { padding: 14px 22px !important; }
+        }
+
 </style>
 </head>
 <body>
@@ -3079,6 +3135,51 @@ img, video, canvas, pre, code {
     </div>
 
 
+    <!-- IN-APP DIALOG (replaces the browser confirm / prompt boxes) -->
+    <div id="ui-dialog" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ui-dialog-title" data-no-backdrop-close>
+        <div class="modal-box modal-box-small ui-dialog-box" id="ui-dialog-box">
+            <h2 class="ui-dialog-title" id="ui-dialog-title">Confirm</h2>
+            <p class="ui-dialog-message" id="ui-dialog-message"></p>
+            <input type="text" id="ui-dialog-input" class="hidden" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <div class="ui-dialog-actions">
+                <button type="button" id="ui-dialog-cancel" class="secondary">Cancel</button>
+                <button type="button" id="ui-dialog-ok">OK</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- THREAD BANNER EDITOR: reposition and resize before confirming -->
+    <div id="banner-editor-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="banner-editor-title">
+        <div class="modal-box banner-editor-box">
+            <div class="modal-header">
+                <h2 id="banner-editor-title">Set thread banner</h2>
+                <button type="button" id="banner-editor-close" class="close-btn" aria-label="Close">&times;</button>
+            </div>
+            <p class="banner-editor-help">Drag the picture to position it and use the slider (or pinch) to resize. The shaded strips may be trimmed on wide screens.</p>
+            <div id="banner-crop-frame" class="banner-crop-frame" tabindex="0" role="img" aria-label="Banner position. Drag to move it, or use the arrow keys.">
+                <img id="banner-crop-img" alt="" draggable="false">
+                <div class="banner-crop-guides"></div>
+            </div>
+            <div class="banner-zoom-row">
+                <span aria-hidden="true">&minus;</span>
+                <input type="range" id="banner-zoom" min="1" max="4" step="0.01" value="1" aria-label="Zoom">
+                <span aria-hidden="true">+</span>
+                <button type="button" id="banner-reset" class="secondary">Reset</button>
+            </div>
+            <p class="banner-hint">Scroll or pinch to zoom. Arrow keys nudge the picture.</p>
+            <div class="banner-previews" aria-label="Preview">
+                <figure><canvas id="banner-prev-desktop" width="540" height="120"></canvas><figcaption>Desktop</figcaption></figure>
+                <figure><canvas id="banner-prev-phone" width="280" height="100"></canvas><figcaption>Phone</figcaption></figure>
+            </div>
+            <div class="banner-editor-actions">
+                <button type="button" id="banner-cancel" class="secondary">Cancel</button>
+                <button type="button" id="banner-confirm">Use this banner</button>
+            </div>
+        </div>
+    </div>
+
+
     <!-- FOUNDER RED PEARLS: open enrollment for the first 1,000 members -->
     <div id="founder-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="founder-title">
         <div class="modal-box founder-box" id="founder-box">
@@ -3524,7 +3625,7 @@ img, video, canvas, pre, code {
 
 
     <!-- CAPTCHA MODAL -->
-    <div id="captcha-suspension-modal" class="modal-overlay hidden" style="z-index: 999999 !important;">
+    <div id="captcha-suspension-modal" class="modal-overlay hidden" data-no-backdrop-close style="z-index: 999999 !important;">
         <div class="modal-box modal-box-small captcha-box" style="border: 2px solid #ef4444;">
             <div style="font-size: 2.2rem;"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
             <h2 style="color: #f87171; margin-bottom: 0;">Account Verification Required</h2>
@@ -3749,6 +3850,6 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script type="module" src="script.js?v=22"></script>
+    <script type="module" src="script.js?v=23"></script>
 </body>
 </html>
