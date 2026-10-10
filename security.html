@@ -22,6 +22,7 @@
         a { color: #7dd3fc; text-decoration: underline; }
         .callout { background: #0f172a; border: 1px solid #334155; border-left: 3px solid #38bdf8; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
         .callout p:last-child { margin-bottom: 0; }
+        .callout-secure { border-left-color: #22c55e; background: rgba(22, 163, 74, 0.08); }
         details { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 0 14px; margin-bottom: 10px; }
         summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: #e2e8f0; font-size: 0.97rem; }
         details[open] summary { border-bottom: 1px solid #334155; margin-bottom: 10px; }
@@ -50,6 +51,7 @@
 
         <h2>Protecting your account</h2>
         <div class="grid">
+            <div class="card"><h3>&#128274; Secure messages (optional)</h3><p>Lock your chats so only the people in them can read the text, not even us. Turn it on in <strong>Settings &gt; Privacy</strong>. <a href="#secure-messages">How it works and its limits</a></p></div>
             <div class="card"><h3>Passwords</h3><p>Your password is stored only as a salted hash by our sign-in provider. We cannot read it and nobody can look it up.</p></div>
             <div class="card"><h3>Two-factor sign-in (optional)</h3><p>Turn it on in <strong>Settings &gt; Privacy</strong>. You then enter a 6-digit code from an authenticator app when you sign in. It is off unless you choose to use it. We recommend it, but we never require it. If you ever lose your authenticator, email us from your account address and we will verify it is you and remove the second step.</p></div>
             <div class="card"><h3>Sign out other devices</h3><p>One button in <strong>Settings &gt; Privacy</strong> signs your account out everywhere except the device you are holding. A device that was already open can keep working for up to an hour before it is asked to sign in again, so if someone else may have your password, change it too.</p></div>
@@ -64,10 +66,49 @@
             <li>That number and your account status are changed only by the database, not by editing your profile. The Human Check is a light speed bump for scripts, not a lie detector: it is one layer next to Turnstile and the sign-up code, and it is not proof that someone is human.</li>
         </ul>
 
+        <h2 id="secure-messages">Secure messages (end-to-end encryption)</h2>
+        <div class="callout callout-secure">
+            <p><strong>Optional, and in your hands.</strong> When you and everyone in a chat have it turned on, only the people in that chat can read the text of the messages. Not Turing's Gate, not our hosting providers, and not anyone who gets into our database. Turn it on in <strong>Settings &gt; Privacy</strong>. It works in direct chats and group chats.</p>
+        </div>
+        <h3>How it works</h3>
+        <ul>
+            <li>You choose a <strong>recovery passphrase</strong>. Your device creates a pair of keys. The <em>public</em> key is published so other members can lock messages for you. The <em>private</em> key stays on your device, and a copy locked with your passphrase is stored so you can restore it on a new phone. We cannot open that copy.</li>
+            <li>Every message gets its own random key, and that key is locked separately for each person in the chat. The server only ever stores unreadable text.</li>
+            <li>A chat is encrypted when <strong>everyone in it</strong> has turned this on. The chat then shows a green "End-to-end encrypted" bar. If someone has not, an amber bar says so plainly and messages there are sent as before.</li>
+            <li>Notifications for encrypted messages never contain the message: they only say you received one.</li>
+            <li>Disappearing messages, blocking, clearing a chat and data download all keep working. Downloaded chats show encrypted messages as readable text when your device holds your key; your private key is never in the file.</li>
+        </ul>
+        <h3>What it does not protect</h3>
+        <ul>
+            <li><strong>Photos and videos are not encrypted.</strong> Only text is.</li>
+            <li>We can still see who is in a chat, when messages are sent, and roughly how long they are.</li>
+            <li>There is <strong>no forward secrecy</strong>: if someone steals your private key and also holds copies of old encrypted messages, they could read them. Keep your device locked.</li>
+            <li>Anything on your own screen: a screenshot, someone looking over your shoulder, or a phone that has been broken into.</li>
+            <li>Our website's code is delivered to your browser by our server each time (the iOS app loads the same site). Someone who took over our hosting could ship harmful code. This is a limit of every web app.</li>
+            <li>We built this with your browser's standard Web Crypto tools (AES-256-GCM, ECDH P-256, HKDF and PBKDF2-SHA-256 with 600,000 rounds). It has <strong>not</strong> been independently audited.</li>
+            <li>Who is in a chat is decided by our server. The app locks each message for the people our server lists as members, so someone who took over our database could add themselves to a chat. Safety numbers do not cover this. Keep an eye on who is in your group chats.</li>
+            <li>Messages from before you turned it on, and chats where someone has not turned it on, are not encrypted.</li>
+        </ul>
+        <h3>Check that nobody is in the middle</h3>
+        <ul>
+            <li>Open <strong>Chat options &gt; Safety number</strong> and compare the number with your contact in person or on a call (not in the chat). If it matches, nobody swapped keys. You can mark it verified.</li>
+            <li>If a contact's key changes (a new phone, or someone interfering), the chat warns you and holds your message until you choose to continue. Messages they sent before the change stay readable and are marked with a lock and a warning sign ("earlier key").</li>
+        </ul>
+        <h3>Phone lost or passphrase forgotten</h3>
+        <ul>
+            <li>On a new phone, choose <strong>Restore</strong> in Settings &gt; Privacy and enter your passphrase to read your old encrypted messages again.</li>
+            <li>If you forget the passphrase and have no device that still holds your key, older encrypted messages <strong>cannot be recovered</strong>, by you or by us. <strong>Start over</strong> creates a new key; your contacts will see that your safety number changed. Choose a passphrase of at least 10 characters that is hard to guess, because someone who got the locked backup could try guesses offline.</li>
+            <li>You can turn secure messages off at any time. Your keys are deleted from your device and from our servers.</li>
+        </ul>
+        <h3>Reports and moderation</h3>
+        <ul>
+            <li>We cannot read encrypted messages. If you report one, the report contains the text of that message, which you choose to send us, and nothing else from the chat.</li>
+        </ul>
+
         <h2>Your messages</h2>
         <ul>
-            <li>Messages travel over encrypted connections (HTTPS) and our hosting provider encrypts stored data.</li>
-            <li><strong>Direct messages are not end-to-end encrypted.</strong> That means the service itself can technically open them. We do not read private messages as a matter of course; they are looked at only when a member reports them. Do not send anything through any chat that you could not stand to see leak.</li>
+            <li>Messages travel over encrypted connections (HTTPS) and our hosting provider encrypts stored data. That protects them on the way and on disk, but it does not stop the service from reading chats that are not protected by secure messages.</li>
+            <li><strong>Without secure messages, chats are not end-to-end encrypted.</strong> That means the service itself can technically open them. We do not read private messages as a matter of course; they are looked at only when a member reports them. <a href="#secure-messages">Turn on secure messages</a> to lock chat text so even we cannot read it.</li>
             <li><strong>Disappearing messages (optional):</strong> in a chat, open the options button and choose 24 hours or 7 days. From then on every new message gets its own expiry time, stamped by our server, so changing the timer never deletes older messages and nobody can backdate one. Expired messages disappear for everyone in the app straight away and are permanently deleted from our database by a regular cleanup shortly after. A banner at the top of the chat shows whenever a timer is on. Timed chats are text only, because photos are stored separately.</li>
             <li><strong>Clear chat for me</strong> hides the history on your side only. The other people keep their copy.</li>
             <li>Photos sent in chats are stored at long, hard-to-guess web addresses. Anyone who has the exact address can open the photo without signing in, so do not pass those addresses around.</li>
@@ -86,7 +127,7 @@
         <h2>How the site itself is built</h2>
         <ul>
             <li>Private data (messages, friendships, notifications, invitations, votes) sits behind row-level security rules and guests have no access to it, so the database, not the web page, decides who may read or change it even if someone tampers with the page in their browser.</li>
-            <li>The database also refuses things the page should never ask for: editing someone else's post, changing who wrote a post, setting your own admin role or Human Check score, or inventing vote counts.</li>
+            <li>The database also refuses things the page should never ask for: editing someone else's post, changing who wrote a post, setting your own admin role or Human Check score, inventing vote counts, or rewriting a poll tally. Poll votes are recorded by the database, one per member. They are public: others can see which option you chose.</li>
             <li>Our own script libraries are hosted on this site at a fixed version rather than loaded from a third-party network. The one outside script is Cloudflare Turnstile, our human check.</li>
             <li>Pages are served over HTTPS only, cannot be placed inside another site's frame, and tell browsers not to guess file types.</li>
             <li>Content from members is escaped before it is displayed.</li>

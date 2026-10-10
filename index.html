@@ -307,7 +307,7 @@
 
         .unadd-confirm-box { display: flex; align-items: center; justify-content: space-between; background-color: #0f172a; border: 1px solid #ef4444; border-radius: 8px; padding: 8px 12px; margin-top: 8px; font-size: 0.85rem; }
         .unadd-actions { display: flex; gap: 6px; }
-        .btn-unadd-action { width: auto !important; padding: 3px 8px !important; font-size: 0.8rem !important; border-radius: 4px !important; }
+        .btn-unadd-action { border-radius: 6px !important; }
 
 
         .user-feed-section { width: 100%; border-top: 1px solid #334155; padding-top: 14px; display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto; }
@@ -417,7 +417,7 @@
 
         .req-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; background-color: #1e293b; border-radius: 6px; margin-bottom: 4px; font-size: 0.85rem; }
         .req-actions { display: flex; gap: 4px; }
-        .req-actions button { width: auto; padding: 3px 8px; font-size: 0.8rem; }
+        .req-actions button { margin: 0; }
         .btn-accept { background-color: #16a34a !important; color: white !important; }
         .btn-deny { background-color: #dc2626 !important; color: white !important; }
 
@@ -1194,9 +1194,9 @@ img, video, canvas, pre, code {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 88px;
-            min-width: 88px;
-            max-width: 88px;
+            width: 100px;
+            min-width: 100px;
+            max-width: 100px;
             height: 34px;
             box-sizing: border-box;
             text-align: center;
@@ -2427,6 +2427,22 @@ img, video, canvas, pre, code {
         .chat-privacy-banner { font-size: 0.78rem; color: #bae6fd; background: rgba(2,132,199,.14); border: 1px solid rgba(56,189,248,.35); border-radius: 8px; padding: 6px 10px; margin: 6px 0 4px; display: flex; align-items: center; gap: 6px; }
         .chat-options-btn { background: transparent; border: 1px solid #334155; color: #94a3b8; width: 34px; height: 34px; padding: 0 !important; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin: 0; }
         .chat-options-btn:hover { color: #f8fafc; border-color: #38bdf8; }
+        /* Secure messages (end-to-end encryption) */
+        .chat-e2ee-banner { font-size: 0.78rem; border-radius: 8px; padding: 6px 10px; margin: 6px 0 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid; line-height: 1.4; }
+        .chat-e2ee-banner.ok { color: #bbf7d0; background: rgba(22, 163, 74, 0.12); border-color: rgba(34, 197, 94, 0.4); }
+        .chat-e2ee-banner.warn { color: #fde68a; background: rgba(217, 119, 6, 0.14); border-color: rgba(234, 179, 8, 0.45); }
+        .chat-e2ee-banner .e2ee-btn { width: auto; margin: 0; padding: 4px 10px; font-size: 0.74rem; background: transparent; border: 1px solid currentColor; color: inherit; border-radius: 6px; flex-shrink: 0; cursor: pointer; }
+        .msg-lock { font-size: 0.7rem; opacity: 0.75; margin-left: 6px; }
+        .msg-bubble.msg-locked { font-style: italic; opacity: 0.85; }
+        .psc-secure { border-color: rgba(34, 197, 94, 0.45); background: rgba(22, 163, 74, 0.06); }
+        #ui-dialog-message { white-space: pre-line; }
+        /* Check and cross buttons: always the same drawn icon at the same size, so a pair never looks uneven */
+        .yn-btn { width: 36px !important; min-width: 36px !important; height: 30px !important; padding: 0 !important; display: inline-flex !important; align-items: center; justify-content: center; border-radius: 6px !important; line-height: 1; }
+        .yn-ic { width: 16px; height: 16px; flex: 0 0 16px; display: block; }
+        .x-ic { width: 12px; height: 12px; display: block; pointer-events: none; }
+        .yn-text-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 96px; width: auto; height: 30px; padding: 0 12px; border: none; border-radius: 6px; font-size: 0.78rem; font-weight: 700; cursor: pointer; margin: 0; }
+        .yn-text-btn .yn-ic { width: 14px; height: 14px; flex-basis: 14px; }
+        .call-popout-btn .yn-ic { width: 14px; height: 14px; flex-basis: 14px; margin-right: 6px; }
 
 </style>
 </head>
@@ -2872,6 +2888,7 @@ img, video, canvas, pre, code {
                     <!-- ACTIVE 1-ON-1 AUDIO CALL BAR -->
                     
                     <div id="chat-privacy-banner" class="chat-privacy-banner hidden" role="status"></div>
+                    <div id="chat-e2ee-banner" class="chat-e2ee-banner hidden" role="status"></div>
                     <div id="chat-pending-banner" class="msg-pending-banner hidden">
                         ◈ Non-friend conversation: Messages remain hidden from recipient until accepted.
                     </div>
@@ -3154,10 +3171,22 @@ img, video, canvas, pre, code {
                         <li>We do not sell your data and we do not show ads.</li>
                         <li>Voice calls go straight between members' devices. We never record them, and live chat is not saved.</li>
                         <li>Your password is never visible to us, and every connection is encrypted.</li>
+                        <li><strong>Chats can be end-to-end encrypted (optional, below):</strong> then only the people in the chat can read the text, not even us. Photos are not encrypted.</li>
                         <li>You can download everything we hold about you, and delete your account and data at any time.</li>
                         <li>Blocked members, reports and private profiles are respected everywhere in the app.</li>
                     </ul>
                     <div class="psc-links"><a href="privacy.html">Privacy Policy</a><a href="security.html">Security &amp; reporting a problem</a></div>
+                </div>
+
+                <div class="psc-card psc-secure">
+                    <div class="psc-row">
+                        <div style="padding-right: 12px;">
+                            <div style="font-weight: 700; color: #f8fafc; font-size: 0.92rem;">&#128274; Secure messages (end-to-end encryption)</div>
+                            <p id="e2ee-state-text" class="psc-note" style="margin: 2px 0 0;">Checking...</p>
+                        </div>
+                        <button type="button" id="e2ee-toggle-btn" class="secondary" style="width: auto; margin: 0; padding: 8px 14px;" disabled>...</button>
+                    </div>
+                    <p class="psc-note" style="margin: 8px 0 0;">Optional, and you choose a recovery passphrase. Chats are encrypted when everyone in them has turned it on. Text only; photos are not encrypted. <a href="security.html#secure-messages">How it works and its limits</a></p>
                 </div>
 
                 <div class="psc-card">
@@ -3418,8 +3447,8 @@ img, video, canvas, pre, code {
                 <div id="unadd-confirm-box" class="unadd-confirm-box hidden">
                     <span style="color: #ef4444; font-weight: 600;">Unadd friend?</span>
                     <div class="unadd-actions">
-                        <button id="confirm-unadd-btn" class="btn-unadd-action danger">✓</button>
-                        <button id="cancel-unadd-btn" class="btn-unadd-action secondary">✕</button>
+                        <button id="confirm-unadd-btn" class="btn-unadd-action yn-btn danger" aria-label="Yes, remove friend" title="Yes, remove friend"><svg class="yn-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg></button>
+                        <button id="cancel-unadd-btn" class="btn-unadd-action yn-btn secondary" aria-label="No, keep friend" title="No, keep friend"><svg class="yn-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
                     </div>
                 </div>
                 
@@ -3799,8 +3828,11 @@ img, video, canvas, pre, code {
 
 
                 <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">4. Web of Trust & Sybil Mitigation</h3>
-                <p style="margin-bottom: 16px;">To prevent automated account farming, each verified human is granted strictly <strong>three non-renewable lifetime invites</strong>. Invites form a cryptographic chain of custody: vouching for bad actors or bot scripts directly degrades the inviter's Human Verification score, neutralizing coordinated spam swarms at the root.</p>
+                <p style="margin-bottom: 16px;">To prevent automated account farming, every member has <strong>three invite slots</strong>, and a slot refills 30 days after it is used. The database enforces this limit. Invites record who introduced whom, and moderators can flag a whole chain of accounts that turns out to be spam.</p>
                 
+                <h3 style="color: #f8fafc; margin-top: 20px; margin-bottom: 8px; font-size: 1.1rem;">5. Secure Messages (End-to-End Encryption)</h3>
+                <p style="margin-bottom: 16px;">You can lock your chats so that only the people in them can read the text, not even Turing's Gate. Turn it on in <strong>Settings &gt; Privacy</strong>. It is optional, works in direct and group chats once everyone has turned it on, and uses a recovery passphrase you choose. Photos are not encrypted. <a href="security.html#secure-messages" style="color:#38bdf8;">Read how it works and its limits.</a></p>
+
                 <div style="background: #0f172a; border: 1px dashed #475569; padding: 16px; border-radius: 8px; margin-top: 24px; text-align: center;">
                     <strong style="color: #38bdf8;">Current Status:</strong> You are protected by the Turing's Gate Defense Protocol.
                 </div>
@@ -3840,8 +3872,8 @@ img, video, canvas, pre, code {
             <span id="incoming-caller-name" class="call-popout-caller">@username</span>
         </div>
         <div class="call-popout-actions">
-            <button type="button" id="accept-call-btn" class="call-popout-btn accept-btn">✓ Accept</button>
-            <button type="button" id="decline-call-btn" class="call-popout-btn decline-btn">✕ Decline</button>
+            <button type="button" id="accept-call-btn" class="call-popout-btn accept-btn"><svg class="yn-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>Accept</button>
+            <button type="button" id="decline-call-btn" class="call-popout-btn decline-btn"><svg class="yn-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>Decline</button>
         </div>
     </div>
     <audio id="remote-audio" autoplay playsinline style="position: fixed; top: -9999px; left: -9999px; opacity: 0.01; pointer-events: none; width: 1px; height: 1px;"></audio>
@@ -3951,6 +3983,6 @@ img, video, canvas, pre, code {
 
     <script defer src="/_vercel/insights/script.js"></script>
     <script src="vendor/supabase-js-2.117.3.js"></script>
-    <script type="module" src="script.js?v=26"></script>
+    <script type="module" src="script.js?v=27"></script>
 </body>
 </html>

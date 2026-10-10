@@ -199,6 +199,8 @@ function uiDialog(opts = {}) {
             input.value = opts.value || '';
             input.placeholder = opts.placeholder || '';
             input.maxLength = opts.maxLength || 120;
+            input.type = opts.inputType === 'password' ? 'password' : 'text';
+            input.autocomplete = 'off';
         }
 
         let done = false;
@@ -2623,7 +2625,7 @@ document.addEventListener('visibilitychange', () => {
 async function syncUserState(user) {
     // A member who turned on two-factor login must enter a code before anything loads.
     if (user && !(await ensureMfaVerified(user))) return;
-    if (!user) mfaCleared.clear();
+    if (!user) { mfaCleared.clear(); initSecureMessages(null).catch(() => {}); }
     switchVoteStore(user ? user.id : null);
     if (user) {
         currentUser = user;
@@ -2717,6 +2719,7 @@ async function syncUserState(user) {
         initRealtimeActivityNotifications();
         startNotificationPolling();
         if (pendingSigninAlert) { pendingSigninAlert = false; announceSignIn(); }
+        initSecureMessages(user).catch((e) => console.warn('Secure messages setup notice:', e));
     } else {
         currentUser = null;
         currentUsername = null;
@@ -5117,7 +5120,7 @@ function renderPostMediaPreview() {
                 : `<div class="post-media-loading"></div>`}
             ${m.kind === 'video' ? '<span class="post-media-badge">▶ Video</span>' : ''}
             <span class="post-media-order">${i + 1}</span>
-            <button type="button" class="post-media-btn post-media-remove" data-act="remove" data-id="${m.id}" aria-label="Remove attachment ${i + 1}">✕</button>
+            <button type="button" class="post-media-btn post-media-remove" data-act="remove" data-id="${m.id}" aria-label="Remove attachment ${i + 1}"><svg class="x-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
             ${postMediaQueue.length > 1 ? `
                 <div class="post-media-move">
                     <button type="button" class="post-media-btn" data-act="left" data-id="${m.id}" aria-label="Move earlier" ${i === 0 ? 'disabled' : ''}>‹</button>
@@ -6079,8 +6082,8 @@ async function loadFriendRequests() {
         item.innerHTML = `
             <span class="clickable-username" data-username="${escapeHTML(username)}">@${escapeHTML(username)}</span>
             <div class="req-actions">
-                <button class="btn-accept" title="Accept">✓</button>
-                <button class="btn-deny" title="Deny">✕</button>
+                <button class="btn-accept yn-btn" title="Accept" aria-label="Accept">${ICON_YES}</button>
+                <button class="btn-deny yn-btn" title="Deny" aria-label="Deny">${ICON_NO}</button>
             </div>
         `;
 
@@ -6533,6 +6536,8 @@ safeAddListener(createGroupConfirmBtn, 'click', async () => {
 
 function selectConversation(conversationId, title, partnerId = null, partnerUsername = null, isFriend = true) {
     if (!db) return;
+    secure.chatHasEncrypted = false;
+    { const b = document.getElementById('chat-e2ee-banner'); if (b) { b.classList.add('hidden'); b.textContent = ''; } }
     activeConversationId = conversationId;
     activeConversationPartnerId = partnerId;
     activeConversationPartnerUsername = partnerUsername;
@@ -6637,7 +6642,7 @@ function selectConversation(conversationId, title, partnerId = null, partnerUser
                 }
                 const existing = document.getElementById(`msg-${newMsg.id}`);
                 if (!existing) {
-                    appendChatMessage(newMsg, false);
+                    secureDecryptMessages([newMsg]).then(() => { appendChatMessage(newMsg, false); updateChatSecureBanner(); });
                 }
                 if (currentUser && newMsg.sender_id !== currentUser.id) {
                     db.from('chat_messages')
@@ -6728,12 +6733,15 @@ function createMessageElement(msg) {
             : `<span class="pending-tag" style="background:#0369a1; color:#e0f2fe;">Chat Request</span>`;
     }
     const cardClasses = sharedLink ? ` has-share-card${!sharedLink.note && isMine ? ' card-only' : ''}` : '';
-    const reportHtml = (!isMine && !isOptimistic && msg.id != null)
+    const reportHtml = (!isMine && !isOptimistic && msg.id != null && !msg._secureLocked)
         ? `<div style="text-align:right; line-height:1;"><button type="button" class="msg-report-btn" aria-label="Report this message">Report</button></div>`
         : '';
+    const lockHtml = msg._secure ? (msg._secureOldKey
+        ? '<span class="msg-lock old-key" title="End-to-end encrypted, but sent with an earlier key of this person: their safety number has changed since" aria-label="Encrypted, sent with an earlier key">🔒⚠</span>'
+        : '<span class="msg-lock" title="End-to-end encrypted" aria-label="End-to-end encrypted">🔒</span>') : '';
     const bubbleHtml = `
-        <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}${cardClasses}">
-            ${authorHtml}${textHtml}${imgHtml}${pendingBadge}${reportHtml}
+        <div class="msg-bubble ${isMine ? 'msg-mine' : 'msg-theirs'} ${isPending ? 'pending-approval' : ''}${cardClasses}${msg._secureLocked ? ' msg-locked' : ''}">
+            ${authorHtml}${textHtml}${imgHtml}${lockHtml}${pendingBadge}${reportHtml}
         </div>
     `;
 
@@ -6849,6 +6857,8 @@ async function loadMessages(forceScroll = false) {
 
 
 
+    await secureDecryptMessages(messages);
+    updateChatSecureBanner();
     const visibleMessages = (messages || []).reverse().filter(m => !isBlockedMessage(m) && !isMessageExpiredOrCleared(m));
 
 
@@ -6874,8 +6884,8 @@ async function loadMessages(forceScroll = false) {
                 <div style="display:flex; justify-content:space-between; align-items:center; width:100%; flex-wrap:wrap; gap:8px;">
                     <span>◈ @${escapeHTML(activeConversationPartnerUsername || 'User')} sent you a message request.</span>
                     <div style="display:flex; gap:6px;">
-                        <button type="button" id="accept-chat-request-btn" style="background:#16a34a; color:#ffffff; border:none; padding:5px 12px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">✓ Accept</button>
-                        <button type="button" id="deny-chat-request-btn" style="background:#dc2626; color:#ffffff; border:none; padding:5px 12px; border-radius:6px; font-size:0.78rem; font-weight:700; cursor:pointer;">✕ Decline</button>
+                        <button type="button" id="accept-chat-request-btn" class="yn-text-btn" style="background:#16a34a; color:#ffffff;">${ICON_YES}<span>Accept</span></button>
+                        <button type="button" id="deny-chat-request-btn" class="yn-text-btn" style="background:#dc2626; color:#ffffff;">${ICON_NO}<span>Decline</span></button>
                     </div>
                 </div>
             `;
@@ -7103,6 +7113,17 @@ safeAddListener(dmForm, 'submit', async (e) => {
 
 
     try {
+        // End-to-end encryption (when everyone in the chat has turned it on). Done before any upload so a cancel leaves nothing behind.
+        let prepared = { content: messageText || '', encrypted: false };
+        try {
+            prepared = await secureOutgoing(activeConversationId, messageText || '');
+        } catch (secureErr) {
+            const t = document.getElementById(`msg-${tempId}`);
+            if (t) t.remove();
+            if (!(secureErr && secureErr.code === 'cancelled')) showToast({ title: "Message not sent", message: (secureErr && secureErr.message) || "Please try again.", type: "error", icon: "▵", duration: 6000, force: true });
+            return;
+        }
+
         let uploadedImageUrl = null;
         if (rawFile) {
             const file = await compressImage(rawFile, 1200, 0.75);
@@ -7156,7 +7177,7 @@ safeAddListener(dmForm, 'submit', async (e) => {
                 conversation_id: activeConversationId,
                 sender_id: currentUser.id,
                 sender_username: currentUsername,
-                content: messageText || '',
+                content: prepared.content,
                 image_url: uploadedImageUrl,
                 pending_approval: isPendingApproval
             }])
@@ -7194,6 +7215,10 @@ safeAddListener(dmForm, 'submit', async (e) => {
             if (uploadedImageUrl) {
                 const img = tempEl.querySelector('.chat-img-thumb');
                 if (img) img.src = uploadedImageUrl;
+            }
+            if (prepared.encrypted) {
+                const bubble = tempEl.querySelector('.msg-bubble');
+                if (bubble && !bubble.querySelector('.msg-lock')) bubble.insertAdjacentHTML('beforeend', '<span class="msg-lock" title="End-to-end encrypted" aria-label="End-to-end encrypted">🔒</span>');
             }
         }
 
@@ -7238,7 +7263,9 @@ safeAddListener(dmForm, 'submit', async (e) => {
 
             if (recipientIds.length > 0) {
                 let snippet = 'sent a photo.';
-                if (messageText) {
+                if (messageText && prepared.encrypted) {
+                    snippet = 'sent you a message.'; // never put the text of an encrypted message into a notification
+                } else if (messageText) {
                     const cleanText = messageText.length > 50 ? `${messageText.substring(0, 47)}...` : messageText;
                     snippet = `: "${cleanText}"`;
                 }
@@ -7617,6 +7644,10 @@ async function removeStoredFiles(urls) {
 }
 
 // Unguessable invite codes: random hex from the browser's secure random source.
+// The same check and cross everywhere (drawn, not typed, so they are exactly the same size on every device).
+const ICON_YES = '<svg class="yn-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+const ICON_NO = '<svg class="yn-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>';
+
 function randomHex(len) {
     const bytes = new Uint8Array(Math.ceil(len / 2));
     crypto.getRandomValues(bytes);
@@ -7839,8 +7870,8 @@ Turing's Gate is built to protect organic human discussions from automated AI cr
         <span>Simple behaviour signals (pasted text, impossible typing speed, a hidden trap field and rapid-fire posting) feed a 0 to 5 risk score. Only the score is kept, never what you typed.</span>
     </div>
     <div class="diagram-step">
-        <span class="diagram-badge">3. Web of Trust (3 Lifetime Invites)</span>
-        <span>Network expansion is strictly capped: every verified account receives exactly three lifetime invites. You are mutually accountable for the accounts you introduce—if an invitee deploys automated scripts or spams, your Human Score is penalized.</span>
+        <span class="diagram-badge">3. Web of Trust (3 Invite Slots)</span>
+        <span>Growth is capped: every member has three invite slots, and a slot refills 30 days after it is used. Invites record who introduced whom, and moderators can flag a chain of accounts that turns out to be spam.</span>
     </div>
     <div class="diagram-step">
         <span class="diagram-badge">4. Accessibility-Safe Risk Ledger</span>
@@ -9315,11 +9346,12 @@ async function sendMessageToConversation({ convId, partnerId, isFriend, text, no
             .eq('pending_approval', true);
     }
 
+    const prepared = await secureOutgoing(convId, text);
     const { error } = await db.from('chat_messages').insert([{
         conversation_id: convId,
         sender_id: currentUser.id,
         sender_username: currentUsername,
-        content: text,
+        content: prepared.content,
         pending_approval: pending
     }]);
     if (error) throw new Error(error.message);
@@ -14782,7 +14814,7 @@ async function collectMyData() {
     const uid = currentUser.id, uname = (currentUsername || '').toLowerCase();
     const out = {
         exported_at: new Date().toISOString(),
-        about: "A copy of the data Turing's Gate holds about you. Chats include messages from the other people in them. Reports you filed are kept for moderation and are not included. Photos and videos are linked by address rather than embedded.",
+        about: "A copy of the data Turing's Gate holds about you. Chats include messages from the other people in them; messages protected by secure messages are listed as readable text only when this device holds your key. Reports you filed are kept for moderation and are not included. Photos and videos are linked by address rather than embedded.",
         account: {
             id: uid, email: currentUser.email || null, username: currentUsername,
             created_at: currentUser.created_at || null, last_sign_in_at: currentUser.last_sign_in_at || null
@@ -14810,6 +14842,16 @@ async function collectMyData() {
         const ids = (mem.data || []).map(m => m.conversation_id);
         out.conversations = ids.length ? (await db.from('conversations').select('*').in('id', ids)).data || [] : [];
         out.messages_in_my_chats = ids.length ? (await db.from('chat_messages').select('*').in('conversation_id', ids).order('id').limit(50000)).data || [] : [];
+        // Encrypted messages are exported as readable text when this device holds your key (otherwise as the locked text).
+        const exported = [];
+        for (const original of out.messages_in_my_chats) {
+            if (!e2eeIsEnvelope(original.content)) { exported.push(original); continue; }
+            const copy = { ...original };
+            await secureDecryptMessages([copy]);
+            exported.push(copy._secure ? { ...original, content: copy.content, end_to_end_encrypted: true } : { ...original, end_to_end_encrypted: true, readable_on_this_device: false });
+        }
+        out.messages_in_my_chats = exported;
+        out.secure_messages = { state: secure.state, public_key: secure.serverKeyJwk || null, note: 'Your private key is never part of this file. Only the public key and the on/off state are listed.' };
     } catch (e) { out.conversations = { unavailable: String((e && e.message) || e) }; }
     const local = {};
     try { Object.keys(localStorage).filter(k => /^(tg_|forum_)/.test(k) && !/founder_pearl|device_id/.test(k)).forEach(k => { local[k] = localStorage.getItem(k); }); } catch (e) { /* storage unavailable */ }
@@ -14855,6 +14897,7 @@ function refreshPrivacyCenter() {
     const score = mfaEl('psc-human-score');
     if (score) score.textContent = `${Math.min(5, Math.max(0, Number(suspicionScore) || 0))} / 5`;
     refreshMfaState();
+    updateSecureUi();
 }
 
 // --- Disappearing messages and "clear chat for me" ---
@@ -14903,12 +14946,16 @@ async function loadChatPrivacy(convId) {
 
 safeAddListener(mfaEl('chat-options-btn'), 'click', async () => {
     if (!activeConversationId || !db) return;
-    const choice = await uiChoose('', [
+    const optionChoices = [
         { value: 'timer', label: `⏱ Disappearing messages (${formatTimer(chatPrivacy.timer)})` },
         { value: 'clear', label: '🧹 Clear this chat for me' }
-    ], { title: 'Chat options' });
+    ];
+    if (secure.state === 'ready') optionChoices.unshift({ value: 'safety', label: '🔑 Safety number (check this chat is private)' });
+    const choice = await uiChoose('', optionChoices, { title: 'Chat options' });
     const convId = activeConversationId;
-    if (choice === 'timer') {
+    if (choice === 'safety') {
+        secureShowSafetyNumber();
+    } else if (choice === 'timer') {
         const pick = await uiChoose('Messages sent from now on are deleted for everyone in this chat once they are older than the timer. Earlier messages are not affected. Photos cannot be sent while a timer is on.', [
             { value: 0, label: 'Off', current: chatPrivacy.timer === 0 },
             { value: 86400, label: '24 hours', current: chatPrivacy.timer === 86400 },
@@ -14950,6 +14997,596 @@ setInterval(() => {
     chatMessages.querySelectorAll('.msg-row[data-expires]').forEach(row => { if (Date.parse(row.dataset.expires) <= now) row.remove(); });
 }, 30000);
 setInterval(() => { if (activeConversationId && db && !document.hidden) db.rpc('purge_expired_messages').then(null, () => {}); }, 300000);
+
+// ---------------------------------------------------------------------------------------------------------
+// SECURE MESSAGES: end-to-end encryption for direct and group chats (opt-in).
+//  * A member who turns it on gets a key pair. The public key is published (user_keys); the private key stays on the device
+//    (IndexedDB, not exportable) and a copy locked with a recovery passphrase is stored (user_key_backups) so a new device can restore it.
+//  * Every message gets a fresh key. That key is locked separately for each member of the chat, so the server only ever stores
+//    unreadable text in chat_messages.content. Chats are encrypted only when EVERY member has turned it on.
+//  * Limits, stated in the app and on the security page: text only (photos are not encrypted), no forward secrecy, message timing and
+//    who talks to whom stay visible to the service, and a swapped public key can only be caught by comparing safety numbers.
+// ---------------------------------------------------------------------------------------------------------
+// ---- Secure messages: crypto core (pure functions; keys are passed in). Uses only the browser WebCrypto API. ----
+const E2EE_PREFIX = 'e2ee:1:';
+const E2EE_PBKDF2_ITERATIONS = 600000;
+const e2eeText = new TextEncoder();
+const e2eeUntext = new TextDecoder();
+
+function e2eeB64(buf) {
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+}
+function e2eeUnb64(str) {
+    const bin = atob(str);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+function e2eeRandom(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+
+const E2EE_CURVE = { name: 'ECDH', namedCurve: 'P-256' };
+
+// A new identity: an ECDH key pair. The private key is returned as PKCS8 bytes so it can be locked with a passphrase.
+async function e2eeNewIdentity() {
+    const pair = await crypto.subtle.generateKey(E2EE_CURVE, true, ['deriveBits']);
+    const publicJwk = await crypto.subtle.exportKey('jwk', pair.publicKey);
+    const pkcs8 = new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+    return { publicJwk: { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x, y: publicJwk.y }, pkcs8 };
+}
+// The private key kept on the device can use deriveBits but can never be exported again.
+async function e2eeImportPrivate(pkcs8) {
+    return crypto.subtle.importKey('pkcs8', pkcs8, E2EE_CURVE, false, ['deriveBits']);
+}
+async function e2eeImportPublic(jwk) {
+    if (!jwk || jwk.kty !== 'EC' || jwk.crv !== 'P-256' || typeof jwk.x !== 'string' || typeof jwk.y !== 'string') throw new Error('bad public key');
+    return crypto.subtle.importKey('jwk', { kty: 'EC', crv: 'P-256', x: jwk.x, y: jwk.y, ext: true }, E2EE_CURVE, true, []);
+}
+// Short fingerprint of one public key (shown as a "key code"), and the safety number two people compare.
+async function e2eeFingerprint(jwk) {
+    const canonical = e2eeText.encode(`${jwk.kty}|${jwk.crv}|${jwk.x}|${jwk.y}`);
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', canonical));
+    return Array.from(h.slice(0, 16), b => b.toString(16).padStart(2, '0')).join('').toUpperCase().replace(/(.{4})/g, '$1 ').trim();
+}
+async function e2eeSafetyNumber(fpA, fpB) {
+    const [a, b] = [fpA, fpB].sort();
+    const h = new Uint8Array(await crypto.subtle.digest('SHA-256', e2eeText.encode(`${a}||${b}`)));
+    const groups = [];
+    for (let i = 0; i < 6; i++) {
+        const n = ((h[i * 4] << 24 | h[i * 4 + 1] << 16 | h[i * 4 + 2] << 8 | h[i * 4 + 3]) >>> 0) % 100000;
+        groups.push(String(n).padStart(5, '0'));
+    }
+    return groups.join(' ');
+}
+
+// The key that locks a message key for ONE person: derived from my private key and their public key (and the chat).
+async function e2eeWrapKey(myPrivate, theirPublic, info) {
+    const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: theirPublic }, myPrivate, 256);
+    const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: e2eeText.encode('turings-gate-e2ee-v1'), info: e2eeText.encode(info) }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+const e2eeAad = (convId, senderId) => e2eeText.encode(`${convId}|${senderId}`);
+
+// recipients: [{ id, publicKey (CryptoKey) }] and must include the sender, so the sender can read the message later too.
+async function e2eeEncrypt({ plaintext, convId, senderId, privateKey, senderPublicJwk, recipients }) {
+    const aad = e2eeAad(convId, senderId);
+    const msgKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+    const iv = e2eeRandom(12);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad }, msgKey, e2eeText.encode(plaintext)));
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', msgKey));
+    const keys = {};
+    for (const r of recipients) {
+        const wk = await e2eeWrapKey(privateKey, r.publicKey, `wrap|${convId}|${senderId}|${r.id}`);
+        const wiv = e2eeRandom(12);
+        const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: wiv, additionalData: aad }, wk, raw));
+        keys[r.id] = [e2eeB64(wiv), e2eeB64(wrapped)];
+    }
+    // sk = the sender key used, so the message stays readable after the sender later changes their key
+    return E2EE_PREFIX + e2eeB64(e2eeText.encode(JSON.stringify({ v: 1, sk: { x: senderPublicJwk.x, y: senderPublicJwk.y }, iv: e2eeB64(iv), ct: e2eeB64(ct), k: keys })));
+}
+const e2eeIsEnvelope = (content) => typeof content === 'string' && content.startsWith(E2EE_PREFIX);
+function e2eeParse(content) {
+    const env = JSON.parse(e2eeUntext.decode(e2eeUnb64(content.slice(E2EE_PREFIX.length))));
+    if (!env || env.v !== 1 || typeof env.iv !== 'string' || typeof env.ct !== 'string' || typeof env.k !== 'object' || !env.sk || typeof env.sk.x !== 'string' || typeof env.sk.y !== 'string') throw new Error('unreadable envelope');
+    return env;
+}
+// Returns { text, senderJwk }. Throws when the message is not for me or was altered. senderJwk is the key the message
+// CLAIMS to come from: the caller must compare it with that person's real key (a different one means an earlier key, or a forgery).
+async function e2eeDecrypt({ content, convId, senderId, myId, privateKey, cache }) {
+    const env = e2eeParse(content);
+    const mine = env.k[myId];
+    if (!mine) { const e = new Error('not addressed to me'); e.code = 'not-for-me'; throw e; }
+    const senderJwk = { kty: 'EC', crv: 'P-256', x: env.sk.x, y: env.sk.y };
+    const aad = e2eeAad(convId, senderId);
+    const cacheKey = `${convId}|${senderId}|${myId}|${env.sk.x}|${env.sk.y}`;
+    let wk = cache ? cache.get(cacheKey) : null;
+    if (!wk) {
+        wk = await e2eeWrapKey(privateKey, await e2eeImportPublic(senderJwk), `wrap|${convId}|${senderId}|${myId}`);
+        if (cache) cache.set(cacheKey, wk);
+    }
+    const raw = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: e2eeUnb64(mine[0]), additionalData: aad }, wk, e2eeUnb64(mine[1]));
+    const msgKey = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: e2eeUnb64(env.iv), additionalData: aad }, msgKey, e2eeUnb64(env.ct));
+    return { text: e2eeUntext.decode(pt), senderJwk };
+}
+
+// The recovery backup: the private key locked with a passphrase (PBKDF2 then AES-GCM). Without the passphrase it is unreadable.
+async function e2eeLockBackup(pkcs8, publicJwk, passphrase, iterations = E2EE_PBKDF2_ITERATIONS) {
+    const salt = e2eeRandom(16), iv = e2eeRandom(12);
+    const base = await crypto.subtle.importKey('raw', e2eeText.encode(passphrase.normalize('NFKC')), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+    const body = e2eeText.encode(JSON.stringify({ pkcs8: e2eeB64(pkcs8), publicJwk }));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, body));
+    return { v: 1, iter: iterations, salt: e2eeB64(salt), iv: e2eeB64(iv), ct: e2eeB64(ct) };
+}
+async function e2eeUnlockBackup(backup, passphrase) {
+    if (!backup || backup.v !== 1 || !Number.isInteger(backup.iter) || backup.iter < 100000 || backup.iter > 5000000) throw new Error('unreadable backup');
+    const base = await crypto.subtle.importKey('raw', e2eeText.encode(passphrase.normalize('NFKC')), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: e2eeUnb64(backup.salt), iterations: backup.iter }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    let body;
+    try { body = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: e2eeUnb64(backup.iv) }, key, e2eeUnb64(backup.ct)); }
+    catch (e) { const err = new Error('wrong passphrase'); err.code = 'wrong-passphrase'; throw err; }
+    const parsed = JSON.parse(e2eeUntext.decode(body));
+    return { pkcs8: e2eeUnb64(parsed.pkcs8), publicJwk: parsed.publicJwk };
+}
+
+
+// ---- the app side ----
+const secure = { uid: null, state: 'off', privateKey: null, publicJwk: null, fingerprint: null, serverKeyJwk: null, chatHasEncrypted: false, allowPlainThisSession: false };
+// state: 'off' = not turned on, 'ready' = turned on and this device holds the key, 'restore' = turned on but this device has no key yet,
+//        'unavailable' = the database part is not installed
+const secureWrapCache = new Map();
+const securePeerKeys = new Map(); // user id -> { key, jwk, fp, missing, at }
+const secureNames = new Map();    // user id -> username
+
+// Where the private key lives on this device. A key stored here can be used but never exported again.
+const secureIdb = (() => {
+    const mem = new Map();
+    const open = () => new Promise((resolve, reject) => {
+        const r = indexedDB.open('tg_secure_messages', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('keys');
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+    });
+    const run = async (mode, fn) => {
+        const handle = await open();
+        return new Promise((resolve, reject) => {
+            const t = handle.transaction('keys', mode);
+            const req = fn(t.objectStore('keys'));
+            t.oncomplete = () => { handle.close(); resolve(req && req.result); };
+            t.onerror = () => { handle.close(); reject(t.error); };
+        });
+    };
+    return {
+        async get(k) { try { return await run('readonly', s => s.get(k)); } catch (e) { return mem.get(k); } },
+        async put(k, v) { mem.set(k, v); try { await run('readwrite', s => s.put(v, k)); } catch (e) { /* kept in memory for this session only */ } },
+        async del(k) { mem.delete(k); try { await run('readwrite', s => s.delete(k)); } catch (e) { /* nothing stored */ } }
+    };
+})();
+
+const secureSameKey = (a, b) => Boolean(a && b && a.x === b.x && a.y === b.y);
+const securePinsKey = () => `tg_secure_pins_${secure.uid}`;
+function secureReadPins() { try { return JSON.parse(localStorage.getItem(securePinsKey()) || '{}') || {}; } catch (e) { return {}; } }
+function secureWritePins(p) { try { localStorage.setItem(securePinsKey(), JSON.stringify(p)); } catch (e) { /* storage unavailable */ } }
+// 'new' = never seen, 'same' = matches what we saw before, 'verified' = same and checked in person, 'changed' = differs from before
+function securePinStatus(id, fp) {
+    const p = secureReadPins()[id];
+    if (!p) return 'new';
+    return p.fp === fp ? (p.verified ? 'verified' : 'same') : 'changed';
+}
+function securePin(id, fp, verified) {
+    const pins = secureReadPins();
+    const keepVerified = pins[id] && pins[id].fp === fp && pins[id].verified;
+    pins[id] = { fp, verified: Boolean(verified) || Boolean(keepVerified) };
+    secureWritePins(pins);
+}
+
+async function secureUsernames(ids) {
+    const need = ids.filter(id => !secureNames.has(id));
+    if (need.length && db) {
+        const { data } = await db.from('profiles').select('id, username').in('id', need);
+        (data || []).forEach(p => secureNames.set(p.id, p.username));
+    }
+    return ids.map(id => secureNames.get(id) || 'a member');
+}
+
+// Other members' public keys (cached for a minute).
+async function secureGetPeerKeys(ids) {
+    const need = ids.filter(id => { const e = securePeerKeys.get(id); return !e || Date.now() - e.at > 60000; });
+    if (need.length) {
+        const { data, error } = await db.from('user_keys').select('user_id, public_key').in('user_id', need);
+        if (error) throw error;
+        const found = new Map((data || []).map(r => [r.user_id, r.public_key]));
+        for (const id of need) {
+            const jwk = found.get(id);
+            if (!jwk) { securePeerKeys.set(id, { missing: true, at: Date.now() }); continue; }
+            try {
+                const key = await e2eeImportPublic(jwk);
+                const fp = await e2eeFingerprint(jwk);
+                key._fp = fp;
+                securePeerKeys.set(id, { key, jwk, fp, at: Date.now() });
+            } catch (e) { securePeerKeys.set(id, { missing: true, at: Date.now() }); }
+        }
+    }
+    return new Map(ids.map(id => [id, securePeerKeys.get(id)]));
+}
+
+async function secureMemberIds(convId) {
+    const { data, error } = await db.from('conversation_members').select('user_id').eq('conversation_id', convId);
+    if (error) throw error;
+    return (data || []).map(r => r.user_id);
+}
+
+// ---- turning it on, restoring, and turning it off ----
+async function secureAskNewPassphrase(title) {
+    const first = await uiPrompt('Choose a recovery passphrase of at least 10 characters (a few random words works well). It is the only way to read your encrypted messages on a new phone or after reinstalling the app. We cannot reset it.', { title, inputType: 'password', maxLength: 200, confirmText: 'Next' });
+    if (first === null) return null;
+    if (first.length < 10) { showToast({ title: "Passphrase too short", message: "Use at least 10 characters.", type: "error", icon: "▵", duration: 5000, force: true }); return null; }
+    const again = await uiPrompt('Type the same passphrase again to confirm.', { title, inputType: 'password', maxLength: 200, confirmText: 'Confirm' });
+    if (again === null) return null;
+    if (again !== first) { showToast({ title: "Passphrases do not match", message: "Nothing was changed. Please try again.", type: "error", icon: "▵", duration: 5000, force: true }); return null; }
+    return first;
+}
+
+async function secureSaveRow(table, row) {
+    const { user_id, ...rest } = row;
+    const existing = await db.from(table).select('user_id').eq('user_id', user_id).maybeSingle();
+    if (existing.error) return existing.error;
+    const res = existing.data ? await db.from(table).update(rest).eq('user_id', user_id) : await db.from(table).insert([row]);
+    return res.error || null;
+}
+
+async function secureInstallIdentity(identity, passphrase) {
+    const backup = await e2eeLockBackup(identity.pkcs8, identity.publicJwk, passphrase);
+    // the backup goes first, so a published key never exists without a way to restore it
+    let err = await secureSaveRow('user_key_backups', { user_id: secure.uid, backup });
+    if (err) throw err;
+    err = await secureSaveRow('user_keys', { user_id: secure.uid, public_key: identity.publicJwk });
+    if (err) throw err;
+    const privateKey = await e2eeImportPrivate(identity.pkcs8);
+    await secureIdb.put(secure.uid, { publicJwk: identity.publicJwk, privateKey });
+    secure.privateKey = privateKey;
+    secure.publicJwk = identity.publicJwk;
+    secure.serverKeyJwk = identity.publicJwk;
+    secure.fingerprint = await e2eeFingerprint(identity.publicJwk);
+    secure.state = 'ready';
+    securePeerKeys.delete(secure.uid);
+    secureWrapCache.clear();
+}
+
+async function enableSecureMessages() {
+    if (!currentUser || !db) return;
+    if (secure.state === 'restore') return restoreSecureMessages();
+    if (secure.state !== 'off') return;
+    const ok = await uiConfirm("Your chat messages will be locked on your device so that only the people in the chat can read them, not even Turing's Gate. You will choose a recovery passphrase next. Good to know: only text is encrypted, and photos are not encrypted. People who have not turned this on will not get encrypted messages from you, and if you forget the passphrase and lose all your devices, your old encrypted messages cannot be recovered.", { title: 'Turn on secure messages?', confirmText: 'Continue' });
+    if (!ok) return;
+    const pass = await secureAskNewPassphrase('Recovery passphrase');
+    if (!pass) return;
+    try {
+        showToast({ title: "Setting up", message: "Creating your keys. This takes a moment.", type: "info", icon: "◈", duration: 2500, force: true });
+        await secureInstallIdentity(await e2eeNewIdentity(), pass);
+        showToast({ title: "Secure messages are on", message: "New messages in chats where everyone has turned this on are now end-to-end encrypted.", type: "success", icon: "🔒", duration: 7000, force: true });
+    } catch (e) {
+        showToast({ title: "Could not turn it on", message: (e && e.message) || "Please try again.", type: "error", icon: "▵", duration: 7000, force: true });
+        await db.from('user_keys').delete().eq('user_id', secure.uid).then(null, () => {});
+        await db.from('user_key_backups').delete().eq('user_id', secure.uid).then(null, () => {});
+    }
+    updateSecureUi();
+    if (activeConversationId) loadMessages(true);
+}
+
+async function restoreSecureMessages() {
+    if (!currentUser || !db || secure.state !== 'restore') return false;
+    const { data, error } = await db.from('user_key_backups').select('backup').eq('user_id', secure.uid).maybeSingle();
+    if (error || !data) {
+        showToast({ title: "No backup found", message: "There is no recovery backup for your account. Use Manage > Start over to create a new key (older encrypted messages will stay unreadable).", type: "error", icon: "▵", duration: 9000, force: true });
+        return false;
+    }
+    const pass = await uiPrompt('Enter your recovery passphrase to read your encrypted messages on this device.', { title: 'Restore secure messages', inputType: 'password', maxLength: 200, confirmText: 'Restore' });
+    if (pass === null) return false;
+    try {
+        const opened = await e2eeUnlockBackup(data.backup, pass);
+        if (!secureSameKey(opened.publicJwk, secure.serverKeyJwk)) throw new Error('This backup does not match your current key. Use Manage > Start over.');
+        const privateKey = await e2eeImportPrivate(opened.pkcs8);
+        await secureIdb.put(secure.uid, { publicJwk: opened.publicJwk, privateKey });
+        secure.privateKey = privateKey;
+        secure.publicJwk = opened.publicJwk;
+        secure.fingerprint = await e2eeFingerprint(opened.publicJwk);
+        secure.state = 'ready';
+        secureWrapCache.clear();
+        showToast({ title: "Restored", message: "Secure messages are working on this device.", type: "success", icon: "🔒", duration: 5000, force: true });
+        updateSecureUi();
+        if (activeConversationId) loadMessages(true);
+        return true;
+    } catch (e) {
+        showToast({ title: e && e.code === 'wrong-passphrase' ? "Wrong passphrase" : "Could not restore", message: e && e.code === 'wrong-passphrase' ? "That passphrase did not unlock your backup. Nothing was changed." : ((e && e.message) || "Please try again."), type: "error", icon: "▵", duration: 6000, force: true });
+        return false;
+    }
+}
+
+async function changeSecurePassphrase() {
+    const { data } = await db.from('user_key_backups').select('backup').eq('user_id', secure.uid).maybeSingle();
+    if (!data) { showToast({ title: "No backup found", message: "Use Start over to create a new key and backup.", type: "error", icon: "▵", duration: 6000, force: true }); return; }
+    const current = await uiPrompt('Enter your current recovery passphrase.', { title: 'Change recovery passphrase', inputType: 'password', maxLength: 200, confirmText: 'Next' });
+    if (current === null) return;
+    let opened;
+    try { opened = await e2eeUnlockBackup(data.backup, current); }
+    catch (e) { showToast({ title: "Wrong passphrase", message: "Nothing was changed.", type: "error", icon: "▵", duration: 5000, force: true }); return; }
+    const next = await secureAskNewPassphrase('New recovery passphrase');
+    if (!next) return;
+    try {
+        const backup = await e2eeLockBackup(opened.pkcs8, opened.publicJwk, next);
+        const err = await secureSaveRow('user_key_backups', { user_id: secure.uid, backup });
+        if (err) throw err;
+        showToast({ title: "Passphrase changed", message: "Use the new passphrase from now on.", type: "success", icon: "🔒", duration: 5000, force: true });
+    } catch (e) { showToast({ title: "Not changed", message: (e && e.message) || "Please try again.", type: "error", icon: "▵", duration: 6000, force: true }); }
+}
+
+async function startOverSecureMessages() {
+    const ok = await uiConfirm("This creates a brand new key. Encrypted messages you already have will stay unreadable to you (the people you chatted with can still read their copies), and your contacts will see that your safety number changed. Use this if you forgot your recovery passphrase.", { title: 'Start over?', confirmText: 'Create a new key', danger: true });
+    if (!ok) return;
+    const pass = await secureAskNewPassphrase('New recovery passphrase');
+    if (!pass) return;
+    try {
+        await secureInstallIdentity(await e2eeNewIdentity(), pass);
+        showToast({ title: "New key created", message: "Secure messages are on with your new key.", type: "success", icon: "🔒", duration: 6000, force: true });
+    } catch (e) { showToast({ title: "Could not start over", message: (e && e.message) || "Please try again.", type: "error", icon: "▵", duration: 7000, force: true }); }
+    updateSecureUi();
+    if (activeConversationId) loadMessages(true);
+}
+
+async function disableSecureMessages() {
+    const ok = await uiConfirm("Your keys are deleted from this device and from our servers. Encrypted messages you already have become unreadable to you (the people you chatted with can still read their copies). New messages will no longer be encrypted. Turn off secure messages?", { title: 'Turn off secure messages?', confirmText: 'Turn off', danger: true });
+    if (!ok) return;
+    await db.from('user_keys').delete().eq('user_id', secure.uid);
+    await db.from('user_key_backups').delete().eq('user_id', secure.uid);
+    await secureIdb.del(secure.uid);
+    Object.assign(secure, { state: 'off', privateKey: null, publicJwk: null, fingerprint: null, serverKeyJwk: null });
+    secureWrapCache.clear();
+    showToast({ title: "Secure messages are off", message: "Your keys were deleted.", type: "info", icon: "◈", duration: 5000, force: true });
+    updateSecureUi();
+    if (activeConversationId) loadMessages(true);
+}
+
+async function removeSecureKeyFromThisDevice() {
+    const ok = await uiConfirm("The key is removed from this device only. You can restore it with your recovery passphrase. Do this on a shared or borrowed device.", { title: 'Remove from this device?', confirmText: 'Remove', danger: true });
+    if (!ok) return;
+    await secureIdb.del(secure.uid);
+    Object.assign(secure, { state: 'restore', privateKey: null, publicJwk: null, fingerprint: null });
+    secureWrapCache.clear();
+    updateSecureUi();
+    if (activeConversationId) loadMessages(true);
+}
+
+async function manageSecureMessages() {
+    if (secure.state === 'off') return enableSecureMessages();
+    if (secure.state === 'restore') return restoreSecureMessages();
+    if (secure.state !== 'ready') return;
+    const pick = await uiChoose(`Your key code: ${secure.fingerprint || ''}`, [
+        { value: 'passphrase', label: 'Change recovery passphrase' },
+        { value: 'device', label: 'Remove from this device' },
+        { value: 'startover', label: 'Start over with a new key' },
+        { value: 'off', label: 'Turn off and delete my keys' }
+    ], { title: 'Secure messages' });
+    if (pick === 'passphrase') await changeSecurePassphrase();
+    else if (pick === 'device') await removeSecureKeyFromThisDevice();
+    else if (pick === 'startover') await startOverSecureMessages();
+    else if (pick === 'off') await disableSecureMessages();
+}
+
+// Reads the server and this device, and decides which state we are in.
+async function initSecureMessages(user) {
+    secureWrapCache.clear(); securePeerKeys.clear();
+    Object.assign(secure, { uid: user ? user.id : null, state: 'off', privateKey: null, publicJwk: null, fingerprint: null, serverKeyJwk: null, chatHasEncrypted: false, allowPlainThisSession: false });
+    if (!user || !db) { updateSecureUi(); return; }
+    try {
+        const { data, error } = await db.from('user_keys').select('public_key').eq('user_id', user.id).maybeSingle();
+        if (error) throw error;
+        secure.serverKeyJwk = data ? data.public_key : null;
+    } catch (e) {
+        secure.state = 'unavailable';
+        updateSecureUi();
+        return;
+    }
+    if (secure.serverKeyJwk) {
+        const rec = await secureIdb.get(user.id);
+        if (rec && rec.privateKey && secureSameKey(rec.publicJwk, secure.serverKeyJwk)) {
+            secure.privateKey = rec.privateKey;
+            secure.publicJwk = rec.publicJwk;
+            secure.fingerprint = await e2eeFingerprint(rec.publicJwk);
+            secure.state = 'ready';
+        } else {
+            secure.state = 'restore';
+        }
+    }
+    updateSecureUi();
+    secureAnnounceOnce();
+}
+
+// A one-time notice so people find the feature.
+function secureAnnounceOnce() {
+    if (secure.state !== 'off') return;
+    let seen = false;
+    try { seen = localStorage.getItem('tg_seen_secure_messages') === '1'; localStorage.setItem('tg_seen_secure_messages', '1'); } catch (e) { /* storage unavailable */ }
+    if (seen) return;
+    showToast({
+        title: "New: secure messages",
+        message: "Lock your chats so only the people in them can read them. Turn it on in Settings > Privacy.",
+        type: "info", icon: "🔒", duration: 12000, force: true,
+        onClick: () => { if (typeof openSettingsBtn !== 'undefined' && openSettingsBtn) { openSettingsBtn.click(); switchSettingsTab('privacy'); } }
+    });
+}
+
+// ---- sending and reading ----
+async function secureConfirmKeyChange(id, entry) {
+    const [name] = await secureUsernames([id]);
+    const ok = await uiConfirm(`@${name}'s safety number has changed. That can happen when they set up a new phone or start over, but it can also mean someone is interfering. If you can, compare the new number with them first (Chat options > Safety number). Send to the new key anyway?`, { title: 'Safety number changed', confirmText: 'Send anyway', cancelText: 'Cancel', danger: true });
+    if (ok) securePin(id, entry.fp, false);
+    return ok;
+}
+
+// Returns { content, encrypted }. Text is encrypted only when every member of the chat has secure messages turned on.
+async function secureOutgoing(convId, text) {
+    if (!text || secure.state === 'off' || secure.state === 'unavailable' || !secure.uid) return { content: text, encrypted: false };
+    if (secure.state === 'restore') {
+        if (!secure.allowPlainThisSession) {
+            const pick = await uiChoose("Your secure messages key is not on this device, so this message cannot be encrypted. Restore your key, or send it without encryption.", [
+                { value: 'restore', label: 'Restore my key' },
+                { value: 'plain', label: 'Send without encryption (do not ask again this session)' }
+            ], { title: 'Not encrypted' });
+            if (pick === 'restore') { if (!(await restoreSecureMessages())) { const e = new Error('Message not sent'); e.code = 'cancelled'; throw e; } }
+            else if (pick === 'plain') secure.allowPlainThisSession = true;
+            else { const e = new Error('Message not sent'); e.code = 'cancelled'; throw e; }
+        }
+        if (secure.state !== 'ready') return { content: text, encrypted: false };
+    }
+    const members = await secureMemberIds(convId);
+    const others = Array.from(new Set(members.filter(id => id !== secure.uid)));
+    if (!others.length) return { content: text, encrypted: false };
+    const keys = await secureGetPeerKeys(others);
+    const recipients = [{ id: secure.uid, publicKey: await e2eeImportPublic(secure.publicJwk) }];
+    for (const id of others) {
+        const k = keys.get(id);
+        if (!k || k.missing) return { content: text, encrypted: false, missing: id };
+        const st = securePinStatus(id, k.fp);
+        if (st === 'changed') {
+            if (!(await secureConfirmKeyChange(id, k))) { const e = new Error('Message not sent'); e.code = 'cancelled'; throw e; }
+        } else if (st === 'new') {
+            securePin(id, k.fp, false);
+        }
+        recipients.push({ id, publicKey: k.key });
+    }
+    const content = await e2eeEncrypt({ plaintext: text, convId: String(convId), senderId: secure.uid, privateKey: secure.privateKey, senderPublicJwk: secure.publicJwk, recipients });
+    return { content, encrypted: true };
+}
+
+const SECURE_LOCK_TEXT = {
+    setup: 'Encrypted message. Turn on secure messages in Settings > Privacy to read it.',
+    restore: 'Encrypted message. Restore your secure messages key to read it.',
+    'not-for-me': 'Encrypted message that was sent before you joined this chat or before your current key.',
+    cannot: 'Encrypted message that cannot be read.'
+};
+function secureMarkLocked(m, why) { m._secureLocked = why; m.content = '🔒 ' + SECURE_LOCK_TEXT[why]; }
+
+// Replaces the content of encrypted messages with their text, in place. Never throws.
+async function secureDecryptMessages(msgs) {
+    try {
+        const enc = (msgs || []).filter(m => m && !m.is_optimistic && e2eeIsEnvelope(m.content));
+        if (!enc.length) return msgs;
+        if (activeConversationId && enc.some(m => String(m.conversation_id) === String(activeConversationId))) secure.chatHasEncrypted = true;
+        if (secure.state !== 'ready') { enc.forEach(m => secureMarkLocked(m, secure.state === 'restore' ? 'restore' : 'setup')); return msgs; }
+        const senders = Array.from(new Set(enc.map(m => m.sender_id))).filter(id => id !== secure.uid);
+        let keys = new Map();
+        try { keys = await secureGetPeerKeys(senders); } catch (e) { /* every sender then counts as having an unknown current key */ }
+        for (const m of enc) {
+            try {
+                const out = await e2eeDecrypt({ content: m.content, convId: String(m.conversation_id), senderId: m.sender_id, myId: secure.uid, privateKey: secure.privateKey, cache: secureWrapCache });
+                const current = m.sender_id === secure.uid ? secure.publicJwk : (keys.get(m.sender_id) && !keys.get(m.sender_id).missing ? keys.get(m.sender_id).jwk : null);
+                m.content = out.text;
+                m._secure = true;
+                // A message sent with a key that is not the person's current key: still readable, but marked (it may predate a key change)
+                if (!secureSameKey(out.senderJwk, current)) m._secureOldKey = true;
+            } catch (e) {
+                secureMarkLocked(m, e && e.code === 'not-for-me' ? 'not-for-me' : 'cannot');
+            }
+        }
+    } catch (e) { /* show the messages as they are */ }
+    return msgs;
+}
+
+// ---- the chat banner, safety numbers, and the settings row ----
+async function updateChatSecureBanner() {
+    const el = document.getElementById('chat-e2ee-banner');
+    if (!el) return;
+    const convId = activeConversationId;
+    const hide = () => { el.classList.add('hidden'); el.textContent = ''; };
+    if (!convId || !db || !currentUser) { hide(); return; }
+    let text = '', cls = 'ok', action = null, actionLabel = '';
+    try {
+        if (secure.state === 'ready') {
+            const members = await secureMemberIds(convId);
+            const others = members.filter(id => id !== secure.uid);
+            if (!others.length) { hide(); return; }
+            const keys = await secureGetPeerKeys(others);
+            const missing = others.filter(id => { const k = keys.get(id); return !k || k.missing; });
+            const changed = others.filter(id => { const k = keys.get(id); return k && !k.missing && securePinStatus(id, k.fp) === 'changed'; });
+            if (changed.length) {
+                const names = await secureUsernames(changed);
+                text = `⚠ Safety number changed for ${names.map(n => '@' + n).join(', ')}. Compare it before trusting this chat.`; cls = 'warn'; actionLabel = 'Review'; action = () => secureShowSafetyNumber();
+            } else if (missing.length) {
+                const names = await secureUsernames(missing);
+                text = `🔓 Not end-to-end encrypted: ${names.map(n => '@' + n).join(', ')} ${names.length > 1 ? 'have' : 'has'} not turned on secure messages, so messages here can be read by the service.`; cls = 'warn';
+            } else {
+                text = '🔒 End-to-end encrypted: only the people in this chat can read the text. Photos are not encrypted.'; actionLabel = 'Safety number'; action = () => secureShowSafetyNumber();
+            }
+        } else if (secure.state === 'restore' && secure.chatHasEncrypted) {
+            text = '🔒 This chat has encrypted messages. Restore your secure messages key to read them.'; cls = 'warn'; actionLabel = 'Restore'; action = () => restoreSecureMessages();
+        } else if (secure.state === 'off' && secure.chatHasEncrypted) {
+            text = '🔒 This chat has encrypted messages. Turn on secure messages to read them.'; cls = 'warn'; actionLabel = 'Turn on'; action = () => enableSecureMessages();
+        } else { hide(); return; }
+    } catch (e) { hide(); return; }
+    if (convId !== activeConversationId) return;
+    el.className = `chat-e2ee-banner ${cls}`;
+    el.textContent = '';
+    const span = document.createElement('span');
+    span.className = 'e2ee-text';
+    span.textContent = text;
+    el.appendChild(span);
+    if (action) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'e2ee-btn';
+        b.textContent = actionLabel;
+        b.addEventListener('click', action);
+        el.appendChild(b);
+    }
+}
+
+async function secureShowSafetyNumber() {
+    if (secure.state !== 'ready' || !activeConversationId) return;
+    const members = (await secureMemberIds(activeConversationId)).filter(id => id !== secure.uid);
+    if (!members.length) return;
+    let peerId = members[0];
+    if (members.length > 1) {
+        const names = await secureUsernames(members);
+        peerId = await uiChoose('Whose safety number do you want to check?', members.map((id, i) => ({ value: id, label: '@' + names[i] })), { title: 'Safety number' });
+        if (!peerId) return;
+    }
+    const entry = (await secureGetPeerKeys([peerId])).get(peerId);
+    const [name] = await secureUsernames([peerId]);
+    if (!entry || entry.missing) { showToast({ title: "No key yet", message: `@${name} has not turned on secure messages.`, type: "info", icon: "◈", duration: 5000, force: true }); return; }
+    const number = await e2eeSafetyNumber(secure.fingerprint, entry.fp);
+    const status = securePinStatus(peerId, entry.fp);
+    const verified = status === 'verified';
+    const intro = `Safety number for you and @${name}:\n\n${number}\n\nCompare it with @${name} in person or on a call (not in this chat). If the numbers match, nobody is intercepting your messages. If they differ, someone may be interfering.`;
+    if (status === 'changed') {
+        const accept = await uiConfirm(`${intro}\n\nThis is different from the number you saw before.`, { title: 'Safety number changed', confirmText: 'Accept new number', cancelText: 'Close', danger: true });
+        if (accept) securePin(peerId, entry.fp, false);
+    } else if (verified) {
+        const unmark = await uiConfirm(`${intro}\n\n✓ You marked this number as verified.`, { title: 'Safety number', confirmText: 'Close', cancelText: 'Remove verified mark' });
+        if (unmark === false) { const p = secureReadPins(); p[peerId] = { fp: entry.fp, verified: false }; secureWritePins(p); }
+    } else {
+        const mark = await uiConfirm(intro, { title: 'Safety number', confirmText: 'They match: mark verified', cancelText: 'Close' });
+        if (mark) securePin(peerId, entry.fp, true);
+    }
+    updateChatSecureBanner();
+}
+
+function updateSecureUi() {
+    const text = document.getElementById('e2ee-state-text'), btn = document.getElementById('e2ee-toggle-btn');
+    if (text && btn) {
+        btn.disabled = false;
+        if (secure.state === 'ready') { text.textContent = `On. Messages in chats where everyone has turned this on are encrypted. Your key code: ${secure.fingerprint}`; btn.textContent = 'Manage'; }
+        else if (secure.state === 'restore') { text.textContent = 'On for your account, but this device does not have your key yet. Enter your recovery passphrase to read your encrypted messages here.'; btn.textContent = 'Restore'; }
+        else if (secure.state === 'unavailable') { text.textContent = 'Not available right now.'; btn.textContent = 'Turn on'; btn.disabled = true; }
+        else { text.textContent = 'Off (optional). Turn it on to lock your chat messages so only the people in the chat can read them, not even Turing\'s Gate. Text only; photos are not encrypted.'; btn.textContent = 'Turn on'; }
+    }
+    updateChatSecureBanner();
+}
+
+safeAddListener(document.getElementById('e2ee-toggle-btn'), 'click', () => { manageSecureMessages(); });
 
 // ---------------------------------------------------------------------------------------------------------
 // CLICK / TAP OUTSIDE A WINDOW TO CLOSE IT (and Esc on a keyboard). Works for every overlay in the app by pressing the

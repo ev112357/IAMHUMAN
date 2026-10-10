@@ -22,6 +22,7 @@
         a { color: #7dd3fc; text-decoration: underline; }
         .callout { background: #0f172a; border: 1px solid #334155; border-left: 3px solid #38bdf8; border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
         .callout p:last-child { margin-bottom: 0; }
+        .callout-secure { border-left-color: #22c55e; background: rgba(22, 163, 74, 0.08); }
         details { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 0 14px; margin-bottom: 10px; }
         summary { cursor: pointer; padding: 12px 0; font-weight: 600; color: #e2e8f0; font-size: 0.97rem; }
         details[open] summary { border-bottom: 1px solid #334155; margin-bottom: 10px; }
@@ -43,12 +44,18 @@
             <p><strong>The short version:</strong> we collect only what's needed to run your account, show your posts and deliver your messages. We don't sell your data, we don't run ads, we don't track you across other apps or websites, and you can delete your account and data from inside the app at any time.</p>
         </div>
 
+        <div class="callout callout-secure" id="secure-messages-summary">
+            <p><strong>&#128274; Secure messages (end-to-end encryption) &mdash; optional.</strong> Turn it on in <strong>Settings &gt; Privacy</strong> and your chat messages are locked on your device, so only the people in the chat can read the text. Not even Turing's Gate can. It works in direct and group chats once everyone in the chat has turned it on. <strong>What it does not cover:</strong> photos are not encrypted, and we can still see who is in a chat and when messages are sent. Without it, chat messages are stored in a form we could read. Details and limits are on our <a href="security.html#secure-messages">Security page</a>.</p>
+        </div>
+
         <h2>1. What we collect</h2>
         <h3>Information you give us</h3>
         <ul>
             <li><strong>Account details:</strong> email address, username and password (the password is stored only as a salted hash by our authentication provider &mdash; we cannot read it), plus the Red Pearl code you used to join.</li>
             <li><strong>Profile:</strong> optional profile photo and your privacy setting (public or private profile).</li>
-            <li><strong>Content you create:</strong> posts, polls, replies, photos and videos you attach, direct and group messages, live chat messages (these are not stored), votes, friend connections, blocks and reports you file.</li>
+            <li><strong>Content you create:</strong> posts, polls, replies, photos and videos you attach, direct and group messages (stored in a form we could read, unless you turn on secure messages, in which case we store only unreadable encrypted text), live chat messages (these are not stored), votes (<strong>poll votes are public</strong>: other members can see which option each member chose), friend connections, blocks and reports you file.</li>
+            <li><strong>Secure messages keys (only if you turn them on):</strong> your <em>public</em> key, which other members can read so they can lock messages for you, and a backup of your <em>private</em> key that is locked with your recovery passphrase before it leaves your device, so we cannot open it. Your private key itself stays on your device. Both are deleted when you turn secure messages off or delete your account.</li>
+            <li><strong>Notifications:</strong> when someone messages you, a short preview of the message is kept in your notification list and may appear in a push notification. In chats protected by secure messages no preview is kept: the notice only says you received a message.</li>
             <li><strong>Voice and calls:</strong> if you join a voice room or call, your device sends audio directly to the other participants. We do not record calls and audio never touches our database. The app asks for microphone permission only when you start or answer a call.</li>
             <li><strong>Photos and videos:</strong> the app asks to access your photo library or camera only when you choose to attach media or set a profile photo. Media you upload is stored so other members can see it.</li>
         </ul>
@@ -64,7 +71,7 @@
         <h2>2. How we use it</h2>
         <ul>
             <li>To create and run your account, show your posts and deliver your messages and notifications.</li>
-            <li>To keep the community safe: preventing bots, spam and abuse, and reviewing reports.</li>
+            <li>To keep the community safe: preventing bots, spam and abuse, and reviewing reports. We cannot read messages protected by secure messages, so for those we can review only what a reporter chooses to send us.</li>
             <li>To maintain, secure and improve the Service.</li>
         </ul>
         <p>We do not sell your personal information, do not use it for advertising, and do not share it with data brokers.</p>
@@ -75,21 +82,22 @@
             <li><strong>Supabase</strong> &mdash; database, authentication, file storage and realtime messaging.</li>
             <li><strong>Vercel</strong> &mdash; website hosting and privacy-friendly analytics.</li>
             <li><strong>Cloudflare</strong> &mdash; Turnstile bot checks.</li>
-            <li><strong>OneSignal</strong> &mdash; delivery of push notifications to the iOS app.</li>
+            <li><strong>OneSignal</strong> &mdash; delivery of push notifications to the iOS app (these carry a message preview only for chats that are not protected by secure messages).</li>
             <li><strong>Google STUN servers</strong> &mdash; used by your device to find a route for voice calls; they see your IP address but not your audio.</li>
         </ul>
         <p>Voice calls are peer to peer, so the people you call can see your IP address as part of the connection. We may also disclose information if required by law or to protect the safety of our members.</p>
 
         <h2>4. What other members can see</h2>
-        <p>Your username, profile photo, posts, replies and activity score are visible to other members. If you set your profile to private, your profile page hides your post and reply history from other members; posts you made in public threads stay visible in those threads. Votes in polls are public: other members can see which option each member chose. Your Human Check score and whether your account is suspended are stored with your profile and can technically be read by other members' apps, although the app does not display them. Direct messages are visible only to the people in that conversation. Content you share in public threads can be seen by every member and may be copied by them; please don't post anything you want to keep private.</p>
+        <p>Your username, profile photo, posts, replies and activity score are visible to other members. If you set your profile to private, your profile page hides your post and reply history from other members; posts you made in public threads stay visible in those threads. Votes in polls are public: other members can see which option each member chose. Your Human Check score and whether your account is suspended are stored with your profile and can technically be read by other members' apps, although the app does not display them. Direct messages are visible only to the people in that conversation. If everyone in a chat has turned on secure messages, even we cannot read the text. Content you share in public threads can be seen by every member and may be copied by them; please don't post anything you want to keep private.</p>
 
         <h2>5. Retention and deletion</h2>
-        <p>You can delete your account at any time in the app: <strong>Settings &gt; Profile &gt; Delete Account</strong>. Deletion immediately and permanently removes your login, profile, messages you sent, friend connections, notifications, votes and blocks. Your profile photo and the photos you sent in chats are removed from storage as well. Your past public posts and replies stay so conversations remain readable, but they are detached from you and shown as "[deleted]"; photos or videos attached to those public posts stay with them. Reports you filed or that were filed about you may be kept for a limited time where needed to protect the community or comply with the law. Messages in a chat set to disappear are deleted from our database shortly after they expire. Backups are overwritten on a rolling basis. If you can't use the app, email us and we'll delete your account for you.</p>
+        <p>You can delete your account at any time in the app: <strong>Settings &gt; Profile &gt; Delete Account</strong>. Deletion immediately and permanently removes your login, profile, messages you sent, friend connections, notifications, votes and blocks. Your profile photo and the photos you sent in chats are removed from storage as well. Your past public posts and replies stay so conversations remain readable, but they are detached from you and shown as "[deleted]"; photos or videos attached to those public posts stay with them. Reports you filed or that were filed about you may be kept for a limited time where needed to protect the community or comply with the law. Messages in a chat set to disappear are deleted from our database shortly after they expire (encrypted messages included). Turning off secure messages, or deleting your account, deletes your public key and your locked backup; encrypted messages you already sent stay in the chat as unreadable text for the people who were in it until they expire or are deleted. Backups are overwritten on a rolling basis. If you can't use the app, email us and we'll delete your account for you.</p>
 
         <h2>6. Your choices and rights</h2>
         <ul>
             <li>Edit your profile, change your password or switch your profile to private in Settings.</li>
-            <li><strong>Download a copy of your data</strong> yourself, any time, in <strong>Settings &gt; Privacy &gt; Download my data</strong>.</li>
+            <li><strong>Download a copy of your data</strong> yourself, any time, in <strong>Settings &gt; Privacy &gt; Download my data</strong>. Messages protected by secure messages are listed as readable text when this device holds your key; your private key is never included.</li>
+            <li><strong>Turn secure messages on or off</strong>, change your recovery passphrase, check a safety number, or start over with a new key in <strong>Settings &gt; Privacy</strong> and in the chat options.</li>
             <li>Turn on <strong>two-factor sign-in</strong> (optional) and <strong>sign out other devices</strong> in Settings &gt; Privacy.</li>
             <li>Set a chat to <strong>disappearing messages</strong> (24 hours or 7 days, text only) or <strong>clear a chat for yourself</strong> from the options button inside the chat.</li>
             <li>Turn off notifications in Settings or in iOS Settings, and revoke microphone, camera or photo access in iOS Settings at any time.</li>
@@ -101,7 +109,7 @@
         <p>The Service is for people aged 13 and over. We do not knowingly collect information from children under 13. If you believe a child has joined, contact us and we will remove the account.</p>
 
         <h2>8. Security</h2>
-        <p>Data is encrypted in transit, access to the database is restricted by row-level security rules, and content is checked before it is displayed. Direct messages are not end-to-end encrypted. No system is perfectly secure, so please use a strong, unique password and consider turning on two-factor sign-in. The details, and how to report a vulnerability, are on our <a href="security.html">Security page</a>.</p>
+        <p>Data is encrypted in transit, access to the database is restricted by row-level security rules, and content is checked before it is displayed. Chat messages are end-to-end encrypted only if you turn on secure messages (text only; photos are not encrypted, and it has limits such as no forward secrecy); otherwise they are stored in a form we could read. No system is perfectly secure, so please use a strong, unique password and consider turning on two-factor sign-in. The details, and how to report a vulnerability, are on our <a href="security.html">Security page</a>.</p>
 
         <h2>9. International transfers</h2>
         <p>Our providers may process data in the United States and other countries. Where required, transfers are covered by appropriate safeguards.</p>
